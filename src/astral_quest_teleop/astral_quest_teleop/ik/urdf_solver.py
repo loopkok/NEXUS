@@ -202,6 +202,27 @@ class URDFNumericalIKSolver(IKSolverBase):
     def method_name(self) -> str:
         return f"urdf_numerical_lm/{self._scheme}"
 
+    def set_lm_params(
+        self,
+        max_iter: int | None = None,
+        tol: float | None = None,
+        w_pos: float | None = None,
+        w_ori: float | None = None,
+        w_reg: float | None = None,
+    ) -> None:
+        if max_iter is not None:
+            self._max_nfev = max(int(max_iter) * 15, 80)
+        if tol is not None:
+            t = float(tol)
+            self._xtol = t
+            self._ftol = min(t, 1e-12)
+        if w_pos is not None:
+            self._w_pos = float(max(0.0, w_pos))
+        if w_ori is not None:
+            self._w_ori = float(max(0.0, w_ori))
+        if w_reg is not None:
+            self._w_reg = float(max(0.0, w_reg))
+
     @property
     def q_full(self) -> List[float]:
         with self._q_lock:

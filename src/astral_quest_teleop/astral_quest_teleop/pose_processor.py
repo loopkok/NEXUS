@@ -2,14 +2,33 @@
 
 VR delta → optional pitch flip → ``vr_to_arm_rot`` → EMA/SLERP.
 
+Smoothing: yaml ``pos_smoothing`` / ``rot_smoothing`` are 0–1 filter
+coefficients (0 = follow immediately, 1 = hold). They are calibrated at
+50 Hz and converted to a time constant, so changing ``control_rate`` does
+not change how quickly the pose tracks.
+
 For Astral the mapped frame is that arm's ``*_base_link``.
 ``robot_world_to_base_rot`` is kept as an alias of ``vr_to_arm_rot``.
 """
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
+
+# Legacy per-tick α=0.8 at 50 Hz → τ = -dt / ln(α)
+_LEGACY_DT = 0.02
+
+
+def _tau_from_legacy_alpha(alpha: float) -> float:
+    a = float(alpha)
+    if a <= 0.0:
+        return 0.0
+    if a >= 1.0:
+        return 1e6
+    return -_LEGACY_DT / math.log(a)
 
 
 class PoseProcessor:
@@ -19,8 +38,10 @@ class PoseProcessor:
         self,
         vr_to_arm_rot: np.ndarray | None = None,
         robot_world_to_base_rot: np.ndarray | None = None,
-        pos_smoothing: float = 0.8,
-        rot_smoothing: float = 0.8,
+        pos_smoothing_tau: float | None = None,
+        rot_smoothing_tau: float | None = None,
+        pos_smoothing: float | None = None,
+        rot_smoothing: float | None = None,
         motion_scale: float = 0.65,
         flip_pitch: bool = False,
     ):
@@ -32,8 +53,22 @@ class PoseProcessor:
             R = np.eye(3, dtype=float)
         self.R_vr_to_arm = R
         self.R_world_to_base = R  # alias
-        self.pos_smoothing = float(pos_smoothing)
-        self.rot_smoothing = float(rot_smoothing)
+        # 0–1 filter coeff, calibrated at 50 Hz. Internally converted to a
+        # time constant so the feel does not change with control_rate.
+        if pos_smoothing is None:
+            pos_smoothing = 0.8
+        if rot_smoothing is None:
+            rot_smoothing = 0.8
+        self.pos_smoothing = float(np.clip(pos_smoothing, 0.0, 1.0))
+        self.rot_smoothing = float(np.clip(rot_smoothing, 0.0, 1.0))
+        if pos_smoothing_tau is not None:
+            self.pos_smoothing_tau = float(pos_smoothing_tau)
+        else:
+            self.pos_smoothing_tau = _tau_from_legacy_alpha(self.pos_smoothing)
+        if rot_smoothing_tau is not None:
+            self.rot_smoothing_tau = float(rot_smoothing_tau)
+        else:
+            self.rot_smoothing_tau = _tau_from_legacy_alpha(self.rot_smoothing)
         self.motion_scale = float(motion_scale)
         self.flip_pitch = bool(flip_pitch)
 
@@ -43,12 +78,17 @@ class PoseProcessor:
         self.vr_current_rot = None
         self.smoothed_delta_pos = np.zeros(3)
         self.smoothed_delta_rot = Rotation.identity()
+        # Unfiltered arm-frame delta from the last process() (tune plots).
+        self.last_raw_delta_pos = np.zeros(3)
+        self.last_raw_delta_rot = Rotation.identity()
 
     def set_vr_zero_point(self, pos: np.ndarray, rot: Rotation) -> None:
         self.vr_init_pos = pos.copy()
         self.vr_init_rot = rot
         self.smoothed_delta_pos = np.zeros(3)
         self.smoothed_delta_rot = Rotation.identity()
+        self.last_raw_delta_pos = np.zeros(3)
+        self.last_raw_delta_rot = Rotation.identity()
 
     @property
     def is_calibrated(self) -> bool:
@@ -61,6 +101,8 @@ class PoseProcessor:
         self.vr_current_rot = None
         self.smoothed_delta_pos = np.zeros(3)
         self.smoothed_delta_rot = Rotation.identity()
+        self.last_raw_delta_pos = np.zeros(3)
+        self.last_raw_delta_rot = Rotation.identity()
 
     def update_vr_pose(self, pos: np.ndarray, rot: Rotation) -> None:
         if self.vr_init_pos is None:
@@ -68,7 +110,13 @@ class PoseProcessor:
         self.vr_current_pos = pos
         self.vr_current_rot = rot
 
-    def process(self):
+    @staticmethod
+    def _alpha(tau: float, dt: float) -> float:
+        if tau <= 0.0:
+            return 0.0
+        return float(math.exp(-max(1e-6, dt) / tau))
+
+    def process(self, dt: float = 0.02):
         if self.vr_current_pos is None or self.vr_init_pos is None:
             return np.zeros(3), Rotation.identity()
 
@@ -85,12 +133,14 @@ class PoseProcessor:
         delta_rot_arm = Rotation.from_matrix(
             R @ raw_delta_rot_vr.as_matrix() @ R.T
         )
+        self.last_raw_delta_pos = delta_pos_arm.copy()
+        self.last_raw_delta_rot = delta_rot_arm
 
-        a_p = self.pos_smoothing
+        a_p = self._alpha(self.pos_smoothing_tau, dt)
         self.smoothed_delta_pos = (
             a_p * self.smoothed_delta_pos + (1.0 - a_p) * delta_pos_arm
         )
-        a_r = self.rot_smoothing
+        a_r = self._alpha(self.rot_smoothing_tau, dt)
         try:
             slerp = Slerp(
                 [0, 1],
@@ -101,6 +151,20 @@ class PoseProcessor:
             self.smoothed_delta_rot = delta_rot_arm
 
         return self.smoothed_delta_pos.copy(), self.smoothed_delta_rot
+
+    def set_pos_smoothing(self, alpha: float) -> None:
+        self.pos_smoothing = float(np.clip(alpha, 0.0, 1.0))
+        self.pos_smoothing_tau = _tau_from_legacy_alpha(self.pos_smoothing)
+
+    def set_rot_smoothing(self, alpha: float) -> None:
+        self.rot_smoothing = float(np.clip(alpha, 0.0, 1.0))
+        self.rot_smoothing_tau = _tau_from_legacy_alpha(self.rot_smoothing)
+
+    def set_motion_scale(self, scale: float) -> None:
+        self.motion_scale = float(max(0.0, scale))
+
+    def set_flip_pitch(self, flip: bool) -> None:
+        self.flip_pitch = bool(flip)
 
     def compute_target_pose(
         self,

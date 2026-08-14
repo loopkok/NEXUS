@@ -14,3 +14,5 @@ quest3_udp_mocap:
     landmark_preprocess: "mano"
     # Unity LH → robot (X left, Y back, Z up). false = keep Unity (+ landmarks X flip).
     convert_to_robot: true
+    print_latency: true
+    latency_print_interval: 2.0

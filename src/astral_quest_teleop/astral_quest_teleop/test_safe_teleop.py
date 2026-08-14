@@ -56,7 +56,7 @@ class SafeTeleopTestNode(Node):
         self.declare_parameter("rot_smoothing", 0.8)
         self.declare_parameter("motion_scale", 0.5)
         self.declare_parameter("flip_pitch", False)
-        self.declare_parameter("max_joint_vel", 0.04)
+        self.declare_parameter("max_joint_vel", 2.0)
         self.declare_parameter("data_timeout", 1.5)
         self.declare_parameter("tcp_offset", [0.0] * 6)
         self.declare_parameter("dry_run", True)
@@ -152,7 +152,7 @@ class SafeTeleopTestNode(Node):
             return
         if now - self.last_vr > self.data_timeout:
             return
-        dp, dr = self.pose.process()
+        dp, dr = self.pose.process(dt)
         T = self.pose.compute_target_pose(
             dp, dr, self.robot_init_pos, self.robot_init_rot
         )

@@ -50,7 +50,7 @@ class DataFlowTestNode(Node):
         self.declare_parameter("rot_smoothing", 0.8)
         self.declare_parameter("motion_scale", 0.65)
         self.declare_parameter("flip_pitch", False)
-        self.declare_parameter("max_joint_vel", 0.15)
+        self.declare_parameter("max_joint_vel", 7.5)
         self.declare_parameter("tcp_offset", [0.0] * 6)
         self.declare_parameter("init_pose", [])
 
@@ -164,7 +164,7 @@ class DataFlowTestNode(Node):
             return
         if self.t_active0 is None:
             self.t_active0 = time.monotonic()
-        dp, dr = self.pose_proc.process()
+        dp, dr = self.pose_proc.process(self.dt)
         T_tcp = self.pose_proc.compute_target_pose(
             dp, dr, self.robot_init_pos, self.robot_init_rot
         )

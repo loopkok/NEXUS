@@ -40,6 +40,7 @@ setup(
             "test_vr_mapping = astral_quest_teleop.test_vr_mapping:main",
             "test_dataflow = astral_quest_teleop.test_dataflow:main",
             "test_safe_teleop = astral_quest_teleop.test_safe_teleop:main",
+            "teleop_tune_plot = astral_quest_teleop.teleop_tune_plot:main",
         ],
     },
 )

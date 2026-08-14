@@ -68,19 +68,19 @@ def _launch_setup(context, *args, **kwargs):
 
     solver_type = LaunchConfiguration("solver_type").perform(context)
     urdf_arg = LaunchConfiguration("urdf_path").perform(context).strip()
-    if not urdf_arg and solver_type.strip().lower() in (
+    if not urdf_arg:
+        urdf_arg = _resolve_astral_urdf()
+    if solver_type.strip().lower() in (
         "urdf_numerical",
         "urdf",
         "numerical",
-    ):
-        urdf_arg = _resolve_astral_urdf()
-        if not urdf_arg:
-            raise FileNotFoundError(
-                "astral_robot.pin.urdf not found. Build the description package:\n"
-                "  colcon build --packages-select astral_robot_description --symlink-install\n"
-                "  source install/setup.bash\n"
-                "Or pass urdf_path:=/absolute/path/to/astral_robot.pin.urdf"
-            )
+    ) and not urdf_arg:
+        raise FileNotFoundError(
+            "astral_robot.pin.urdf not found. Build the description package:\n"
+            "  colcon build --packages-select astral_robot_description --symlink-install\n"
+            "  source install/setup.bash\n"
+            "Or pass urdf_path:=/absolute/path/to/astral_robot.pin.urdf"
+        )
 
     teleop_extra = {
         "dry_run": False,

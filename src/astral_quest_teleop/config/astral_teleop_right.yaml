@@ -3,24 +3,33 @@
 astral_teleop_right:
   ros__parameters:
     arm_side: "right"
-    control_rate: 50.0
+    control_rate: 150.0
     solver_type: "analytic_dh"
+    # URDF LM (ignored by DH; hot-tunable)
+    ik_max_iter: 20
+    ik_tol: 0.00000001
+    ik_w_pos: 1.0
+    ik_w_ori: 0.3
+    ik_w_reg: 0.0001
 
     vr_to_arm_rot: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
-    pos_smoothing: 0.8
+    pos_smoothing: 0.8   # 0=无滤波 1=几乎不跟；可热改（tune 滑动条）
     rot_smoothing: 0.8
     motion_scale: 0.65
     flip_pitch: false
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-    max_joint_vel: 0.08
+    max_joint_vel: 4.0  # rad/s  (0.08 rad/tick @ 50 Hz)
     workspace_radius: 0.0
     data_timeout: 1.5
     dry_run: false
     require_clench_to_start: false
     auto_arm_on_start: true
     use_joint_state_seed: true
+    print_latency: true
+    latency_print_interval: 2.0
+    publish_tune: true
 
     init_pose: [0.32, -0.11, 0.53, -0.80, 0.28, 0.00, 0.00]

@@ -10,7 +10,7 @@
 astral_teleop:
   ros__parameters:
     arm_side: "both"
-    control_rate: 50.0
+    control_rate: 150.0
 
     # analytic_dh (Nero closed-form) | urdf_numerical
     solver_type: "analytic_dh"
@@ -39,7 +39,7 @@ astral_teleop:
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     # ---- Safety ----
-    max_joint_vel: 0.08
+    max_joint_vel: 4.0  # rad/s
     workspace_radius: 0.0
     workspace_x_min: -.inf
     workspace_x_max: .inf

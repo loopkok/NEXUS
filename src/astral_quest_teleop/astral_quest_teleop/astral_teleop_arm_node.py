@@ -15,6 +15,7 @@ from typing import Optional
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import (
     QoSProfile,
@@ -24,9 +25,10 @@ from rclpy.qos import (
 )
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float64MultiArray
 
 from astral_quest_teleop.ik.factory import make_single_arm_ik
+from astral_quest_teleop.latency_meter import LatencyMeter, stamp_age_ms
 from astral_quest_teleop.pose_processor import PoseProcessor
 from astral_quest_teleop.safety_filter import SafetyFilter
 
@@ -77,7 +79,7 @@ def _sensor_qos() -> QoSProfile:
     return QoSProfile(
         reliability=ReliabilityPolicy.BEST_EFFORT,
         history=HistoryPolicy.KEEP_LAST,
-        depth=1,
+        depth=20,
         durability=DurabilityPolicy.VOLATILE,
     )
 
@@ -103,7 +105,7 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("motion_scale", 0.65)
         self.declare_parameter("flip_pitch", False)
         self.declare_parameter("tcp_offset", [0.0] * 6)
-        self.declare_parameter("max_joint_vel", 0.08)
+        self.declare_parameter("max_joint_vel", 4.0)
         self.declare_parameter("workspace_radius", 0.0)
         self.declare_parameter("data_timeout", 1.5)
         self.declare_parameter("dry_run", False)
@@ -113,6 +115,9 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
         )
+        self.declare_parameter("print_latency", True)
+        self.declare_parameter("latency_print_interval", 2.0)
+        self.declare_parameter("publish_tune", True)
 
         self.side = str(self.get_parameter("arm_side").value).lower()
         if self.side not in ("left", "right"):
@@ -128,10 +133,14 @@ class AstralTeleopArmNode(Node):
         # works in the "flipped" (alpha=+90) convention. The URDF numerical solver
         # reads the original-convention URDF and already returns hardware-convention q.
         self._flip_needed = st in ("analytic_dh", "analytic", "dh")
+        self._urdf_path = str(self.get_parameter("urdf_path").value)
+        self._vr_to_arm_yaml = np.asarray(
+            self.get_parameter("vr_to_arm_rot").value, dtype=float
+        ).reshape(3, 3)
         self.ik = make_single_arm_ik(
             self.side,
             st,
-            urdf_path=str(self.get_parameter("urdf_path").value),
+            urdf_path=self._urdf_path,
             ik_max_iter=int(self.get_parameter("ik_max_iter").value),
             ik_tol=float(self.get_parameter("ik_tol").value),
             ik_w_pos=float(self.get_parameter("ik_w_pos").value),
@@ -153,9 +162,7 @@ class AstralTeleopArmNode(Node):
         self.q_cmd = self._flip_q(init_q)  # back to hardware convention
         self.state_q = self.q_cmd.copy()
 
-        R = np.asarray(
-            self.get_parameter("vr_to_arm_rot").value, dtype=float
-        ).reshape(3, 3)
+        R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
             # analytic DH works in the clean base (joint1 axis = +Z); map the VR
             # delta from the original torso base into the clean base frame.
@@ -171,6 +178,7 @@ class AstralTeleopArmNode(Node):
         T_ft = np.eye(4)
         T_ft[:3, :3] = Rotation.from_euler("xyz", tcp[3:]).as_matrix()
         T_ft[:3, 3] = tcp[:3]
+        self._T_flange_to_tcp = T_ft
         self._T_tcp_to_flange = np.linalg.inv(T_ft)
 
         self.safety = SafetyFilter(
@@ -185,6 +193,28 @@ class AstralTeleopArmNode(Node):
         self.cmd_pub = self.create_publisher(
             JointState, f"/{self.side}_arm/joint_commands", qos
         )
+        self._publish_tune = bool(self.get_parameter("publish_tune").value)
+        self._tune_pubs = {}
+        if self._publish_tune:
+            tune_qos = QoSProfile(
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=20,
+            )
+            prefix = f"/teleop/{self.side}/tune"
+            self._tune_pubs = {
+                "vr": self.create_publisher(PoseStamped, f"{prefix}/ee_vr", tune_qos),
+                "filt": self.create_publisher(
+                    PoseStamped, f"{prefix}/ee_filt", tune_qos
+                ),
+                "cmd": self.create_publisher(PoseStamped, f"{prefix}/ee_cmd", tune_qos),
+                "xyz": self.create_publisher(
+                    Float64MultiArray, f"{prefix}/xyz", tune_qos
+                ),
+            }
+            self.get_logger().info(
+                f"tune topics: /teleop/{self.side}/tune/ee_{{vr,filt,cmd}} + xyz"
+            )
         self.create_subscription(
             PoseStamped, f"quest3/{self.side}_wrist_pose", self._on_wrist, 10
         )
@@ -203,13 +233,132 @@ class AstralTeleopArmNode(Node):
         self.create_subscription(Bool, "/teleop/disarm", self._on_disarm, 10)
 
         self._last_vr_t = 0.0
+        self._last_vr_stamp = None
         self._prev_t = time.monotonic()
+        self._print_latency = bool(self.get_parameter("print_latency").value)
+        self._lat = LatencyMeter(
+            float(self.get_parameter("latency_print_interval").value)
+        )
         self.create_timer(self.dt, self._loop)
         solver_name = getattr(self.ik, "method_name", type(self.ik).__name__)
         self.get_logger().info(
             f"Astral arm teleop: {self.side} solver={solver_name} "
             f"EE0={np.round(self.robot_init_pos, 3).tolist()} "
             f"scale={self.pose.motion_scale} dry_run={self.dry_run}"
+        )
+        self.add_on_set_parameters_callback(self._on_set_parameters)
+
+    def _on_set_parameters(self, params):
+        result = SetParametersResult(successful=True)
+        solver_req = None
+        lm = {}
+        try:
+            for p in params:
+                name = p.name
+                if name == "pos_smoothing":
+                    self.pose.set_pos_smoothing(float(p.value))
+                elif name == "rot_smoothing":
+                    self.pose.set_rot_smoothing(float(p.value))
+                elif name == "motion_scale":
+                    self.pose.set_motion_scale(float(p.value))
+                elif name == "flip_pitch":
+                    self.pose.set_flip_pitch(bool(p.value))
+                elif name == "max_joint_vel":
+                    self.safety.max_joint_vel = float(p.value)
+                elif name == "workspace_radius":
+                    self.safety.workspace_radius = float(p.value)
+                elif name == "data_timeout":
+                    self.data_timeout = float(p.value)
+                elif name == "dry_run":
+                    self.dry_run = bool(p.value)
+                elif name == "print_latency":
+                    self._print_latency = bool(p.value)
+                elif name == "solver_type":
+                    solver_req = str(p.value).strip().lower()
+                elif name == "ik_max_iter":
+                    lm["max_iter"] = int(p.value)
+                elif name == "ik_tol":
+                    lm["tol"] = float(p.value)
+                elif name == "ik_w_pos":
+                    lm["w_pos"] = float(p.value)
+                elif name == "ik_w_ori":
+                    lm["w_ori"] = float(p.value)
+                elif name == "ik_w_reg":
+                    lm["w_reg"] = float(p.value)
+                elif name in (
+                    "arm_side",
+                    "urdf_path",
+                    "init_pose",
+                    "vr_to_arm_rot",
+                    "tcp_offset",
+                    "control_rate",
+                ):
+                    result.successful = False
+                    result.reason = f"{name} cannot be changed at runtime"
+                    return result
+            if solver_req is not None:
+                self._rebuild_solver(solver_req)
+            if lm:
+                self._apply_ik_lm(lm)
+        except Exception as exc:  # noqa: BLE001
+            result.successful = False
+            result.reason = str(exc)
+            return result
+        return result
+
+    def _apply_ik_lm(self, lm: dict) -> None:
+        ik = self.ik
+        if hasattr(ik, "set_lm_params"):
+            ik.set_lm_params(**lm)
+            return
+        # DH closed-form: LM weights do not apply.
+
+    def _rebuild_solver(self, solver_type: str) -> None:
+        st = solver_type.strip().lower()
+        if st in ("analytic", "dh"):
+            st = "analytic_dh"
+        if st in ("urdf", "numerical"):
+            st = "urdf_numerical"
+        if st not in ("analytic_dh", "urdf_numerical"):
+            raise ValueError(f"solver_type must be analytic_dh|urdf_numerical, got {st}")
+        q_hw = np.asarray(self.q_cmd, dtype=float).reshape(7)
+        self._flip_needed = st == "analytic_dh"
+        self.ik = make_single_arm_ik(
+            self.side,
+            st,
+            urdf_path=self._urdf_path,
+            ik_max_iter=int(self.get_parameter("ik_max_iter").value),
+            ik_tol=float(self.get_parameter("ik_tol").value),
+            ik_w_pos=float(self.get_parameter("ik_w_pos").value),
+            ik_w_ori=float(self.get_parameter("ik_w_ori").value),
+            ik_w_reg=float(self.get_parameter("ik_w_reg").value),
+        )
+        R = self._vr_to_arm_yaml.copy()
+        if self._flip_needed:
+            R = _R_BASE_T @ R
+        self.pose.R_vr_to_arm = R
+        self.pose.R_world_to_base = R
+        q_ik = self._flip_q(q_hw)
+        q_ik = np.clip(
+            q_ik, self.ik.lower_limits + 0.02, self.ik.upper_limits - 0.02
+        )
+        self.ik.sync_state(q_ik)
+        T0 = self.ik.fk(q_ik)
+        self.robot_init_pos = T0[:3, 3].copy()
+        self.robot_init_rot = T0[:3, :3].copy()
+        self.q_cmd = q_hw
+        self.safety.joint_lower = np.asarray(self.ik.lower_limits, dtype=float).copy()
+        self.safety.joint_upper = np.asarray(self.ik.upper_limits, dtype=float).copy()
+        self.safety.set_initial_state(q_ik, self.robot_init_pos)
+        if self.pose.vr_current_pos is not None and self.pose.vr_current_rot is not None:
+            self.pose.set_vr_zero_point(
+                self.pose.vr_current_pos, self.pose.vr_current_rot
+            )
+        else:
+            self.pose.reset()
+        name = getattr(self.ik, "method_name", type(self.ik).__name__)
+        self.get_logger().info(
+            f"switched solver → {name}; VR zero reset, hold pose then move"
         )
 
     def _flip_q(self, q):
@@ -252,17 +401,28 @@ class AstralTeleopArmNode(Node):
             return
         self.pose.update_vr_pose(pos, Rotation.from_quat(q))
         self._last_vr_t = time.monotonic()
+        self._last_vr_stamp = msg.header.stamp
+        if self._print_latency:
+            age = stamp_age_ms(msg.header.stamp)
+            if 0.0 <= age < 5000.0:
+                self._lat.add("vr_rx", age)
 
     def _loop(self) -> None:
         now = time.monotonic()
         dt = max(1e-3, now - self._prev_t)
         self._prev_t = now
         if not self._armed or not self.pose.is_calibrated:
+            self._maybe_log_latency()
             return
         if self._last_vr_t > 0 and (now - self._last_vr_t) > self.data_timeout:
+            self._maybe_log_latency()
             return
 
-        dp, dr = self.pose.process()
+        t_loop = time.perf_counter()
+        if self._print_latency and self._last_vr_t > 0:
+            self._lat.add("vr_age", (now - self._last_vr_t) * 1000.0)
+
+        dp, dr = self.pose.process(dt)
         T_tcp = self.pose.compute_target_pose(
             dp, dr, self.robot_init_pos, self.robot_init_rot
         )
@@ -272,19 +432,101 @@ class AstralTeleopArmNode(Node):
             self.ik.sync_state(self._flip_q(self.q_cmd), reset_branch=False)
         except TypeError:
             self.ik.sync_state(self._flip_q(self.q_cmd))
+        t_ik = time.perf_counter()
         sol = self.ik.solve(T_flange)
+        if self._print_latency:
+            self._lat.add("ik", (time.perf_counter() - t_ik) * 1000.0)
         if sol is None:
+            if self._print_latency:
+                self._lat.count("ik_fail")
+            self._publish_tune_poses(T_tcp)
+            self._maybe_log_latency()
             return
         safe, _info = self.safety.filter(sol, dt)
         # IK/safety work in the flipped convention; convert back to hardware.
         self.q_cmd = self._flip_q(safe)
+        if self._print_latency:
+            self._lat.add("loop", (time.perf_counter() - t_loop) * 1000.0)
+        self._publish_tune_poses(T_tcp)
         if self.dry_run:
+            self._maybe_log_latency()
             return
         msg = JointState()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        # Propagate VR packet arrival so sim can measure e2e (PC recv → apply).
+        msg.header.stamp = (
+            self._last_vr_stamp
+            if self._last_vr_stamp is not None
+            else self.get_clock().now().to_msg()
+        )
         msg.name = list(self.names)
         msg.position = self.q_cmd.tolist()
         self.cmd_pub.publish(msg)
+        self._maybe_log_latency()
+
+    def _pose_msg(self, T: np.ndarray, stamp) -> PoseStamped:
+        msg = PoseStamped()
+        msg.header.stamp = stamp
+        msg.header.frame_id = f"{self.side}_ik"
+        msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = (
+            float(T[0, 3]),
+            float(T[1, 3]),
+            float(T[2, 3]),
+        )
+        q = Rotation.from_matrix(T[:3, :3]).as_quat()
+        (
+            msg.pose.orientation.x,
+            msg.pose.orientation.y,
+            msg.pose.orientation.z,
+            msg.pose.orientation.w,
+        ) = (float(q[0]), float(q[1]), float(q[2]), float(q[3]))
+        return msg
+
+    def _publish_tune_poses(self, T_tcp: np.ndarray) -> None:
+        if not self._publish_tune or not self._tune_pubs:
+            return
+        stamp = (
+            self._last_vr_stamp
+            if self._last_vr_stamp is not None
+            else self.get_clock().now().to_msg()
+        )
+        T_vr = self.pose.compute_target_pose(
+            self.pose.last_raw_delta_pos,
+            self.pose.last_raw_delta_rot,
+            self.robot_init_pos,
+            self.robot_init_rot,
+        )
+        T_cmd = self.ik.fk(self._flip_q(self.q_cmd)) @ self._T_flange_to_tcp
+        self._tune_pubs["vr"].publish(self._pose_msg(T_vr, stamp))
+        self._tune_pubs["filt"].publish(self._pose_msg(T_tcp, stamp))
+        self._tune_pubs["cmd"].publish(self._pose_msg(T_cmd, stamp))
+        q_vr = Rotation.from_matrix(T_vr[:3, :3]).as_quat()
+        q_fi = Rotation.from_matrix(T_tcp[:3, :3]).as_quat()
+        q_cmd = Rotation.from_matrix(T_cmd[:3, :3]).as_quat()
+        packed = Float64MultiArray()
+        packed.data = [
+            float(T_vr[0, 3]),
+            float(T_vr[1, 3]),
+            float(T_vr[2, 3]),
+            float(T_tcp[0, 3]),
+            float(T_tcp[1, 3]),
+            float(T_tcp[2, 3]),
+            float(T_cmd[0, 3]),
+            float(T_cmd[1, 3]),
+            float(T_cmd[2, 3]),
+            *map(float, q_vr),
+            *map(float, q_fi),
+            *map(float, q_cmd),
+        ]
+        self._tune_pubs["xyz"].publish(packed)
+
+    def _maybe_log_latency(self) -> None:
+        if not self._print_latency or not self._lat.has_samples():
+            return
+        if not self._lat.should_print():
+            return
+        self.get_logger().info(
+            f"[Latency][{self.side}] {self._lat.format_and_reset()}"
+        )
 
 
 def main(args=None) -> None:

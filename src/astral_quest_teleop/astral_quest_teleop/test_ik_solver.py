@@ -142,7 +142,7 @@ def test_safety_filter(solver: _ArmView) -> bool:
     sf = SafetyFilter(
         joint_lower_limits=solver.lower_limits,
         joint_upper_limits=solver.upper_limits,
-        max_joint_vel=0.15,
+        max_joint_vel=7.5,
         workspace_radius=0.5,
         workspace_z_min=-1.0,
         workspace_z_max=1.0,

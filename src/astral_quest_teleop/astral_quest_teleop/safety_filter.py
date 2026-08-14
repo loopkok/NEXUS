@@ -10,7 +10,7 @@ class SafetyFilter:
         self,
         joint_lower_limits: np.ndarray,
         joint_upper_limits: np.ndarray,
-        max_joint_vel: float = 0.15,
+        max_joint_vel: float = 4.0,
         workspace_center: np.ndarray | None = None,
         workspace_radius: float = 0.0,
         workspace_z_min: float | None = None,
@@ -23,6 +23,7 @@ class SafetyFilter:
     ):
         self.joint_lower = np.asarray(joint_lower_limits, dtype=float).copy()
         self.joint_upper = np.asarray(joint_upper_limits, dtype=float).copy()
+        # rad/s; per-tick cap is ``max_joint_vel * dt``
         self.max_joint_vel = float(max_joint_vel)
         self.workspace_center = (
             np.zeros(3)
@@ -56,7 +57,7 @@ class SafetyFilter:
 
         if self.prev_q is not None and dt > 0 and self.max_joint_vel > 0:
             delta = q - self.prev_q
-            max_d = self.max_joint_vel
+            max_d = self.max_joint_vel * float(dt)
             exceeded = np.abs(delta) > max_d
             if np.any(exceeded):
                 scale = np.ones_like(delta)

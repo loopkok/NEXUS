@@ -229,6 +229,11 @@ class SingleArmIKAdapter:
     def solve(self, T_target: np.ndarray) -> Optional[np.ndarray]:
         return self.bridge.solve(self.arm, T_target)
 
+    def set_lm_params(self, **kwargs) -> None:
+        solver = getattr(self.bridge, "_solver", None)
+        if solver is not None and hasattr(solver, "set_lm_params"):
+            solver.set_lm_params(**kwargs)
+
 
 def make_ik_solver(
     solver_type: str,

@@ -14,6 +14,8 @@ import numpy as np
 import re
 from typing import Tuple
 
+from quest3_hand_mocap.latency_meter import LatencyMeter
+
 
 class FPSCounter:
     """Simple sliding-window FPS counter."""
@@ -261,6 +263,13 @@ class Quest3UDPMocap(Node):
                 f"got {self.landmark_preprocess}"
             )
         self.convert_to_robot = bool(self.get_parameter("convert_to_robot").value)
+        self.declare_parameter("print_latency", True)
+        self.declare_parameter("latency_print_interval", 2.0)
+        self._print_latency = bool(self.get_parameter("print_latency").value)
+        self._lat = LatencyMeter(
+            float(self.get_parameter("latency_print_interval").value)
+        )
+        self._last_wrist_arrival = {"left": 0.0, "right": 0.0}
 
         self.get_logger().info(
             f"Quest 3 Hand Mocap: side=[{self.arm_side.upper()}], "
@@ -444,6 +453,13 @@ class Quest3UDPMocap(Node):
         stamp.nanosec = int((t - int(t)) * 1e9)
         return stamp
 
+    def _maybe_log_latency(self) -> None:
+        if not self._print_latency or not self._lat.has_samples():
+            return
+        if not self._lat.should_print():
+            return
+        self.get_logger().info(f"[Latency][VR] {self._lat.format_and_reset()}")
+
     def process_line(self, line, arrival_time: float = 0.0):
         # FPS tracking
         if not hasattr(self, '_fps'):
@@ -518,6 +534,17 @@ class Quest3UDPMocap(Node):
                     (
                         self.wrist_pub_right if side == "right" else self.wrist_pub_left
                     ).publish(pose_msg)
+                    if self._print_latency and arrival_time > 0.0:
+                        self._lat.add(
+                            "recv_to_pub", (time.time() - arrival_time) * 1000.0
+                        )
+                        prev = self._last_wrist_arrival[side]
+                        if prev > 0.0:
+                            self._lat.add(
+                                f"wrist_gap.{side}", (arrival_time - prev) * 1000.0
+                            )
+                        self._last_wrist_arrival[side] = arrival_time
+                        self._maybe_log_latency()
                 except Exception as e:
                     self.get_logger().error(f"解析浮点数失败: {e}")
         # 2. 手指：Unity 腕局部 → robot 轴，再 raw/mano + EMA

@@ -36,7 +36,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("arm_side", default_value="both"),
             DeclareLaunchArgument("dry_run", default_value="false"),
-            DeclareLaunchArgument("control_rate", default_value="50.0"),
+            DeclareLaunchArgument("control_rate", default_value="150.0"),
             DeclareLaunchArgument(
                 "protocol",
                 default_value="tcp_wired",

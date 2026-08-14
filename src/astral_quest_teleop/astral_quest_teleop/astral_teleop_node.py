@@ -148,7 +148,7 @@ class AstralTeleopNode(Node):
         self.declare_parameter("flip_pitch", False)
         self.declare_parameter("tcp_offset", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
-        self.declare_parameter("max_joint_vel", 0.08)
+        self.declare_parameter("max_joint_vel", 4.0)
         self.declare_parameter("workspace_radius", 0.0)  # 0 = disabled
         self.declare_parameter("workspace_z_min", float("-inf"))
         self.declare_parameter("workspace_z_max", float("inf"))
@@ -440,7 +440,7 @@ class AstralTeleopNode(Node):
                 )
                 continue
 
-            delta_pos, delta_rot = ch.pose.process()
+            delta_pos, delta_rot = ch.pose.process(dt)
             T_tcp = ch.pose.compute_target_pose(
                 delta_pos,
                 delta_rot,

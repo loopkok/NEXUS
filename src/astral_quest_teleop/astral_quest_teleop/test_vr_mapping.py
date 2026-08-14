@@ -45,13 +45,13 @@ def test_pose_processor_delta() -> bool:
     print("\n" + "=" * 60)
     print("TEST: PoseProcessor incremental delta (I map, no smooth)")
     print("=" * 60)
-    pp = PoseProcessor(
-        robot_world_to_base_rot=R_IDENTITY,
-        pos_smoothing=0.0,
-        rot_smoothing=0.0,
-        motion_scale=1.0,
-        flip_pitch=False,
-    )
+        pp = PoseProcessor(
+            robot_world_to_base_rot=R_IDENTITY,
+            pos_smoothing=0.0,
+            rot_smoothing=0.0,
+            motion_scale=1.0,
+            flip_pitch=False,
+        )
     pp.update_vr_pose(np.zeros(3), Rotation.identity())
     pp.update_vr_pose(np.array([0.1, -0.05, 0.02]), Rotation.identity())
     dp, _ = pp.process()
@@ -106,7 +106,9 @@ def test_e2e_ik(side: str) -> bool:
     T0 = bridge.fk(arm, q0)
     _ = bridge.solve(arm, T0)
 
-    pp = PoseProcessor(R_IDENTITY, pos_smoothing=0.0, rot_smoothing=0.0, motion_scale=1.0)
+    pp = PoseProcessor(
+        R_IDENTITY, pos_smoothing=0.0, rot_smoothing=0.0, motion_scale=1.0
+    )
     pp.update_vr_pose(np.zeros(3), Rotation.identity())
     all_ok = True
     for name, dvr in [

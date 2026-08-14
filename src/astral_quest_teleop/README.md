@@ -215,11 +215,50 @@ ros2 run astral_quest_teleop keyboard_vr_sim --ros-args -p arm_side:=left
 ros2 run astral_quest_teleop test_dataflow --ros-args -p arm_side:=left
 ```
 
+## 小范围跟手调参（曲线）
+
+遥操节点默认发 `/teleop/{left|right}/tune/`：
+
+| 话题 | 含义 |
+|------|------|
+| `ee_vr` | 手：VR 增量 × `motion_scale`，**未**平滑 |
+| `ee_filt` | 滤波后的 IK 目标 |
+| `ee_cmd` | 指令关节的 FK 末端 |
+| `xyz` | 上面三个位姿打成一条（绘图用） |
+
+仿真起来后另开终端：
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 run astral_quest_teleop teleop_tune_plot --ros-args -p arm_side:=right
+```
+
+窗口里：**蓝=手、橙虚线=滤波、绿=末端**。先静止按 `z` 清零，再做 1–2 cm 来回。
+
+左下角 **DH analytic / URDF LM** 可热切换（切完重定 VR 零点，臂停在当前姿态）。  
+左侧滑条两套 IK 都生效：`pos_smooth` / `rot_smooth` / `motion_scale` / `max_vel`。  
+右侧滑条仅 URDF LM：`ik_w_pos` / `ik_w_ori` / `ik_max_iter` / `ik_tol` / `ik_w_reg`。DH 是闭式，改右侧无效。
+
+| 曲线 | 说明 |
+|------|------|
+| 绿贴蓝 | 跟手 |
+| 静持时绿抖、蓝平 | IK/控制抖 |
+| 蓝自己抖 | Quest 噪声 |
+| 绿圆滑但落后蓝 | `pos_smoothing` 太大 |
+| 蓝幅值对、绿跟不上 | 限速 / IK |
+| URDF 位置跟、姿态飘 | 加大 `ik_w_ori` |
+| URDF 发黏、小动作被吃 | 减小 `ik_w_reg` |
+
+右侧数字：`pos err RMS/p95`、静持 `hold jitter`、`lag`。`s` 存 CSV 到 `/tmp`。yaml 只是下次启动的初值。
+
+也可用 PlotJuggler 订 `ee_vr` / `ee_cmd` 的 `pose.position.{x,y,z}`。
+
 ## 参数
 
 单臂：`config/astral_teleop_{left,right}.yaml`。  
 旧双臂节点：`config/astral_teleop.yaml`。
 
-常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`max_joint_vel`。
+常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）。
 
 `use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。双臂旧节点会把 `state_q` flip 后写入 `sync_state`。

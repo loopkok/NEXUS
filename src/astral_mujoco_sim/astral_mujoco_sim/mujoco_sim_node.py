@@ -30,14 +30,25 @@ from astral_mujoco_sim.joint_names import (
     RIGHT_MJCF_JOINTS,
     normalize_joint_name,
 )
+from astral_mujoco_sim.latency_meter import LatencyMeter, stamp_age_ms
 
 
 def _sensor_qos() -> QoSProfile:
     return QoSProfile(
         reliability=ReliabilityPolicy.BEST_EFFORT,
         history=HistoryPolicy.KEEP_LAST,
-        depth=10,
+        depth=50,
     )
+
+
+def _spin_drain(node: Node, max_callbacks: int = 24) -> None:
+    """Process pending ROS callbacks without blocking the sim loop.
+
+    A single ``spin_once`` handles one event. At 150 Hz × 2 arms the executor
+    would otherwise queue (and BEST_EFFORT-drop) commands.
+    """
+    for _ in range(max_callbacks):
+        rclpy.spin_once(node, timeout_sec=0.0)
 
 
 def _pack_arm(
@@ -65,6 +76,8 @@ class AstralMujocoSimNode(Node):
         self.declare_parameter("publish_joint_states", True)
         self.declare_parameter("state_rate", 50.0)
         self.declare_parameter("fps_print_interval", 5.0)
+        self.declare_parameter("print_latency", True)
+        self.declare_parameter("latency_print_interval", 2.0)
         self.declare_parameter(
             "init_pose_left",
             [0.32, 0.11, -0.53, -0.80, 0.28, 0.0, 0.0],
@@ -113,12 +126,18 @@ class AstralMujocoSimNode(Node):
 
         self._lock = threading.Lock()
         self._cmd_count = {"left": 0, "right": 0}
+        self._cmd_recv_mono = {"left": 0.0, "right": 0.0}
+        self._cmd_pending = {"left": False, "right": False}
         interval = float(self.get_parameter("fps_print_interval").value)
         self._cmd_fps = {
             "left": FPSCounter(print_interval=interval),
             "right": FPSCounter(print_interval=interval),
         }
         self._sim_fps = FPSCounter(window=200, print_interval=interval)
+        self._print_latency = bool(self.get_parameter("print_latency").value)
+        self._lat = LatencyMeter(
+            float(self.get_parameter("latency_print_interval").value)
+        )
 
         qos = _sensor_qos()
         self.create_subscription(
@@ -171,6 +190,12 @@ class AstralMujocoSimNode(Node):
         with self._lock:
             self._latest[side] = q
             self._cmd_count[side] += 1
+            self._cmd_recv_mono[side] = time.monotonic()
+            self._cmd_pending[side] = True
+        if self._print_latency:
+            e2e = stamp_age_ms(msg.header.stamp)
+            if 0.0 <= e2e < 5000.0:
+                self._lat.add(f"e2e.{side}", e2e)
         fps = self._cmd_fps[side].tick()
         if self._cmd_fps[side].should_print():
             self.get_logger().info(
@@ -223,11 +248,25 @@ class AstralMujocoSimNode(Node):
 
         try:
             while rclpy.ok() and (viewer is None or viewer.is_running()):
-                rclpy.spin_once(self, timeout_sec=0.0)
+                _spin_drain(self)
                 with self._lock:
                     ql = self._latest["left"].copy()
                     qr = self._latest["right"].copy()
+                    recv = dict(self._cmd_recv_mono)
+                    pending = dict(self._cmd_pending)
+                    self._cmd_pending = {"left": False, "right": False}
+                t_apply = time.monotonic()
                 self._apply_arms(ql, qr)
+                if self._print_latency:
+                    for side in ("left", "right"):
+                        if pending[side] and recv[side] > 0.0:
+                            self._lat.add(
+                                f"apply.{side}", (t_apply - recv[side]) * 1000.0
+                            )
+                    if self._lat.has_samples() and self._lat.should_print():
+                        self.get_logger().info(
+                            f"[Latency][sim] {self._lat.format_and_reset()}"
+                        )
                 if viewer is not None:
                     viewer.sync()
                 sim_fps = self._sim_fps.tick()
