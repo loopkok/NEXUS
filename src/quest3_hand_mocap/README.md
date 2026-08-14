@@ -190,4 +190,4 @@ quest3_udp_mocap
 |------|----|------|
 | 2026-08 | 腕改回世界系 | 取消 wrist 相对 head；head 与 wrist 同属 `robot_world`/`vr_world` |
 | 2026-08 | convert_to_robot | 启动可选 Unity→机器人轴 |
-详见顶层 [README](../../README.md#wuji-hand) 与 [WUJI_CHANGELOG.md](../../WUJI_CHANGELOG.md)。
+详见顶层 [README](../../README.md) 与 [CHANGELOG.md](../../CHANGELOG.md)。

@@ -1,6 +1,6 @@
-# Wuji Hand — 变更日志（astral_ws）
+# Changelog（astral_ws）
 
-从 `xnero_ws-main` 迁入本工作空间后的 Wuji 集成修复。各包 README 内亦有对应条目。
+Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 README 内亦有对应条目。
 
 ## 2026-08-14
 
@@ -12,7 +12,7 @@
 
 ## 2026-08
 
-### 功能
+### Wuji 手
 
 - 包：`wuji_glove`、`wujihand_retargeting`、`wujihand_mujoco_sim`、`wujihand_control`（+ vendored `wujihandros2`）
 - 统一话题：`hand_landmarks/{side}` → `/{side}_hand/joint_commands` → driver / MuJoCo
@@ -20,7 +20,7 @@
 - TuningViewer 三层骨架（橙/青/白）+ retarget yaml 热重载
 - Quest3 专用 yaml：`retarget_wuji_lib_quest3_{left,right}.yaml`
 
-### Bug fixes
+#### Bug fixes
 
 | ID | 现象 | 根因 | 修复 |
 |----|------|------|------|
@@ -31,7 +31,7 @@
 | Q5 | 真机未用上调参 yaml | real pipeline 仍指向手套 yaml | `input_source:=quest3` 自动传 quest3 yaml |
 | Q6 | dexpilot/official 仿真握拳、不跟手 | MJCF `kp` 过小 | tuning/sim 写 `qpos`+`mj_forward` |
 
-### 操作提示
+#### 操作提示
 
 - 真机与 MuJoCo **二选一**，勿抢同一 `joint_commands`
 - `*_serial` 可空（按 `hand_side` 连）

@@ -113,4 +113,4 @@ Quest 有线：`adb reverse tcp:8000 tcp:8000`。
 | [`src/wujihand_control/README.md`](src/wujihand_control/README.md) | 手真机 |
 | [`src/wujihand_retargeting/README.md`](src/wujihand_retargeting/README.md) | 重定向 |
 | [`src/wujihand_mujoco_sim/README.md`](src/wujihand_mujoco_sim/README.md) | 手仿真 / tuning |
-| [`WUJI_CHANGELOG.md`](WUJI_CHANGELOG.md) | Wuji 集成变更 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本记录 |
