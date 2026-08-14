@@ -1,0 +1,32 @@
+# Astral RobotMain ROS2 driver parameters
+#
+# Joint contract (aligned with astral_robot_sdk ROBOT_JOINT_NAMES):
+#   left_arm  [7]: left_shoulder_pitch … left_wrist_roll
+#   right_arm [7]: right_shoulder_pitch … right_wrist_roll
+#   astral   [18]: left(7)+right(7)+waist(2)+grippers(2)
+#
+# Topics:
+#   /left_arm/joint_commands   → move_arm_js (with right hold)
+#   /right_arm/joint_commands  → move_arm_js (with left hold)
+#   /astral/joint_commands     → move_js (18-DoF, takes priority while fresh)
+#   /{left_arm,right_arm,astral}/joint_states
+#
+# QoS: BEST_EFFORT (SensorData) on all joint streams.
+
+astral_robot_driver:
+  ros__parameters:
+    control_board_ip: "192.168.10.2"
+    board_cmd_port: 5001
+    local_ip: "0.0.0.0"
+    local_port: 8081
+    obs_hz: 50
+    ctrl_hz: 50
+    auto_ready: true
+    dry_run: false
+    enable_full_body_cmd: true
+    command_timeout_s: 0.5
+    state_publish_rate: 50.0
+    control_rate: 50.0
+    left_arm_ns: "left_arm"
+    right_arm_ns: "right_arm"
+    astral_ns: "astral"

@@ -1,0 +1,116 @@
+# astral_ws
+
+Quest3 → **Astral 双臂** + **Wuji 双手** 的 ROS 2 工作空间。  
+从 `xnero_ws-main` 迁出，**不含** Nero / XHand / pyAgxArm。
+
+```text
+Quest3 (quest3_hand_mocap, convert_to_robot:=true)
+  ├─ quest3/{left,right}_wrist_pose
+  │     → astral_quest_teleop → /{side}_arm/joint_commands
+  │           → 仿真 astral_mujoco_sim    或  真机 astral_robot_control
+  └─ hand_landmarks/{left,right}
+        → wujihand_retargeting → /{side}_hand/joint_commands
+              → 仿真 wujihand_mujoco_sim  或  真机 wujihand_control
+```
+
+臂与手两条链路独立；Quest 可同时喂两边。  
+**仿真与真机不要抢同一条 `joint_commands`。**
+
+## 包一览
+
+### 共用
+
+| 包 | 作用 |
+|----|------|
+| `quest3_hand_mocap` | Quest 腕姿 / 21 点 landmark（Wuji 用 `landmark_preprocess:=raw`） |
+| `wuji_glove` | 手套 mocap（可选） |
+
+### Astral 臂
+
+| 包 | 作用 |
+|----|------|
+| `astral_quest_teleop` | IK（`analytic_dh` / `urdf_numerical`）+ 安全滤波 |
+| `astral_robot_description` | 双臂 URDF（`astral_robot.pin.urdf`，SW 原约定） |
+| `astral_robot_control` | 真机驱动（`astral_robot_sdk`） |
+| `astral_mujoco_sim` | 双臂 MuJoCo（默认 `astral_dual.xml`） |
+| `astral_arm_description` | 单臂 URDF（查看用） |
+| `astral_arm_clean_description` | 可选干净 MDH URDF，**默认闭环不用** |
+
+空目录 `astral_analytic_ik` / `astral_urdf_ik` 是旧 C++ IK 残留，无 `package.xml`，不参与编译。
+
+### Wuji 手
+
+| 包 | 作用 |
+|----|------|
+| `wujihand_retargeting` | landmark → 20 关节 |
+| `wujihand_control` | 真机 launch 薄层 |
+| `wujihandros2` | vendored 驱动：`wujihand_driver` / `wujihand_msgs` / `wujihand_bringup` |
+| `wujihand_mujoco_sim` | 手仿真 + TuningViewer |
+
+开源 retarget 库仍可放在本仓库旁：`../wuji-retargeting`。
+
+## 构建
+
+```bash
+cd /home/robot/loopkok/sdk/astral_ws
+export PATH=/usr/bin:$PATH
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select \
+  quest3_hand_mocap \
+  astral_robot_description astral_quest_teleop astral_robot_control astral_mujoco_sim \
+  wuji_glove wujihand_retargeting wujihand_control \
+  wujihand_driver wujihand_msgs wujihand_bringup \
+  wujihand_mujoco_sim
+source install/setup.bash
+```
+
+真机臂还需：`pip install -e ../astral_robot_sdk`  
+真机手还需：`wujihandcpp` deb（见 `wujihand_control/README.md`）。  
+URDF 数值 IK：`pip install pin`。
+
+## 启动
+
+```bash
+# 臂仿真（默认 analytic_dh；节点自动 R_baseᵀ + flip_q）
+ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
+
+# 臂仿真改 URDF 数值 IK
+ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py solver_type:=urdf_numerical
+
+# 臂真机
+ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
+  with_driver:=true control_board_ip:=192.168.10.2
+
+# 手仿真 / 调参
+ros2 launch wujihand_mujoco_sim wujihand_sim_pipeline.launch.py \
+  input_source:=quest3 retarget_backend:=wuji_retargeting
+ros2 launch wujihand_mujoco_sim wujihand_tuning.launch.py \
+  input_source:=quest3 retarget_backend:=wuji_retargeting
+
+# 手真机
+ros2 launch wujihand_control wujihand_real_pipeline.launch.py \
+  input_source:=quest3 hand_side:=right retarget_backend:=wuji_retargeting
+```
+
+Quest 有线：`adb reverse tcp:8000 tcp:8000`。
+
+## IK 约定（臂）
+
+| `solver_type` | 位姿帧 | 发布的 q |
+|---------------|--------|----------|
+| `analytic_dh`（默认） | 干净 MDH 基座；yaml `vr_to_arm_rot=I` 再乘 \(R_\text{base}^\top\) | DH 约定求解后 `flip_q` 成 SW 约定 |
+| `urdf_numerical` | SW `*_base_link`；`astral_robot.pin.urdf` | 已是硬件约定，不 flip |
+
+仿真 MJCF **未改**（`astral_dual.xml`）。细节见 [`astral_quest_teleop/README.md`](src/astral_quest_teleop/README.md)。
+
+## 文档
+
+| 文件 | 内容 |
+|------|------|
+| [`src/astral_quest_teleop/README.md`](src/astral_quest_teleop/README.md) | DH / flip / `vr_to_arm_rot` |
+| [`src/astral_mujoco_sim/README.md`](src/astral_mujoco_sim/README.md) | 臂仿真 |
+| [`src/astral_robot_control/README.md`](src/astral_robot_control/README.md) | 臂真机驱动 |
+| [`src/wujihand_control/README.md`](src/wujihand_control/README.md) | 手真机 |
+| [`src/wujihand_retargeting/README.md`](src/wujihand_retargeting/README.md) | 重定向 |
+| [`src/wujihand_mujoco_sim/README.md`](src/wujihand_mujoco_sim/README.md) | 手仿真 / tuning |
+| [`WUJI_CHANGELOG.md`](WUJI_CHANGELOG.md) | Wuji 集成变更 |

@@ -1,0 +1,26 @@
+# Astral left arm — IK in left_base_link
+# Quest wrist: robot_world (convert_to_robot:=true). Default vr_to_arm_rot=I.
+astral_teleop_left:
+  ros__parameters:
+    arm_side: "left"
+    control_rate: 50.0
+    solver_type: "analytic_dh"
+
+    vr_to_arm_rot: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+    pos_smoothing: 0.8
+    rot_smoothing: 0.8
+    motion_scale: 0.65
+    flip_pitch: false
+    tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    max_joint_vel: 0.08
+    workspace_radius: 0.0
+    data_timeout: 1.5
+    dry_run: false
+    require_clench_to_start: false
+    auto_arm_on_start: true
+    use_joint_state_seed: true
+
+    init_pose: [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]

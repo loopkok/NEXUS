@@ -1,0 +1,16 @@
+# Quest3 hand mocap node parameters
+quest3_udp_mocap:
+  ros__parameters:
+    protocol: "tcp_wired"
+    udp_port: 9000
+    tcp_port: 8000
+    arm_side: "both"
+    ema_alpha: 0.7
+    viz: true
+    # XHand-only pinky stretch; leave false for Wuji (avoids Z-shaped pinky).
+    enable_xhand_pinky_adapt: false
+    # mano = legacy XHand (quest3 does MANO); raw = glove-compatible for Wuji retarget.
+    # Wuji launches override to raw so Retargeter does not double-transform.
+    landmark_preprocess: "mano"
+    # Unity LH → robot (X left, Y back, Z up). false = keep Unity (+ landmarks X flip).
+    convert_to_robot: true

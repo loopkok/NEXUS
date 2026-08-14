@@ -1,0 +1,98 @@
+# astral_robot_control
+
+ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji/XHand 风格的
+`joint_commands` / `joint_states` 话题，供后续 `astral_quest_teleop` 使用。
+
+**本包不做 IK / Quest**；只负责连接控制板、收指令、发反馈。
+
+## 话题契约
+
+18 轴顺序与 SDK `ROBOT_JOINT_NAMES` 一致：
+
+```text
+[ left_arm×7 | right_arm×7 | waist×2 | grippers×2 ]
+```
+
+| 话题 | 方向 | 内容 |
+|------|------|------|
+| `/left_arm/joint_commands` | sub | `JointState.position[7]` → `move_arm_js` |
+| `/right_arm/joint_commands` | sub | `JointState.position[7]` → `move_arm_js` |
+| `/astral/joint_commands` | sub | `JointState.position[18]` → `move_js`（有新数据时优先） |
+| `/left_arm/joint_states` | pub | 左臂 7 |
+| `/right_arm/joint_states` | pub | 右臂 7 |
+| `/astral/joint_states` | pub | 全身 18 |
+
+- QoS：**BEST_EFFORT**（SensorData）
+- 关节名可选；无名时按位置顺序；有名时按 `joint_layout.py` 对齐
+- `command_timeout_s`（默认 0.5）：超时不再下发，避免僵持旧指令
+
+左臂关节名：`left_shoulder_pitch` … `left_wrist_roll`  
+右臂：`right_shoulder_pitch` … `right_wrist_roll`
+
+## 服务
+
+| 服务 | 说明 |
+|------|------|
+| `/astral_robot_driver/ready` | `one_click_ready`（WORK→POSITION→enable→zero） |
+| `/astral_robot_driver/home` | `set_all_joints_zero` |
+| `/astral_robot_driver/estop` | `e_stop` / disable |
+
+## 依赖
+
+```bash
+# SDK（含 native）
+cd /home/robot/loopkok/sdk/astral_robot_sdk
+pip install -e .
+
+cd /home/robot/loopkok/sdk/astral_ws
+export PATH=/usr/bin:$PATH
+source /opt/ros/humble/setup.bash
+colcon build --packages-select astral_robot_control --symlink-install
+source install/setup.bash
+```
+
+## 启动
+
+```bash
+# 无硬件冒烟（只打日志）
+ros2 launch astral_robot_control astral_drivers.launch.py dry_run:=true
+
+# 真机
+ros2 launch astral_robot_control astral_drivers.launch.py \
+  control_board_ip:=192.168.10.2 local_port:=8081
+```
+
+手动发指令：
+
+```bash
+ros2 topic pub --once /left_arm/joint_commands sensor_msgs/msg/JointState \
+  "{name: [left_shoulder_pitch,left_shoulder_roll,left_elbow_roll,left_elbow_pitch,left_forearm_roll,left_wrist_pitch,left_wrist_roll],
+    position: [0.1,0,0,-0.1,0,0,0]}"
+```
+
+看反馈：
+
+```bash
+ros2 topic hz /astral/joint_states
+ros2 topic echo /left_arm/joint_states --once
+```
+
+## 参数
+
+见 `config/astral_robot.yaml`。常用：`control_board_ip`、`local_port`、`dry_run`、`auto_ready`、`control_rate` / `state_publish_rate`。
+
+## 与遥操
+
+全链路见 [`astral_quest_teleop`](../astral_quest_teleop/README.md)：
+
+```bash
+ros2 launch astral_quest_teleop astral_real_pipeline.launch.py dry_run:=true
+```
+
+```text
+quest3 / IK  →  /{left,right}_arm/joint_commands
+                     ↓
+              astral_robot_driver  →  astral_robot_sdk  →  板
+                     ↓
+              /{left,right,astral}/joint_states
+```

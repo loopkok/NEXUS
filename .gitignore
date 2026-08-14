@@ -1,0 +1,26 @@
+# ==================== ROS 2 colcon ====================
+build/
+install/
+log/
+CMakeFiles/
+
+# ==================== Python ====================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# ==================== IDE / OS ====================
+.vscode/
+.idea/
+.DS_Store
+*~
+*.swp
+
+# ==================== venv / conda ====================
+venv/
+.venv/
+.env/
+.conda/

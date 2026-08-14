@@ -1,0 +1,10 @@
+astral_mujoco_sim_node:
+  ros__parameters:
+    mjcf_path: ""
+    enable_viewer: true
+    realtime: true
+    publish_joint_states: true
+    state_rate: 50.0
+    fps_print_interval: 5.0
+    init_pose_left:  [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
+    init_pose_right: [0.32, -0.11, 0.53, -0.80, 0.28, 0.00, 0.00]

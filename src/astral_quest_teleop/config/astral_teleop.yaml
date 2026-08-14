@@ -1,0 +1,59 @@
+# Astral Quest3 dual-arm teleop (legacy both-arms-in-one-node).
+# Prefer: astral_teleop_{left,right}.yaml + astral_dual_arm_teleop.launch.py
+#
+# Frames:
+#   mocap: convert_to_robot:=true → quest3 wrist in robot_world
+#          (X left, Y back, Z up)
+#   PoseProcessor: vr_to_arm_rot_* maps deltas → arm *_base_link (default I)
+#   analytic_dh IK → left_base_link / right_base_link
+
+astral_teleop:
+  ros__parameters:
+    arm_side: "both"
+    control_rate: 50.0
+
+    # analytic_dh (Nero closed-form) | urdf_numerical
+    solver_type: "analytic_dh"
+    urdf_path: ""
+    ik_max_iter: 20
+    ik_tol: 0.00000001
+    ik_w_pos: 1.0
+    ik_w_ori: 0.3
+    ik_w_reg: 0.0001
+
+    # robot_world → arm base (I if already aligned)
+    robot_world_to_base_rot: [1.0, 0.0, 0.0,
+                              0.0, 1.0, 0.0,
+                              0.0, 0.0, 1.0]
+    vr_to_arm_rot_left:  [1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0]
+    vr_to_arm_rot_right: [1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0]
+
+    pos_smoothing: 0.8
+    rot_smoothing: 0.8
+    motion_scale: 0.65
+    flip_pitch: false
+    tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # ---- Safety ----
+    max_joint_vel: 0.08
+    workspace_radius: 0.0
+    workspace_x_min: -.inf
+    workspace_x_max: .inf
+    workspace_y_min: -.inf
+    workspace_y_max: .inf
+    workspace_z_min: -.inf
+    workspace_z_max: .inf
+    data_timeout: 1.5
+
+    dry_run: false
+    require_clench_to_start: false
+    auto_arm_on_start: true
+    use_joint_state_seed: true
+
+    # Bent-elbow seeds (analytic DH workspace); not q=0
+    init_pose_left:  [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
+    init_pose_right: [0.32, -0.11, 0.53, -0.80, 0.28, 0.00, 0.00]
