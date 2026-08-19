@@ -6,7 +6,7 @@ Quest3 VR 手部追踪 + 头部位姿数据接收节点。支持 UDP / TCP 有�
 
 ## 功能
 
-接收 Quest3 HTS 的手部 landmark（21×3）、腕部位姿、头部（HMD）位姿，以及 Movement SDK **IOBT High** 全身关节（不含手）。腕和手指仍走 Hand Tracking。
+接收 Quest3 HTS 的手部 landmark（21×3）、腕部位姿、头部（HMD）位姿，发布 ROS2 话题。
 
 **下游（本工作空间 `astral_ws`）：**
 
@@ -19,11 +19,9 @@ Quest3 VR 手部追踪 + 头部位姿数据接收节点。支持 UDP / TCP 有�
 
 ```text
 robot_world|vr_world (convert_to_robot 时为 X左 Y后 Z上)
- ├── head          ← quest3/head_pose          （HMD，不是 IOBT 头骨）
- ├── wrist         ← quest3/{side}_wrist_pose  （Hand Tracking）
- ├── landmarks     ← hand_landmarks/{side}
- ├── hips          ← quest3/hips_pose          （Movement SDK IOBT High）
- └── body_joints   ← quest3/body_joints
+ ├── head          ← quest3/head_pose
+ ├── wrist         ← quest3/{side}_wrist_pose（与 head 同世界系，不再相对头）
+ └── landmarks    ← hand_landmarks/{side}（腕局部 + raw|mano + EMA）
 ```
 
 **Unity → 机器人轴（`convert_to_robot:=true` 时）：**
@@ -83,12 +81,7 @@ Quest3 HTS (Unity LH)
 | `quest3/left_wrist_pose` | PoseStamped | `robot_world`/`vr_world` | 左手腕，世界系 |
 | `quest3/right_wrist_pose` | PoseStamped | `robot_world`/`vr_world` | 右手腕，世界系 |
 | `quest3/head_pose` | PoseStamped | `robot_world`/`vr_world` | HMD，世界系 |
-| `quest3/body_joints` | PoseArray | 同上 | Movement SDK IOBT（不含手） |
-| `quest3/body_joint_names` | String JSON | — | 与 `body_joints` 同序 |
-| `quest3/hips_pose` | PoseStamped | 同上 | IOBT 髋 |
 | `quest3/{side}_hand_markers` | MarkerArray | `world` | RViz（可选） |
-
-HTS 需 **重新打 APK**。支持混控：握着的一侧发 Touch 6DoF → `/quest3/{side}_wrist_pose`（无 21 点）；放下的一侧仍是 Hand Tracking 腕 + landmarks。HUD：`HTS mix L=ctrl R=hand`。IOBT High 仍开着（未启用 SimultaneousHandsAndControllers）。
 
 ## 参数
 

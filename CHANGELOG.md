@@ -9,6 +9,7 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 相对 `f6300cf` 的未提交改动一并入库。当日另做：
 
 - **移出 WebXR**：`astral_webxr` 不再在本工作空间内（现位于 `../astral_webxr`）。臂/手 pipeline 去掉 `input_source:=webxr`，只走 HTS `quest3_udp_mocap`。
+- **撤回 PC 端 IOBT/混控**：`quest3_udp_mocap` 不再解析 `body iobt` / `controller` 行，也不再发 `quest3/body_joints`、`hips_pose`。Quest HTS 工程里的 IOBT/混控代码未改。
 
 ## 2026-08-17
 
@@ -36,11 +37,6 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 - `move_to_init_pose` 默认开：从当前 `joint_states` 按 `init_speed_percent`（10% × `max_joint_vel`）关节空间插值到 yaml `init_pose`，到位（0.05 rad）或超时 15 s 后再跟手。
 - `init_speed_percent` 是本节点相对 `max_joint_vel` 的比例，**不是** SDK `set_speed_percent` / `move_j`。
 - `dry_run` 跳过 homing。
-
-### HTS：IOBT 与手柄混控
-
-- `quest3_udp_mocap` 解析 Movement SDK IOBT → `quest3/body_joints`、`quest3/body_joint_names`、`quest3/hips_pose`（腕/手指仍走 Hand Tracking）。
-- 混控：握着的一侧发 Touch 6DoF（`Left/Right controller:`）到 `/quest3/{side}_wrist_pose`；放下的一侧仍是人手腕 + 21 点。未开 SimultaneousHandsAndControllers，以免关掉 IOBT。
 
 ## 2026-08-14
 
