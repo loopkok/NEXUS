@@ -22,7 +22,7 @@ Quest3 (quest3_hand_mocap, convert_to_robot:=true)
 
 | 包 | 作用 |
 |----|------|
-| `quest3_hand_mocap` | Quest 腕姿 / 21 点 landmark（Wuji 用 `landmark_preprocess:=raw`） |
+| `quest3_hand_mocap` | Quest HTS 腕姿 / 21 点 landmark（Wuji 用 `landmark_preprocess:=raw`） |
 | `wuji_glove` | 手套 mocap（可选） |
 
 ### Astral 臂
@@ -71,11 +71,11 @@ URDF 数值 IK：`pip install pin`。
 ## 启动
 
 ```bash
-# 臂仿真（默认 analytic_dh；节点自动 R_baseᵀ + flip_q）
+# 臂仿真（求解器 / 协议在 yaml，默认 URDF IK + HTS 有线 TCP）
 ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
 
-# 臂仿真改 URDF 数值 IK
-ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py solver_type:=urdf_numerical
+# 臂仿真改 DH：把 astral_teleop_{left,right}.yaml 的 solver_type 改成 analytic_dh
+# 臂仿真改 UDP：把 quest3_mocap.yaml 的 protocol 改成 udp
 
 # 臂真机
 ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
@@ -92,14 +92,14 @@ ros2 launch wujihand_control wujihand_real_pipeline.launch.py \
   input_source:=quest3 hand_side:=right retarget_backend:=wuji_retargeting
 ```
 
-Quest 有线：`adb reverse tcp:8000 tcp:8000`。
+Quest 有线 HTS：`adb reverse tcp:8000 tcp:8000`。
 
 ## IK 约定（臂）
 
 | `solver_type` | 位姿帧 | 发布的 q |
 |---------------|--------|----------|
-| `analytic_dh`（默认） | 干净 MDH 基座；yaml `vr_to_arm_rot=I` 再乘 \(R_\text{base}^\top\) | DH 约定求解后 `flip_q` 成 SW 约定 |
-| `urdf_numerical` | SW `*_base_link`；`astral_robot.pin.urdf` | 已是硬件约定，不 flip |
+| `analytic_dh` | 干净 MDH 基座；yaml `vr_to_arm_rot=I` 再乘 \(R_\text{base}^\top\) | DH 约定求解后 `flip_q` 成 SW 约定 |
+| `urdf_numerical`（yaml 默认） | SW `*_base_link`；`astral_robot.pin.urdf` | 已是硬件约定，不 flip |
 
 仿真 MJCF **未改**（`astral_dual.xml`）。细节见 [`astral_quest_teleop/README.md`](src/astral_quest_teleop/README.md)。
 

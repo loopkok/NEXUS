@@ -54,11 +54,11 @@ source install/setup.bash
 # 仅仿真（另开终端发 joint_commands 或 keyboard_vr_sim + teleop）
 ros2 launch astral_mujoco_sim astral_mujoco_sim.launch.py
 
-# Quest 遥操 → MuJoCo（默认 analytic_dh；arm_node 自动 R_baseᵀ + flip）
+# Quest 遥操 → MuJoCo（solver / protocol 在 yaml，默认 urdf_numerical + tcp_wired）
 ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
 
-# 同管线改用 URDF 数值 IK（astral_robot.pin.urdf，与本 MJCF 同源）
-ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py solver_type:=urdf_numerical
+# 一次性覆盖求解器或协议（不改 yaml）
+ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py solver_type:=analytic_dh
 ```
 
 键盘假 VR：

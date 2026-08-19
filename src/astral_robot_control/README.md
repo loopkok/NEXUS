@@ -86,7 +86,8 @@ ros2 topic echo /left_arm/joint_states --once
 全链路见 [`astral_quest_teleop`](../astral_quest_teleop/README.md)：
 
 ```bash
-ros2 launch astral_quest_teleop astral_real_pipeline.launch.py dry_run:=true
+ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
+  with_driver:=true control_board_ip:=192.168.10.2
 ```
 
 ```text

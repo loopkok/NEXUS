@@ -89,7 +89,7 @@ class AstralTeleopArmNode(Node):
         super().__init__("astral_teleop_arm")
         self.declare_parameter("arm_side", "left")
         self.declare_parameter("control_rate", 50.0)
-        self.declare_parameter("solver_type", "analytic_dh")
+        self.declare_parameter("solver_type", "urdf_numerical")
         self.declare_parameter("urdf_path", "")  # empty → astral_robot.pin.urdf
         self.declare_parameter("ik_max_iter", 20)
         self.declare_parameter("ik_tol", 1e-8)
@@ -115,6 +115,10 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
         )
+        self.declare_parameter("move_to_init_pose", True)
+        self.declare_parameter("init_speed_percent", 10)  # of max_joint_vel
+        self.declare_parameter("init_arrive_tol", 0.05)  # rad
+        self.declare_parameter("init_timeout", 15.0)
         self.declare_parameter("print_latency", True)
         self.declare_parameter("latency_print_interval", 2.0)
         self.declare_parameter("publish_tune", True)
@@ -160,7 +164,21 @@ class AstralTeleopArmNode(Node):
         self.robot_init_pos = T0[:3, 3].copy()
         self.robot_init_rot = T0[:3, :3].copy()
         self.q_cmd = self._flip_q(init_q)  # back to hardware convention
+        self._init_q_hw = self.q_cmd.copy()
         self.state_q = self.q_cmd.copy()
+        self._got_state = False
+        self._homing = bool(self.get_parameter("move_to_init_pose").value) and (
+            not self.dry_run
+        )
+        vmax = float(self.get_parameter("max_joint_vel").value)
+        pct = max(1.0, float(self.get_parameter("init_speed_percent").value))
+        self._init_joint_vel = vmax * (pct / 100.0)
+        self._init_arrive_tol = float(self.get_parameter("init_arrive_tol").value)
+        self._init_timeout = float(self.get_parameter("init_timeout").value)
+        self._homing_t0 = 0.0
+        self._homing_last_log = 0.0
+        self._homing_started = False
+        self._homing_seeded = False
 
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
@@ -218,7 +236,7 @@ class AstralTeleopArmNode(Node):
         self.create_subscription(
             PoseStamped, f"quest3/{self.side}_wrist_pose", self._on_wrist, 10
         )
-        if bool(self.get_parameter("use_joint_state_seed").value):
+        if self._homing or bool(self.get_parameter("use_joint_state_seed").value):
             self.create_subscription(
                 JointState,
                 f"/{self.side}_arm/joint_states",
@@ -241,10 +259,16 @@ class AstralTeleopArmNode(Node):
         )
         self.create_timer(self.dt, self._loop)
         solver_name = getattr(self.ik, "method_name", type(self.ik).__name__)
+        home_msg = (
+            f"homing→init at {self._init_joint_vel:.2f} rad/s "
+            f"({self.get_parameter('init_speed_percent').value}%)"
+            if self._homing
+            else "homing off"
+        )
         self.get_logger().info(
             f"Astral arm teleop: {self.side} solver={solver_name} "
             f"EE0={np.round(self.robot_init_pos, 3).tolist()} "
-            f"scale={self.pose.motion_scale} dry_run={self.dry_run}"
+            f"scale={self.pose.motion_scale} dry_run={self.dry_run} {home_msg}"
         )
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
@@ -292,6 +316,8 @@ class AstralTeleopArmNode(Node):
                     "vr_to_arm_rot",
                     "tcp_offset",
                     "control_rate",
+                    "move_to_init_pose",
+                    "init_speed_percent",
                 ):
                     result.successful = False
                     result.reason = f"{name} cannot be changed at runtime"
@@ -386,8 +412,11 @@ class AstralTeleopArmNode(Node):
     def _on_state(self, msg: JointState) -> None:
         if len(msg.position) >= 7:
             self.state_q = np.asarray(msg.position[:7], dtype=float)
+            self._got_state = True
 
     def _on_wrist(self, msg: PoseStamped) -> None:
+        if self._homing:
+            return
         pos = np.array(
             [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
         )
@@ -411,6 +440,9 @@ class AstralTeleopArmNode(Node):
         now = time.monotonic()
         dt = max(1e-3, now - self._prev_t)
         self._prev_t = now
+        if self._homing:
+            self._homing_tick(now, dt)
+            return
         if not self._armed or not self.pose.is_calibrated:
             self._maybe_log_latency()
             return
@@ -451,8 +483,11 @@ class AstralTeleopArmNode(Node):
         if self.dry_run:
             self._maybe_log_latency()
             return
+        self._publish_q()
+        self._maybe_log_latency()
+
+    def _publish_q(self) -> None:
         msg = JointState()
-        # Propagate VR packet arrival so sim can measure e2e (PC recv → apply).
         msg.header.stamp = (
             self._last_vr_stamp
             if self._last_vr_stamp is not None
@@ -461,7 +496,75 @@ class AstralTeleopArmNode(Node):
         msg.name = list(self.names)
         msg.position = self.q_cmd.tolist()
         self.cmd_pub.publish(msg)
-        self._maybe_log_latency()
+
+    def _finish_homing(self, now: float, reason: str) -> None:
+        self.q_cmd = self._init_q_hw.copy()
+        self.safety.set_initial_state(self._flip_q(self.q_cmd), self.robot_init_pos)
+        self.pose.reset()
+        self._homing = False
+        elapsed = now - self._homing_t0 if self._homing_t0 else 0.0
+        self.get_logger().warn(
+            f"[{self.side}] Initial pose reached ({reason}, {elapsed:.1f}s). "
+            "Hold VR still, then move."
+        )
+
+    def _homing_tick(self, now: float, dt: float) -> None:
+        """Slow joint-space approach to yaml init_pose (Nero move_j equivalent)."""
+        if not self._homing_started:
+            self._homing_started = True
+            self._homing_t0 = now
+            self._homing_last_log = now
+            self.get_logger().warn(
+                f"[{self.side}] Moving to initial pose at "
+                f"{self._init_joint_vel:.2f} rad/s: "
+                f"{np.round(self._init_q_hw, 3).tolist()}"
+            )
+
+        elapsed = now - self._homing_t0
+        dt = min(float(dt), 0.05)
+        if not self._homing_seeded:
+            if not self._got_state:
+                if elapsed < 3.0:
+                    return
+                self.get_logger().warn(
+                    f"[{self.side}] No joint_states after 3s; homing from zeros"
+                )
+                self.q_cmd = np.zeros(7, dtype=float)
+            else:
+                self.q_cmd = self.state_q.copy()
+            self.safety.set_initial_state(
+                self._flip_q(self.q_cmd), self.robot_init_pos
+            )
+            self._homing_seeded = True
+
+        err = self._init_q_hw - self.q_cmd
+        max_abs = float(np.max(np.abs(err)))
+        if now - self._homing_last_log >= 2.0:
+            self.get_logger().info(
+                f"[{self.side}] Init pose approach: error={max_abs:.3f} rad, "
+                f"elapsed={elapsed:.1f}s"
+            )
+            self._homing_last_log = now
+
+        if max_abs < self._init_arrive_tol:
+            self._finish_homing(now, "arrived")
+            self._publish_q()
+            return
+        if elapsed >= self._init_timeout:
+            self.get_logger().warn(
+                f"[{self.side}] Init pose timeout ({self._init_timeout:.0f}s), "
+                f"error={max_abs:.3f} rad — VR zero uses current q"
+            )
+            T0 = self.ik.fk(self._flip_q(self.q_cmd))
+            self.robot_init_pos = T0[:3, 3].copy()
+            self.robot_init_rot = T0[:3, :3].copy()
+            self._init_q_hw = self.q_cmd.copy()
+            self._finish_homing(now, "timeout")
+            return
+
+        max_d = self._init_joint_vel * dt
+        self.q_cmd = self.q_cmd + np.clip(err, -max_d, max_d)
+        self._publish_q()
 
     def _pose_msg(self, T: np.ndarray, stamp) -> PoseStamped:
         msg = PoseStamped()

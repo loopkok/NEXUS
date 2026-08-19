@@ -204,7 +204,7 @@ class TeleopTunePlot(Node):
             "save": save,
         }
 
-    def metrics(self, snap: dict) -> str:
+    def compute_metrics(self, snap: dict) -> dict:
         t = snap["t"]
         vr, filt, cmd = snap["vr"], snap["filt"], snap["cmd"]
         dt = float(np.median(np.diff(t))) if t.size > 2 else 0.007
@@ -222,48 +222,40 @@ class TeleopTunePlot(Node):
         cmd_std = float(np.linalg.norm(cmd[m2].std(axis=0)))
         hold = vr_std < 2.0
         jitter = cmd_std if hold else float("nan")
-
         axis = int(np.argmax(vr[m2].std(axis=0)))
         lag = _xcorr_lag_ms(vr[m2, axis], cmd[m2, axis], max(dt, 1e-4))
-
-        ori = "n/a"
+        ori = None
         if snap["zero_R"] is not None:
             try:
                 r0 = snap["zero_R"]
                 ev = Rotation.from_quat(snap["vr_q"][m2])
                 ec = Rotation.from_quat(snap["cmd_q"][m2])
                 ang = (r0.inv() * ev).inv() * (r0.inv() * ec)
-                deg = np.degrees(ang.magnitude())
-                ori = f"{float(np.sqrt(np.mean(deg**2))):.2f} deg"
+                ori = float(np.sqrt(np.mean(np.degrees(ang.magnitude()) ** 2)))
             except Exception:  # noqa: BLE001
-                ori = "n/a"
-
-        lag_s = "n/a" if lag is None else f"{lag:.0f} ms"
-        jit_s = f"{jitter:.2f} mm" if hold else f"n/a (hand std {vr_std:.2f} mm)"
-        lines = [
-            f"arm  {self.side}    window {self.window_sec:.0f}s    last {self.metric_sec:.1f}s",
-            f"pos err RMS   {rms:6.2f} mm",
-            f"pos err p95   {p95:6.2f} mm",
-            f"IK err RMS    {ik_rms:6.2f} mm   (filt vs EE)",
-            f"hold jitter   {jit_s}",
-            f"lag (xcorr)   {lag_s}   (+ = EE behind hand)",
-            f"ori err RMS   {ori}",
-            "",
-            self._param_status,
-            "",
-            "z re-zero   s save csv   q quit",
-        ]
-        text = "\n".join(lines)
+                ori = None
+        lag_s = "—" if lag is None else f"{lag:.0f} ms"
+        jit_s = (
+            f"{jitter:.2f} mm" if hold else f"—  手在动 {vr_std:.1f} mm"
+        )
+        ori_s = "—" if ori is None else f"{ori:.2f}°"
         now = time.monotonic()
         if now - self._last_metric_print > 2.0:
             self._last_metric_print = now
             extra = f"  HOLD jitter={jitter:.2f}mm" if hold else ""
             self.get_logger().info(
                 f"[Tune][{self.side}] pos_rms={rms:.2f}mm p95={p95:.2f}mm "
-                f"ik_rms={ik_rms:.2f}mm lag={lag_s} ori={ori}{extra}"
+                f"ik_rms={ik_rms:.2f}mm lag={lag_s} ori={ori_s}{extra}"
             )
-        self._metric_text = text
-        return text
+        return {
+            "rms": f"{rms:.2f} mm",
+            "p95": f"{p95:.2f} mm",
+            "ik": f"{ik_rms:.2f} mm",
+            "jitter": jit_s,
+            "lag": lag_s,
+            "ori": ori_s,
+            "status": self._param_status,
+        }
 
     def save_csv(self, snap: dict) -> None:
         self.save_dir.mkdir(parents=True, exist_ok=True)
@@ -414,157 +406,410 @@ class TeleopTunePlot(Node):
             self.get_logger().info(self._param_status)
 
 
+def _pick_cjk_font():
+    from matplotlib import font_manager as fm
+
+    candidates = [
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Black.ttc",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
+    ]
+    for path in candidates:
+        if not Path(path).is_file():
+            continue
+        try:
+            fm.fontManager.addfont(path)
+        except Exception:  # noqa: BLE001
+            pass
+        return fm.FontProperties(fname=path).get_name()
+    return None
+
+
+_COL = {
+    "bg": "#F3F4F6",
+    "card": "#FFFFFF",
+    "ink": "#111827",
+    "muted": "#6B7280",
+    "line": "#E5E7EB",
+    "hand": "#2563EB",
+    "filt": "#B45309",
+    "ee": "#047857",
+    "err": "#DC2626",
+    "accent": "#2563EB",
+    "on": "#111827",
+}
+
+
+def _style_plot_ax(ax) -> None:
+    ax.set_facecolor(_COL["card"])
+    ax.tick_params(colors=_COL["muted"], labelsize=8, length=3)
+    ax.yaxis.label.set_color(_COL["ink"])
+    ax.xaxis.label.set_color(_COL["muted"])
+    for name, spine in ax.spines.items():
+        spine.set_color(_COL["line"])
+        if name in ("top", "right"):
+            spine.set_visible(False)
+    ax.grid(True, color=_COL["line"], linewidth=0.8, alpha=1.0)
+    ax.set_axisbelow(True)
+
+
+def _style_card(ax) -> None:
+    ax.set_facecolor(_COL["card"])
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_color(_COL["line"])
+        spine.set_linewidth(1.0)
+
+
+def _style_slider(sl, color: str) -> None:
+    sl.poly.set_fc(color)
+    try:
+        sl.track.set_facecolor("#E5E7EB")
+        sl.track.set_edgecolor(_COL["line"])
+    except Exception:  # noqa: BLE001
+        pass
+    sl.valtext.set_color(_COL["ink"])
+    sl.valtext.set_fontsize(8)
+    sl.ax.set_facecolor(_COL["card"])
+    for spine in sl.ax.spines.values():
+        spine.set_visible(False)
+
+
 def _run_plot(node: TeleopTunePlot) -> None:
     try:
         import matplotlib.pyplot as plt
         from matplotlib.animation import FuncAnimation
-        from matplotlib.widgets import CheckButtons, RadioButtons, Slider
+        from matplotlib.ticker import MultipleLocator
+        from matplotlib.widgets import Button, Slider
     except ImportError as exc:
         raise SystemExit("need matplotlib: pip install matplotlib") from exc
 
     init = node.fetch_params()
+    font_name = _pick_cjk_font()
     plt.rcParams.update(
         {
             "font.size": 10,
-            "axes.grid": True,
-            "grid.alpha": 0.35,
+            "font.family": "sans-serif",
+            "font.sans-serif": [font_name, "DejaVu Sans"]
+            if font_name
+            else ["DejaVu Sans"],
+            "axes.unicode_minus": False,
+            "figure.facecolor": _COL["bg"],
+            "axes.facecolor": _COL["card"],
+            "text.color": _COL["ink"],
         }
     )
-    fig, axes = plt.subplots(
-        4,
+
+    fig = plt.figure(figsize=(14.6, 9.2), dpi=110)
+    fig.canvas.manager.set_window_title(f"Astral 跟手调参 · {node.side}")
+    fig.patch.set_facecolor(_COL["bg"])
+
+    gs = fig.add_gridspec(
+        2,
         1,
-        sharex=True,
-        figsize=(13, 10.2),
-        gridspec_kw={"height_ratios": [1, 1, 1, 0.7]},
+        height_ratios=[2.55, 1.15],
+        hspace=0.16,
+        left=0.045,
+        right=0.975,
+        top=0.955,
+        bottom=0.045,
     )
-    fig.canvas.manager.set_window_title(f"teleop tune · {node.side}")
-    labels = ["X (mm)", "Y (mm)", "Z (mm)", "|pos err| (mm)"]
+    gs_top = gs[0].subgridspec(1, 2, width_ratios=[3.35, 1.0], wspace=0.10)
+    gs_plots = gs_top[0].subgridspec(4, 1, hspace=0.10)
+    gs_bot = gs[1].subgridspec(1, 3, width_ratios=[1.2, 1.2, 0.72], wspace=0.10)
+
+    axes = [fig.add_subplot(gs_plots[i]) for i in range(4)]
+    for ax in axes[1:]:
+        ax.sharex(axes[0])
+    ylabels = ["X  mm", "Y  mm", "Z  mm", "误差  mm"]
     lines = []
-    for ax, lab in zip(axes, labels):
-        ax.set_ylabel(lab)
-        if lab.startswith("|"):
-            (le,) = ax.plot([], [], color="C3", lw=1.2, label="|hand − EE|")
-            lines.append((le,))
-        else:
-            (l0,) = ax.plot([], [], color="C0", lw=1.4, label="手 VR映射")
+    for i, (ax, ylab) in enumerate(zip(axes, ylabels)):
+        _style_plot_ax(ax)
+        ax.set_ylabel(ylab, fontsize=9)
+        if i < 3:
+            (l0,) = ax.plot([], [], color=_COL["hand"], lw=1.7, label="手  VR")
             (l1,) = ax.plot(
-                [], [], color="C1", lw=1.1, ls="--", label="滤波目标"
+                [],
+                [],
+                color=_COL["filt"],
+                lw=1.2,
+                ls=(0, (4, 2)),
+                label="滤波目标",
             )
-            (l2,) = ax.plot([], [], color="C2", lw=1.4, label="末端 EE")
+            (l2,) = ax.plot([], [], color=_COL["ee"], lw=1.7, label="末端  EE")
             lines.append((l0, l1, l2))
-    axes[0].legend(loc="upper right", ncol=3, fontsize=9)
-    axes[-1].set_xlabel("time (s)  ·  0 = now")
-    fig.suptitle(
-        f"{node.side} arm  ·  DH/URDF + live sliders",
-        fontsize=12,
+        else:
+            (le,) = ax.plot([], [], color=_COL["err"], lw=1.5, label="|手 − 末端|")
+            lines.append((le,))
+        ax.set_autoscalex_on(False)
+        ax.set_xlim(-float(node.window_sec), 0.0)
+        ax.xaxis.set_major_locator(MultipleLocator(1.0))
+    axes[-1].set_xlabel(
+        "时间（秒）    左 = 过去    右 0 = 现在",
+        fontsize=8,
+        color=_COL["muted"],
     )
-    stats = fig.text(
-        0.99,
-        0.68,
-        node._metric_text,
-        va="center",
-        ha="right",
-        family="monospace",
+    for ax in axes[:-1]:
+        ax.tick_params(labelbottom=False)
+
+    fig.legend(
+        [lines[0][0], lines[0][1], lines[0][2], lines[3][0]],
+        ["手  VR", "滤波目标", "末端  EE", "|手 − 末端|"],
+        loc="upper left",
+        bbox_to_anchor=(0.045, 0.995),
+        ncol=4,
+        frameon=False,
         fontsize=9,
-        transform=fig.transFigure,
-        bbox={"facecolor": "white", "edgecolor": "#ccc", "pad": 6},
+        handlelength=1.8,
+        columnspacing=1.4,
     )
-    fig.subplots_adjust(
-        right=0.72, hspace=0.08, left=0.10, top=0.94, bottom=0.40
+    fig.text(
+        0.62,
+        0.975,
+        f"{'左臂' if node.side == 'left' else '右臂'}    窗口 {node.window_sec:.0f}s",
+        ha="right",
+        va="center",
+        fontsize=11,
+        color=_COL["ink"],
+        fontweight="bold",
     )
 
-    st0 = str(init.get("solver_type", "analytic_dh")).lower()
-    ax_radio = fig.add_axes([0.08, 0.02, 0.22, 0.10])
-    radio = RadioButtons(
-        ax_radio,
-        ("DH analytic", "URDF LM"),
-        active=1 if "urdf" in st0 else 0,
+    ax_side = fig.add_subplot(gs_top[1])
+    _style_card(ax_side)
+    ax_side.text(
+        0.08,
+        0.955,
+        "指标",
+        fontsize=13,
+        fontweight="bold",
+        color=_COL["ink"],
+        transform=ax_side.transAxes,
     )
-
-    def _on_solver(label: str) -> None:
-        name = "urdf_numerical" if label.startswith("URDF") else "analytic_dh"
-        node.queue_param("solver_type", name)
-        node.get_logger().info(f"queue solver_type={name}")
-
-    radio.on_clicked(_on_solver)
-
-    feel_specs = [
-        ("pos_smoothing", "pos_smooth", 0.0, 0.99, 0.01, "%.2f"),
-        ("rot_smoothing", "rot_smooth", 0.0, 0.99, 0.01, "%.2f"),
-        ("motion_scale", "motion_scale", 0.10, 1.50, 0.01, "%.2f"),
-        ("max_joint_vel", "max_vel rad/s", 0.50, 12.0, 0.05, "%.2f"),
+    ax_side.text(
+        0.08,
+        0.905,
+        f"最近 {node.metric_sec:.0f}s    正 lag = 末端落后",
+        fontsize=8,
+        color=_COL["muted"],
+        transform=ax_side.transAxes,
+    )
+    metric_rows = [
+        ("rms", "位置误差 RMS"),
+        ("p95", "位置误差 p95"),
+        ("ik", "IK 误差 RMS"),
+        ("jitter", "静持抖动"),
+        ("lag", "滞后 lag"),
+        ("ori", "姿态误差"),
     ]
-    urdf_specs = [
-        ("ik_w_pos", "ik_w_pos", 0.05, 3.0, 0.05, "%.2f"),
-        ("ik_w_ori", "ik_w_ori", 0.0, 2.0, 0.05, "%.2f"),
-        ("ik_max_iter", "ik_max_iter", 5.0, 50.0, 1.0, "%.0f"),
-    ]
+    metric_vals = {}
+    y0 = 0.80
+    for i, (key, label) in enumerate(metric_rows):
+        y = y0 - i * 0.095
+        ax_side.text(
+            0.08,
+            y,
+            label,
+            fontsize=8,
+            color=_COL["muted"],
+            transform=ax_side.transAxes,
+            va="center",
+        )
+        metric_vals[key] = ax_side.text(
+            0.92,
+            y - 0.028,
+            "—",
+            fontsize=13,
+            color=_COL["ink"],
+            transform=ax_side.transAxes,
+            ha="right",
+            va="center",
+            fontweight="bold",
+        )
+    status_txt = ax_side.text(
+        0.08,
+        0.08,
+        "等待 /teleop/.../tune/xyz",
+        fontsize=7.5,
+        color=_COL["muted"],
+        transform=ax_side.transAxes,
+        va="bottom",
+        wrap=True,
+    )
+    ax_side.text(
+        0.08,
+        0.025,
+        "Z 清零    S 存 CSV    Q 退出",
+        fontsize=8,
+        color=_COL["muted"],
+        transform=ax_side.transAxes,
+        va="bottom",
+    )
+
+    def _section(parent_gs, title: str, hint: str, n_sliders: int):
+        ratios = [0.65] + [1.0] * n_sliders
+        inner = parent_gs.subgridspec(
+            1 + n_sliders, 1, height_ratios=ratios, hspace=0.42
+        )
+        ax_h = fig.add_subplot(inner[0])
+        ax_h.set_facecolor(_COL["bg"])
+        ax_h.axis("off")
+        ax_h.text(0.0, 0.72, title, fontsize=11, fontweight="bold", color=_COL["ink"])
+        ax_h.text(0.0, 0.08, hint, fontsize=8, color=_COL["muted"])
+        return inner
+
+    gs_feel = _section(gs_bot[0], "手感", "DH 与 URDF 都生效", 4)
+    gs_urdf = _section(gs_bot[1], "URDF 数值 IK", "DH 闭式会忽略这些", 5)
+    gs_act = gs_bot[2].subgridspec(6, 1, height_ratios=[0.7, 1, 1, 1, 1, 1], hspace=0.45)
+
     sliders = []
 
-    def _add_slider(name, label, vmin, vmax, step, fmt, x, y, w=0.28):
-        ax_s = fig.add_axes([x, y, w, 0.025])
-        sl = Slider(
-            ax_s,
-            label,
-            vmin,
-            vmax,
-            valinit=float(np.clip(float(init.get(name, vmin)), vmin, vmax)),
-            valstep=step,
-            valfmt=fmt,
-        )
-        sl.on_changed(lambda val, n=name: node.queue_param(n, val))
+    def _add_slider(parent, row, name, title, vmin, vmax, step, fmt, color, transform=None):
+        cell = parent[row].subgridspec(1, 2, width_ratios=[0.42, 0.58], wspace=0.08)
+        ax_l = fig.add_subplot(cell[0, 0])
+        ax_l.set_facecolor(_COL["bg"])
+        ax_l.axis("off")
+        ax_l.text(0.0, 0.5, title, va="center", ha="left", fontsize=9, color=_COL["ink"])
+        ax_s = fig.add_subplot(cell[0, 1])
+        val0 = float(init.get(name, vmin))
+        if transform == "log10":
+            val0 = float(np.clip(np.log10(max(val0, 10**vmin)), vmin, vmax))
+        else:
+            val0 = float(np.clip(val0, vmin, vmax))
+        sl = Slider(ax_s, "", vmin, vmax, valinit=val0, valstep=step, valfmt=fmt)
+        _style_slider(sl, color)
+        if transform == "log10":
+            sl.on_changed(lambda v, n=name: node.queue_param(n, 10.0 ** float(v)))
+        else:
+            sl.on_changed(lambda v, n=name: node.queue_param(n, v))
         sliders.append(sl)
         return sl
 
-    for i, spec in enumerate(feel_specs):
-        _add_slider(*spec, 0.16, 0.34 - i * 0.038)
-    fig.text(0.08, 0.355, "feel (DH+URDF)", fontsize=9, color="#444")
-    for i, spec in enumerate(urdf_specs):
-        _add_slider(*spec, 0.58, 0.34 - i * 0.038, 0.26)
-    fig.text(0.52, 0.355, "URDF LM only (DH ignores)", fontsize=9, color="#444")
+    _add_slider(gs_feel, 1, "pos_smoothing", "位置平滑", 0.0, 0.99, 0.01, "%.2f", _COL["hand"])
+    _add_slider(gs_feel, 2, "rot_smoothing", "旋转平滑", 0.0, 0.99, 0.01, "%.2f", _COL["hand"])
+    _add_slider(gs_feel, 3, "motion_scale", "行程比例", 0.10, 1.50, 0.01, "%.2f", _COL["ee"])
+    _add_slider(gs_feel, 4, "max_joint_vel", "关节限速 rad/s", 0.50, 12.0, 0.05, "%.2f", _COL["ee"])
 
-    tol0 = float(init.get("ik_tol", 1e-8))
-    tol0 = float(np.clip(np.log10(max(tol0, 1e-12)), -10.0, -4.0))
-    ax_tol = fig.add_axes([0.58, 0.34 - 3 * 0.038, 0.26, 0.025])
-    sl_tol = Slider(ax_tol, "ik_tol log10", -10.0, -4.0, valinit=tol0, valstep=0.5, valfmt="%.1f")
-    sl_tol.on_changed(lambda v: node.queue_param("ik_tol", 10.0 ** float(v)))
-    sliders.append(sl_tol)
+    _add_slider(gs_urdf, 1, "ik_w_pos", "位置权重", 0.05, 3.0, 0.05, "%.2f", _COL["filt"])
+    _add_slider(gs_urdf, 2, "ik_w_ori", "姿态权重", 0.0, 2.0, 0.05, "%.2f", _COL["filt"])
+    _add_slider(gs_urdf, 3, "ik_max_iter", "最大迭代", 5.0, 50.0, 1.0, "%.0f", _COL["filt"])
+    _add_slider(
+        gs_urdf, 4, "ik_tol", "公差 log10", -10.0, -4.0, 0.5, "%.1f", _COL["filt"], "log10"
+    )
+    _add_slider(
+        gs_urdf, 5, "ik_w_reg", "正则 log10", -6.0, -2.0, 0.5, "%.1f", _COL["filt"], "log10"
+    )
 
-    reg0 = float(init.get("ik_w_reg", 1e-4))
-    reg0 = float(np.clip(np.log10(max(reg0, 1e-8)), -6.0, -2.0))
-    ax_reg = fig.add_axes([0.58, 0.34 - 4 * 0.038, 0.26, 0.025])
-    sl_reg = Slider(ax_reg, "ik_w_reg log10", -6.0, -2.0, valinit=reg0, valstep=0.5, valfmt="%.1f")
-    sl_reg.on_changed(lambda v: node.queue_param("ik_w_reg", 10.0 ** float(v)))
-    sliders.append(sl_reg)
+    ax_act_h = fig.add_subplot(gs_act[0])
+    ax_act_h.set_facecolor(_COL["bg"])
+    ax_act_h.axis("off")
+    ax_act_h.text(0.0, 0.72, "求解器", fontsize=11, fontweight="bold", color=_COL["ink"])
+    ax_act_h.text(0.0, 0.08, "热切换会重定 VR 零点", fontsize=8, color=_COL["muted"])
 
-    ax_chk = fig.add_axes([0.32, 0.02, 0.22, 0.08])
-    ax_chk.set_frame_on(False)
-    chk = CheckButtons(ax_chk, ["sync left+right"], [node.sync_both])
+    def _mk_btn(spec, label):
+        ax = fig.add_subplot(spec)
+        btn = Button(ax, label, color=_COL["card"], hovercolor="#E5E7EB")
+        btn.label.set_fontsize(10)
+        btn.label.set_color(_COL["ink"])
+        for spine in ax.spines.values():
+            spine.set_color(_COL["line"])
+        return ax, btn
 
-    def _on_sync(_label):
-        node.sync_both = bool(chk.get_status()[0])
+    ax_dh, btn_dh = _mk_btn(gs_act[1], "DH  闭式")
+    ax_urdf, btn_urdf = _mk_btn(gs_act[2], "URDF  数值")
+    ax_sync, btn_sync = _mk_btn(gs_act[3], "左右同步  开" if node.sync_both else "左右同步  关")
+    ax_zero, btn_zero = _mk_btn(gs_act[4], "清零  Z")
+    ax_save, btn_save = _mk_btn(gs_act[5], "保存 CSV  S")
+
+    def _paint_btn(ax, btn, active: bool) -> None:
+        # Button redraws from btn.color; ax.set_facecolor alone is overwritten.
+        if active:
+            btn.color = _COL["on"]
+            btn.hovercolor = "#374151"
+            ax.set_facecolor(_COL["on"])
+            btn.label.set_color("#FFFFFF")
+        else:
+            btn.color = _COL["card"]
+            btn.hovercolor = "#E5E7EB"
+            ax.set_facecolor(_COL["card"])
+            btn.label.set_color(_COL["ink"])
+
+    def _paint_solver(mode: str) -> None:
+        _paint_btn(ax_dh, btn_dh, mode == "dh")
+        _paint_btn(ax_urdf, btn_urdf, mode != "dh")
+        fig.canvas.draw_idle()
+
+    def _paint_sync() -> None:
+        btn_sync.label.set_text("左右同步  开" if node.sync_both else "左右同步  关")
+        _paint_btn(ax_sync, btn_sync, node.sync_both)
+        fig.canvas.draw_idle()
+
+    st0 = str(init.get("solver_type", "analytic_dh")).lower()
+    _paint_solver("urdf" if "urdf" in st0 else "dh")
+    _paint_sync()
+
+    def _on_dh(_event):
+        node.queue_param("solver_type", "analytic_dh")
+        _paint_solver("dh")
+
+    def _on_urdf(_event):
+        node.queue_param("solver_type", "urdf_numerical")
+        _paint_solver("urdf")
+
+    def _on_sync(_event):
+        node.sync_both = not node.sync_both
+        _paint_sync()
         node.get_logger().info(f"sync both arms = {node.sync_both}")
 
-    chk.on_clicked(_on_sync)
+    def _on_zero(_event):
+        with node._lock:
+            node._rezero = True
+        node.get_logger().info("re-zero on next sample")
+
+    def _on_save(_event):
+        with node._lock:
+            node._save_req = True
+
+    btn_dh.on_clicked(_on_dh)
+    btn_urdf.on_clicked(_on_urdf)
+    btn_sync.on_clicked(_on_sync)
+    btn_zero.on_clicked(_on_zero)
+    btn_save.on_clicked(_on_save)
 
     def on_key(event):
         if event.key == "z":
-            with node._lock:
-                node._rezero = True
-            node.get_logger().info("re-zero on next sample")
+            _on_zero(None)
         elif event.key == "s":
-            with node._lock:
-                node._save_req = True
+            _on_save(None)
         elif event.key in ("q", "escape"):
             plt.close(fig)
 
     fig.canvas.mpl_connect("key_press_event", on_key)
 
+    def _set_metrics(m: dict | None) -> None:
+        if m is None:
+            return
+        for key, txt in metric_vals.items():
+            txt.set_text(m.get(key, "—"))
+        status_txt.set_text(m.get("status", ""))
+
     def update(_):
         node.flush_params()
         snap = node.snapshot()
         if snap is None:
-            stats.set_text(node._metric_text)
+            _set_metrics(
+                {
+                    "rms": "—",
+                    "p95": "—",
+                    "ik": "—",
+                    "jitter": "—",
+                    "lag": "—",
+                    "ori": "—",
+                    "status": node._param_status or "等待数据",
+                }
+            )
             return []
         if snap["save"]:
             node.save_csv(snap)
@@ -579,21 +824,18 @@ def _run_plot(node: TeleopTunePlot) -> None:
             ymin = float(min(vr[:, i].min(), filt[:, i].min(), cmd[:, i].min()))
             ymax = float(max(vr[:, i].max(), filt[:, i].max(), cmd[:, i].max()))
             pad = max(2.0, 0.15 * (ymax - ymin + 1e-6))
-            axes[i].set_xlim(t[0], 0.05)
+            axes[i].set_xlim(-float(node.window_sec), 0.0)
             axes[i].set_ylim(ymin - pad, ymax + pad)
         lines[3][0].set_data(t, err)
-        axes[3].set_xlim(t[0], 0.05)
+        axes[3].set_xlim(-float(node.window_sec), 0.0)
         axes[3].set_ylim(0.0, max(2.0, float(err.max()) * 1.2))
-        stats.set_text(node.metrics(snap))
-        artists = [a for group in lines for a in group]
-        artists.append(stats)
-        return artists
+        _set_metrics(node.compute_metrics(snap))
+        return []
 
     _anim = FuncAnimation(fig, update, interval=50, blit=False, cache_frame_data=False)
-    _keep = (sliders, chk, radio)
+    _keep = (sliders, btn_dh, btn_urdf, btn_sync, btn_zero, btn_save)
     plt.show()
     del _anim, _keep
-
 
 def main(args=None) -> None:
     rclpy.init(args=args)

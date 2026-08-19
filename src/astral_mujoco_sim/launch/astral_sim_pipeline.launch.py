@@ -2,9 +2,12 @@
 
 Do NOT start astral_robot_control alongside this launch.
 
-solver_type:
-  analytic_dh     — default (Nero closed-form, arm base)
-  urdf_numerical  — Pinocchio LM on astral_robot.pin.urdf (matches MJCF)
+Node config lives in yaml (not launch defaults):
+  astral_teleop_{left,right}.yaml  — solver_type, smoothing, …
+  quest3_mocap.yaml                — protocol, convert_to_robot, …
+  astral_mujoco_sim.yaml           — viewer, mjcf, …
+
+Launch arguments are optional overrides (empty → yaml).
 """
 
 from __future__ import annotations
@@ -16,7 +19,6 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _resolve_astral_urdf() -> str:
@@ -28,9 +30,7 @@ def _resolve_astral_urdf() -> str:
             return p
     except Exception:  # noqa: BLE001
         pass
-    # workspace source fallback (package not built yet)
     here = os.path.dirname(os.path.abspath(__file__))
-    # .../src/astral_mujoco_sim/launch → .../src/astral_robot_description/...
     candidates = [
         os.path.normpath(
             os.path.join(
@@ -56,6 +56,10 @@ def _resolve_astral_urdf() -> str:
     return ""
 
 
+def _opt(context, name: str) -> str:
+    return LaunchConfiguration(name).perform(context).strip()
+
+
 def _launch_setup(context, *args, **kwargs):
     teleop_pkg = get_package_share_directory("astral_quest_teleop")
     sim_pkg = get_package_share_directory("astral_mujoco_sim")
@@ -66,47 +70,41 @@ def _launch_setup(context, *args, **kwargs):
     quest_cfg = os.path.join(quest_pkg, "config", "quest3_mocap.yaml")
     sim_cfg = os.path.join(sim_pkg, "config", "astral_mujoco_sim.yaml")
 
-    solver_type = LaunchConfiguration("solver_type").perform(context)
-    urdf_arg = LaunchConfiguration("urdf_path").perform(context).strip()
-    if not urdf_arg:
-        urdf_arg = _resolve_astral_urdf()
-    if solver_type.strip().lower() in (
-        "urdf_numerical",
-        "urdf",
-        "numerical",
-    ) and not urdf_arg:
-        raise FileNotFoundError(
-            "astral_robot.pin.urdf not found. Build the description package:\n"
-            "  colcon build --packages-select astral_robot_description --symlink-install\n"
-            "  source install/setup.bash\n"
-            "Or pass urdf_path:=/absolute/path/to/astral_robot.pin.urdf"
-        )
-
-    teleop_extra = {
-        "dry_run": False,
-        "solver_type": solver_type,
-    }
+    teleop_extra = {"dry_run": False}
+    solver_type = _opt(context, "solver_type")
+    if solver_type:
+        teleop_extra["solver_type"] = solver_type
+    urdf_arg = _opt(context, "urdf_path") or _resolve_astral_urdf()
     if urdf_arg:
         teleop_extra["urdf_path"] = urdf_arg
 
+    mocap_extra = {"arm_side": "both"}
+    protocol = _opt(context, "protocol")
+    if protocol:
+        mocap_extra["protocol"] = protocol
+    convert = _opt(context, "convert_to_robot")
+    if convert:
+        mocap_extra["convert_to_robot"] = convert.lower() in ("true", "1", "yes")
+
+    mocap = Node(
+        package="quest3_hand_mocap",
+        executable="quest3_udp_mocap",
+        name="quest3_udp_mocap",
+        output="screen",
+        parameters=[quest_cfg, mocap_extra],
+    )
+
+    sim_extra = {}
+    viewer = _opt(context, "enable_viewer")
+    if viewer:
+        sim_extra["enable_viewer"] = viewer.lower() in ("true", "1", "yes")
+
+    sim_params = [sim_cfg]
+    if sim_extra:
+        sim_params.append(sim_extra)
+
     return [
-        Node(
-            package="quest3_hand_mocap",
-            executable="quest3_udp_mocap",
-            name="quest3_udp_mocap",
-            output="screen",
-            parameters=[
-                quest_cfg,
-                {
-                    "protocol": LaunchConfiguration("protocol"),
-                    "arm_side": "both",
-                    "convert_to_robot": ParameterValue(
-                        LaunchConfiguration("convert_to_robot"),
-                        value_type=bool,
-                    ),
-                },
-            ],
-        ),
+        mocap,
         Node(
             package="astral_quest_teleop",
             executable="astral_teleop_arm_node",
@@ -126,14 +124,7 @@ def _launch_setup(context, *args, **kwargs):
             executable="astral_mujoco_sim_node",
             name="astral_mujoco_sim_node",
             output="screen",
-            parameters=[
-                sim_cfg,
-                {
-                    "enable_viewer": ParameterValue(
-                        LaunchConfiguration("enable_viewer"), value_type=bool
-                    ),
-                },
-            ],
+            parameters=sim_params,
         ),
     ]
 
@@ -141,22 +132,30 @@ def _launch_setup(context, *args, **kwargs):
 def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
-            DeclareLaunchArgument("protocol", default_value="tcp_wired"),
+            DeclareLaunchArgument(
+                "protocol",
+                default_value="",
+                description="empty → quest3_mocap.yaml; else udp | tcp_wired | tcp_wireless",
+            ),
             DeclareLaunchArgument(
                 "convert_to_robot",
-                default_value="true",
-                description="true=Unity→robot_world (X left Y back Z up)",
+                default_value="",
+                description="empty → yaml; true=Unity → robot_world",
             ),
-            DeclareLaunchArgument("enable_viewer", default_value="true"),
+            DeclareLaunchArgument(
+                "enable_viewer",
+                default_value="",
+                description="empty → astral_mujoco_sim.yaml",
+            ),
             DeclareLaunchArgument(
                 "solver_type",
-                default_value="analytic_dh",
-                description="analytic_dh | urdf_numerical",
+                default_value="",
+                description="empty → astral_teleop_{left,right}.yaml",
             ),
             DeclareLaunchArgument(
                 "urdf_path",
                 default_value="",
-                description="URDF for urdf_numerical; empty → astral_robot.pin.urdf",
+                description="empty → astral_robot.pin.urdf (still passed so DH↔URDF hot-switch works)",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

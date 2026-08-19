@@ -10,9 +10,13 @@ from builtin_interfaces.msg import Time as RosTime
 import socket
 import threading
 import time
+import json
 import numpy as np
 import re
 from typing import Tuple
+
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
+from std_msgs.msg import String
 
 from quest3_hand_mocap.latency_meter import LatencyMeter
 
@@ -296,6 +300,17 @@ class Quest3UDPMocap(Node):
         self.wrist_pub_right = self.create_publisher(PoseStamped, "quest3/right_wrist_pose", 10)
         self.wrist_pub_left = self.create_publisher(PoseStamped, "quest3/left_wrist_pose", 10)
         self.head_pub = self.create_publisher(PoseStamped, "quest3/head_pose", 10)
+        latch_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+        self.body_pub = self.create_publisher(PoseArray, "quest3/body_joints", 10)
+        self.body_names_pub = self.create_publisher(
+            String, "quest3/body_joint_names", latch_qos
+        )
+        self.hips_pub = self.create_publisher(PoseStamped, "quest3/hips_pose", 10)
+        self._logged_iobt_fidelity = ""
         
         # 新增：RViz 可视化发布者
         if self.viz:
@@ -460,6 +475,81 @@ class Quest3UDPMocap(Node):
             return
         self.get_logger().info(f"[Latency][VR] {self._lat.format_and_reset()}")
 
+    def _process_body_line(self, line: str, arrival_time: float) -> None:
+        """Parse Movement SDK IOBT: ``body iobt | fid=High: hips,x,y,z,qx,qy,qz,qw ...``."""
+        if "|" in line and "fid=" in line.lower():
+            try:
+                fid = line.split("fid=", 1)[1].split(":", 1)[0].strip()
+                if fid and fid != self._logged_iobt_fidelity:
+                    self._logged_iobt_fidelity = fid
+                    self.get_logger().info(f"[IOBT] Movement SDK fidelity={fid}")
+                    if fid.lower() != "high":
+                        self.get_logger().warn(
+                            "IOBT is not High. Disable Quest passthrough and rebuild/restart HTS."
+                        )
+            except Exception:
+                pass
+        payload = line.split(":", 1)[-1].strip()
+        chunks = [c.strip() for c in payload.split() if c.strip()]
+        names = []
+        poses = []
+        hips_pos = None
+        hips_quat = None
+        for chunk in chunks:
+            parts = [p.strip() for p in chunk.split(",") if p.strip() != ""]
+            if len(parts) < 8:
+                continue
+            name = parts[0]
+            try:
+                pos_u = np.array([float(parts[1]), float(parts[2]), float(parts[3])], dtype=float)
+                quat_u = _quat_normalize(
+                    np.array(
+                        [float(parts[4]), float(parts[5]), float(parts[6]), float(parts[7])],
+                        dtype=float,
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+            if self.convert_to_robot:
+                pos, quat = unity_pose_to_robot(pos_u, quat_u)
+            else:
+                pos, quat = pos_u, quat_u
+            pose = Pose()
+            pose.position.x = float(pos[0])
+            pose.position.y = float(pos[1])
+            pose.position.z = float(pos[2])
+            pose.orientation.x = float(quat[0])
+            pose.orientation.y = float(quat[1])
+            pose.orientation.z = float(quat[2])
+            pose.orientation.w = float(quat[3])
+            names.append(name)
+            poses.append(pose)
+            if name == "hips":
+                hips_pos, hips_quat = pos, quat
+        if not poses:
+            return
+        stamp = self._float_to_ros_time(arrival_time)
+        msg = PoseArray()
+        msg.header.stamp = stamp
+        msg.header.frame_id = self._world_frame_id
+        msg.poses = poses
+        self.body_pub.publish(msg)
+        names_msg = String()
+        names_msg.data = json.dumps(names)
+        self.body_names_pub.publish(names_msg)
+        if hips_pos is not None and hips_quat is not None:
+            hips = PoseStamped()
+            hips.header.stamp = stamp
+            hips.header.frame_id = self._world_frame_id
+            hips.pose.position.x = float(hips_pos[0])
+            hips.pose.position.y = float(hips_pos[1])
+            hips.pose.position.z = float(hips_pos[2])
+            hips.pose.orientation.x = float(hips_quat[0])
+            hips.pose.orientation.y = float(hips_quat[1])
+            hips.pose.orientation.z = float(hips_quat[2])
+            hips.pose.orientation.w = float(hips_quat[3])
+            self.hips_pub.publish(hips)
+
     def process_line(self, line, arrival_time: float = 0.0):
         # FPS tracking
         if not hasattr(self, '_fps'):
@@ -469,6 +559,11 @@ class Quest3UDPMocap(Node):
             self.get_logger().info(f"[VR Data Rate] {fps:.0f} Hz")
 
         line_lower = line.lower()
+
+        # Movement SDK IOBT (must run before "head" match — packet contains a head joint).
+        if line_lower.startswith("body"):
+            self._process_body_line(line, arrival_time)
+            return
 
         # ===== 头部解析（无左右区分，全局）=====
         # Head: Unity world → optional robot axes (X left, Y back, Z up).
@@ -506,8 +601,8 @@ class Quest3UDPMocap(Node):
         if not self.both and side != self.arm_side:
             return
 
-        # 1. 腕部：与 head 同属世界系（不再相对 head）
-        if "wrist" in line.lower():
+        # 1. 腕部：人手 wrist 或 Touch controller（同属世界系）
+        if "wrist" in line_lower or "controller" in line_lower:
             parts = line.split(",")
             if len(parts) >= 7:
                 try:
@@ -534,6 +629,16 @@ class Quest3UDPMocap(Node):
                     (
                         self.wrist_pub_right if side == "right" else self.wrist_pub_left
                     ).publish(pose_msg)
+                    src = "controller" if "controller" in line_lower else "hand"
+                    last = getattr(self, "_wrist_src", None)
+                    if last is None:
+                        last = {"left": "none", "right": "none"}
+                        self._wrist_src = last
+                    if last.get(side) != src:
+                        last[side] = src
+                        self.get_logger().info(
+                            f"[HTS] mix left={last.get('left')} right={last.get('right')}"
+                        )
                     if self._print_latency and arrival_time > 0.0:
                         self._lat.add(
                             "recv_to_pub", (time.time() - arrival_time) * 1000.0

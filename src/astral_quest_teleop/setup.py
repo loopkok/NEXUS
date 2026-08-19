@@ -5,6 +5,11 @@ from setuptools import find_packages, setup
 
 package_name = "astral_quest_teleop"
 
+
+def _existing(paths):
+    return [p for p in paths if os.path.isfile(p)]
+
+
 setup(
     name=package_name,
     version="0.1.0",
@@ -19,8 +24,8 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        (os.path.join("share", package_name, "config"), glob("config/*")),
-        (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
+        (os.path.join("share", package_name, "config"), _existing(glob("config/*"))),
+        (os.path.join("share", package_name, "launch"), _existing(glob("launch/*.launch.py"))),
     ],
     install_requires=["setuptools", "numpy", "scipy"],
     zip_safe=False,
@@ -30,7 +35,6 @@ setup(
     license="MIT",
     entry_points={
         "console_scripts": [
-            "astral_teleop_node = astral_quest_teleop.astral_teleop_node:main",
             "astral_teleop_arm_node = astral_quest_teleop.astral_teleop_arm_node:main",
             "ik_solver_node = astral_quest_teleop.ik_solver_node:main",
             "keyboard_vr_sim = astral_quest_teleop.keyboard_vr_sim:main",

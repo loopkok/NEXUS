@@ -5,7 +5,7 @@ Quest3 腕部 → 双臂 IK（DH / URDF）→ `/left_arm|/right_arm/joint_comman
 
 当前架构是 **B：模型不动，控制层换算**。SolidWorks 的 `astral_robot_description` URDF、旧 MJCF、真机关节符号都保持原约定；闭式 DH 在「翻转轴 + 干净 MDH 基座」里求解，teleop 边界用 `flip_q` 和 `R_baseᵀ` 对接。
 
-## 数据流（推荐：2× 单臂节点）
+## 数据流（2× 单臂节点）
 
 ```text
 quest3_udp_mocap (convert_to_robot:=true)  → robot_world
@@ -49,25 +49,21 @@ astral_quest_teleop/
     analytic.py         ← 闭式臂角 DH（AstralParams + 公式修复）
     urdf_solver.py      ← Pinocchio LM
     factory.py          ← make_ik_solver / make_single_arm_ik
-  astral_teleop_arm_node.py   ← 推荐（自动 R_baseᵀ + flip_q）
-  astral_teleop_node.py       ← 旧单节点双臂（有 flip_q；R_baseᵀ 需 yaml 自配）
+  astral_teleop_arm_node.py   ← 自动 R_baseᵀ + flip_q
 ```
 
 | `solver_type` | 实现 | 位姿帧 | 输出 q | 默认模型 |
 |---------------|------|--------|--------|----------|
-| `analytic_dh`（默认） | Nero 臂角闭式，硬编码 MDH | 干净 MDH 基座 | 翻转约定，发布前 flip | 无 URDF |
-| `urdf_numerical` | Pinocchio + scipy LM | SW `*_base_link` | 已是硬件约定，不 flip | `astral_robot_description/urdf/astral_robot.pin.urdf` |
+| `analytic_dh` | Nero 臂角闭式，硬编码 MDH | 干净 MDH 基座 | 翻转约定，发布前 flip | 无 URDF |
+| `urdf_numerical`（yaml 默认） | Pinocchio + scipy LM | SW `*_base_link` | 已是硬件约定，不 flip | `astral_robot_description/urdf/astral_robot.pin.urdf` |
 
 单臂节点 `urdf_path` 为空 → `default_astral_urdf_path()` = **`astral_robot.pin.urdf`**（与 MuJoCo 同源）。  
 支持 RobotMain 命名（`Joint_la_*`）或 Astral 命名（`left_joint*`）。
 
 ```bash
-# 默认 DH
+# 求解器见 astral_teleop_{left,right}.yaml（默认 urdf_numerical）
 ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py dry_run:=true
-
-# 改数值 IK（仿真绝对位姿应对齐 URDF/MJCF）
-ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
-  solver_type:=urdf_numerical
+# 一次性覆盖：solver_type:=analytic_dh
 ```
 
 ### 按求解器切换的 `vr_to_arm_rot` 与 `flip_q`
@@ -91,8 +87,6 @@ ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
 把 `robot_world` / SW `*_base_link` 下的增量转到「joint1 轴 = +Z」的干净基座。与关节翻转无关。
 
 `flip_q` 边界（仅 DH）：yaml `init_pose`（旧约定）→ flip 入 IK；warm-start `flip(q_cmd)`；输出 `flip(safe)` 再发 `joint_commands`。
-
-旧节点 `astral_teleop_node` 已有同样 `flip_q`，但 **不会**自动乘 `_R_BASE_T`。若用它跑 DH，需把 `vr_to_arm_rot_left/right` 配成上面的矩阵；日常请用双臂 launch（2× arm_node）。
 
 ## DH 参数与闭式公式（`ik/analytic.py`）
 
@@ -172,20 +166,14 @@ source install/setup.bash
 ## 启动
 
 ```bash
-# 推荐：2× 单臂 teleop（自动 R_baseᵀ + flip_q）
+# 2× 单臂 teleop（自动 R_baseᵀ + flip_q）
 ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py dry_run:=true
 ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
   with_driver:=true control_board_ip:=192.168.10.2
-ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
-  solver_type:=urdf_numerical
 
-# 旧：单节点双臂 / 整机流水线
-ros2 launch astral_quest_teleop astral_quest_teleop.launch.py dry_run:=true
-ros2 launch astral_quest_teleop astral_real_pipeline.launch.py dry_run:=true
-
-# 仿真管线（默认 DH；MJCF 仍是 astral_dual.xml）
+# 仿真管线（solver / protocol 见 yaml，默认 urdf_numerical + tcp_wired）
 ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
-ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py solver_type:=urdf_numerical
+# 一次性覆盖：solver_type:=analytic_dh  protocol:=udp
 ```
 
 Quest3 有线：`adb reverse tcp:8000 tcp:8000`。  
@@ -256,9 +244,8 @@ ros2 run astral_quest_teleop teleop_tune_plot --ros-args -p arm_side:=right
 
 ## 参数
 
-单臂：`config/astral_teleop_{left,right}.yaml`。  
-旧双臂节点：`config/astral_teleop.yaml`。
+单臂：`config/astral_teleop_{left,right}.yaml`。
 
-常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）。
+常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）。
 
-`use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。双臂旧节点会把 `state_q` flip 后写入 `sync_state`。
+`use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。

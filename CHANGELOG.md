@@ -2,12 +2,52 @@
 
 Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 README 内亦有对应条目。
 
+时间均为北京时间。上次提交：`f6300cf`（2026-08-14 16:57，延迟测量 / 150 Hz / 跟手曲线）。
+
+## 2026-08-19
+
+相对 `f6300cf` 的未提交改动一并入库。当日另做：
+
+- **移出 WebXR**：`astral_webxr` 不再在本工作空间内（现位于 `../astral_webxr`）。臂/手 pipeline 去掉 `input_source:=webxr`，只走 HTS `quest3_udp_mocap`。
+
+## 2026-08-17
+
+相对 `f6300cf` 之后、当日完成的遥操改动（此前未 commit）：
+
+### 跟手调参 UI（`teleop_tune_plot`）
+
+- 布局、中文字体、按钮颜色；横轴改为「过去 8 s → 现在」。
+- 热改滑条 / DH↔URDF 热切仍沿用 08-14 的话题与参数（见下文 08-14 节）。
+
+### 配置改走 yaml
+
+- 臂 IK 默认改为 **`urdf_numerical`**（`astral_teleop_{left,right}.yaml`）。
+- `protocol` 以 `quest3_mocap.yaml` 为准（默认 `tcp_wired`）。
+- `astral_sim_pipeline` / `astral_dual_arm_teleop` 的 `solver_type` / `protocol` / `convert_to_robot` 留空则**不覆盖** yaml。
+
+### 删除旧单进程入口
+
+- 去掉 `astral_teleop_node.py`、`astral_teleop.yaml`、`astral_quest_teleop.launch.py`、`astral_real_pipeline.launch.py`。
+- 真机只留 `astral_dual_arm_teleop`（2× `astral_teleop_arm_node`）。
+- `setup.py` 用 `_existing()` 过滤 glob，避免删 yaml 后 colcon 仍拷已失效的安装链接。
+
+### 真机启动走到 init_pose
+
+- `move_to_init_pose` 默认开：从当前 `joint_states` 按 `init_speed_percent`（10% × `max_joint_vel`）关节空间插值到 yaml `init_pose`，到位（0.05 rad）或超时 15 s 后再跟手。
+- `init_speed_percent` 是本节点相对 `max_joint_vel` 的比例，**不是** SDK `set_speed_percent` / `move_j`。
+- `dry_run` 跳过 homing。
+
+### HTS：IOBT 与手柄混控
+
+- `quest3_udp_mocap` 解析 Movement SDK IOBT → `quest3/body_joints`、`quest3/body_joint_names`、`quest3/hips_pose`（腕/手指仍走 Hand Tracking）。
+- 混控：握着的一侧发 Touch 6DoF（`Left/Right controller:`）到 `/quest3/{side}_wrist_pose`；放下的一侧仍是人手腕 + 21 点。未开 SimultaneousHandsAndControllers，以免关掉 IOBT。
+
 ## 2026-08-14
 
 此版本使用 Quest3，逆解使用 DH 以及 URDF，双臂遥操成功。
 
 - 输入：Quest3（`quest3_hand_mocap`，`convert_to_robot:=true`）
-- 臂 IK：`analytic_dh`（默认）与 `urdf_numerical` 均可
+- 臂 IK：`analytic_dh` 与 `urdf_numerical` 均可
 - 双臂：`astral_teleop_{left,right}` 进程并行 → `/{side}_arm/joint_commands`
 
 ### 延迟测量与 150 Hz 控制环

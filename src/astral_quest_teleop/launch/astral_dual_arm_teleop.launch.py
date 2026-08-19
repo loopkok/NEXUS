@@ -1,9 +1,10 @@
-"""Dual Astral arm teleop — Nero layout (2× IK + 2× teleop).
+"""Dual Astral arm teleop — 2× arm_node (+ optional driver).
 
   quest3_udp_mocap
-  ik_solver_left / ik_solver_right   (optional CPU isolation; teleop has in-process IK)
-  astral_teleop_arm ×2               (left_base_link / right_base_link DH)
+  astral_teleop_arm ×2
   astral_robot_control driver        (optional, with_driver:=true)
+
+Solver / protocol / convert_to_robot come from yaml unless you pass a launch override.
 
 Usage:
   ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py dry_run:=true
@@ -17,15 +18,18 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 
 
-def generate_launch_description() -> LaunchDescription:
+def _opt(context, name: str) -> str:
+    return LaunchConfiguration(name).perform(context).strip()
+
+
+def _launch_setup(context, *args, **kwargs):
     teleop_pkg = get_package_share_directory("astral_quest_teleop")
     control_pkg = get_package_share_directory("astral_robot_control")
     quest_pkg = get_package_share_directory("quest3_hand_mocap")
@@ -34,51 +38,36 @@ def generate_launch_description() -> LaunchDescription:
     quest_cfg = os.path.join(quest_pkg, "config", "quest3_mocap.yaml")
     drivers_launch = os.path.join(control_pkg, "launch", "astral_drivers.launch.py")
 
-    return LaunchDescription(
+    teleop_extra = {
+        "dry_run": _opt(context, "dry_run").lower() in ("true", "1", "yes"),
+    }
+    solver_type = _opt(context, "solver_type")
+    if solver_type:
+        teleop_extra["solver_type"] = solver_type
+    urdf_path = _opt(context, "urdf_path")
+    if urdf_path:
+        teleop_extra["urdf_path"] = urdf_path
+
+    mocap_extra = {"arm_side": "both"}
+    protocol = _opt(context, "protocol")
+    if protocol:
+        mocap_extra["protocol"] = protocol
+    convert = _opt(context, "convert_to_robot")
+    if convert:
+        mocap_extra["convert_to_robot"] = convert.lower() in ("true", "1", "yes")
+
+    actions = [
+        Node(
+            package="quest3_hand_mocap",
+            executable="quest3_udp_mocap",
+            name="quest3_udp_mocap",
+            output="screen",
+            parameters=[quest_cfg, mocap_extra],
+        )
+    ]
+
+    actions.extend(
         [
-            DeclareLaunchArgument("dry_run", default_value="false"),
-            DeclareLaunchArgument("protocol", default_value="tcp_wired"),
-            DeclareLaunchArgument(
-                "convert_to_robot",
-                default_value="true",
-                description="true=Unity→robot_world (X left Y back Z up)",
-            ),
-            DeclareLaunchArgument(
-                "with_driver",
-                default_value="false",
-                description="Also launch astral_robot_control driver",
-            ),
-            DeclareLaunchArgument(
-                "control_board_ip",
-                default_value=os.environ.get("ASTRAL_BOARD_IP", "192.168.10.2"),
-            ),
-            DeclareLaunchArgument(
-                "solver_type",
-                default_value="analytic_dh",
-                description="analytic_dh | urdf_numerical",
-            ),
-            DeclareLaunchArgument(
-                "urdf_path",
-                default_value="",
-                description="For urdf_numerical; empty → astral_robot.pin.urdf",
-            ),
-            Node(
-                package="quest3_hand_mocap",
-                executable="quest3_udp_mocap",
-                name="quest3_udp_mocap",
-                output="screen",
-                parameters=[
-                    quest_cfg,
-                    {
-                        "protocol": LaunchConfiguration("protocol"),
-                        "arm_side": "both",
-                        "convert_to_robot": ParameterValue(
-                            LaunchConfiguration("convert_to_robot"),
-                            value_type=bool,
-                        ),
-                    },
-                ],
-            ),
             Node(
                 package="astral_quest_teleop",
                 executable="ik_solver_node",
@@ -98,32 +87,14 @@ def generate_launch_description() -> LaunchDescription:
                 executable="astral_teleop_arm_node",
                 name="astral_teleop_left",
                 output="screen",
-                parameters=[
-                    cfg_l,
-                    {
-                        "dry_run": ParameterValue(
-                            LaunchConfiguration("dry_run"), value_type=bool
-                        ),
-                        "solver_type": LaunchConfiguration("solver_type"),
-                        "urdf_path": LaunchConfiguration("urdf_path"),
-                    },
-                ],
+                parameters=[cfg_l, teleop_extra],
             ),
             Node(
                 package="astral_quest_teleop",
                 executable="astral_teleop_arm_node",
                 name="astral_teleop_right",
                 output="screen",
-                parameters=[
-                    cfg_r,
-                    {
-                        "dry_run": ParameterValue(
-                            LaunchConfiguration("dry_run"), value_type=bool
-                        ),
-                        "solver_type": LaunchConfiguration("solver_type"),
-                        "urdf_path": LaunchConfiguration("urdf_path"),
-                    },
-                ],
+                parameters=[cfg_r, teleop_extra],
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(drivers_launch),
@@ -133,5 +104,44 @@ def generate_launch_description() -> LaunchDescription:
                     "control_board_ip": LaunchConfiguration("control_board_ip"),
                 }.items(),
             ),
+        ]
+    )
+    return actions
+
+
+def generate_launch_description() -> LaunchDescription:
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument("dry_run", default_value="false"),
+            DeclareLaunchArgument(
+                "protocol",
+                default_value="",
+                description="empty → quest3_mocap.yaml",
+            ),
+            DeclareLaunchArgument(
+                "convert_to_robot",
+                default_value="",
+                description="empty → yaml",
+            ),
+            DeclareLaunchArgument(
+                "with_driver",
+                default_value="false",
+                description="Also launch astral_robot_control driver",
+            ),
+            DeclareLaunchArgument(
+                "control_board_ip",
+                default_value=os.environ.get("ASTRAL_BOARD_IP", "192.168.10.2"),
+            ),
+            DeclareLaunchArgument(
+                "solver_type",
+                default_value="",
+                description="empty → astral_teleop_{left,right}.yaml",
+            ),
+            DeclareLaunchArgument(
+                "urdf_path",
+                default_value="",
+                description="empty → yaml / astral_robot.pin.urdf",
+            ),
+            OpaqueFunction(function=_launch_setup),
         ]
     )
