@@ -11,6 +11,9 @@ Quest3 (quest3_hand_mocap, convert_to_robot:=true)
   └─ hand_landmarks/{left,right}
         → wujihand_retargeting → /{side}_hand/joint_commands
               → 仿真 wujihand_mujoco_sim  或  真机 wujihand_control
+
+Quest3 ← WebRTC（quest3_video_streamer，信令 :8765）
+        PC 相机：D435i / USB 腕部 → 头显 3D 面板（第一视角）
 ```
 
 臂与手两条链路独立；Quest 可同时喂两边。  
@@ -23,6 +26,7 @@ Quest3 (quest3_hand_mocap, convert_to_robot:=true)
 | 包 | 作用 |
 |----|------|
 | `quest3_hand_mocap` | Quest HTS 腕姿 / 21 点 landmark（Wuji 用 `landmark_preprocess:=raw`） |
+| `quest3_video_streamer` | PC 相机 WebRTC 推到 Quest（遥操第一视角）；与 mocap 独立 |
 | `wuji_glove` | 手套 mocap（可选） |
 
 ### Astral 臂
@@ -56,7 +60,7 @@ cd /home/robot/loopkok/sdk/astral_ws
 export PATH=/usr/bin:$PATH
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-select \
-  quest3_hand_mocap \
+  quest3_hand_mocap quest3_video_streamer \
   astral_robot_description astral_quest_teleop astral_robot_control astral_mujoco_sim \
   wuji_glove wujihand_retargeting wujihand_control \
   wujihand_driver wujihand_msgs wujihand_bringup \
@@ -92,7 +96,8 @@ ros2 launch wujihand_control wujihand_real_pipeline.launch.py \
   input_source:=quest3 hand_side:=right retarget_backend:=wuji_retargeting
 ```
 
-Quest 有线 HTS：`adb reverse tcp:8000 tcp:8000`。
+Quest 有线 HTS：`adb reverse tcp:8000 tcp:8000`。  
+Quest 视频回传：`ros2 launch quest3_video_streamer multi_camera.launch.py`；有线可 `adb reverse tcp:8765 tcp:8765`。细节见 [`src/quest3_video_streamer/README.md`](src/quest3_video_streamer/README.md)。
 
 ## IK 约定（臂）
 
@@ -113,4 +118,5 @@ Quest 有线 HTS：`adb reverse tcp:8000 tcp:8000`。
 | [`src/wujihand_control/README.md`](src/wujihand_control/README.md) | 手真机 |
 | [`src/wujihand_retargeting/README.md`](src/wujihand_retargeting/README.md) | 重定向 |
 | [`src/wujihand_mujoco_sim/README.md`](src/wujihand_mujoco_sim/README.md) | 手仿真 / tuning |
+| [`src/quest3_video_streamer/README.md`](src/quest3_video_streamer/README.md) | Quest 相机 WebRTC 回传 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本记录 |

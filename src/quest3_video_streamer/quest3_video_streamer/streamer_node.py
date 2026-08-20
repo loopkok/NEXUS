@@ -1,0 +1,313 @@
+"""Quest 3 video streamer ROS 2 node.
+
+Subscribes to one or more camera image sources (ROS ``sensor_msgs/Image``
+topics from ``realsense2_camera`` / ``usb_cam``, or direct OpenCV webcams) and
+pushes them to Quest 3 over WebRTC using a self-contained signaling + sender
+pipeline. One outbound WebRTC video track is created per source.
+
+Configuration is yaml-driven (``config/params.yaml``). The ``cameras`` array
+lists which cameras to stream; each camera has a nested block
+(``d435i``, ``wrist_left``, ...) with source/device/preset/fov/layout. Launch
+files load the yaml and do not hardcode these tunables.
+
+Threading model:
+  * rclpy spins in a daemon thread (delivers image callbacks).
+  * the asyncio WebRTC service runs in the main thread.
+  * the ROS image callback hands frames to the asyncio loop thread-safely.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import threading
+from typing import Any
+
+import rclpy
+from rclpy.node import Node
+
+from quest3_video_streamer.service import (
+    Quest3VideoService,
+    VideoServiceConfig,
+    parse_preset,
+)
+from quest3_video_streamer.source_base import VideoSourceAdapter
+from quest3_video_streamer.webrtc_sender import install_bitrate_diagnostics
+
+
+_LOG = logging.getLogger("quest3_video_streamer")
+
+
+def _build_one_source(node: Node, spec: dict[str, Any]) -> VideoSourceAdapter:
+    source_type = str(spec.get("type", spec.get("source_type", "ros"))).lower()
+    width, height, fps = parse_preset(str(spec.get("preset", "720p30")))
+    fov_h = float(spec.get("fov_h_deg", 69.0))
+    label = str(spec.get("label", "camera"))
+
+    if source_type == "webcam":
+        from quest3_video_streamer.webcam_source import WebcamSourceAdapter
+
+        device_index = int(spec.get("webcam_index", spec.get("device_index", 0)))
+        force_mjpg = bool(spec.get("force_mjpg", True))
+        _LOG.info(
+            f"source=webcam device_index={device_index} {width}x{height}@{fps} "
+            f"fov_h={fov_h} label={label} force_mjpg={force_mjpg}"
+        )
+        return WebcamSourceAdapter(
+            device_index=device_index, width=width, height=height, fps=fps,
+            fov_h_deg=fov_h, label=label, force_mjpg=force_mjpg,
+        )
+
+    # default: ros image topic
+    from quest3_video_streamer.ros_source import RosImageSourceAdapter
+
+    topic = str(spec.get("topic", spec.get("image_topic", "/camera/camera/color/image_raw")))
+    _LOG.info(
+        f"source=ros topic={topic} {width}x{height}@{fps} fov_h={fov_h} label={label}"
+    )
+    return RosImageSourceAdapter(
+        node=node, topic=topic, width=width, height=height, fps=fps,
+        fov_h_deg=fov_h, label=label,
+    )
+
+
+def _device_to_index(device: Any) -> int:
+    """Accept '/dev/videoN' or an int and return the int index for cv2."""
+    s = str(device)
+    if s.startswith("/dev/video"):
+        return int(s.replace("/dev/video", ""))
+    return int(s)
+
+
+def _build_sources(
+    node: Node, params: dict[str, Any]
+) -> tuple[list[VideoSourceAdapter], list[dict[str, Any]]]:
+    """Build the list of video sources + parallel display layouts.
+
+    Priority:
+      1. ``sources_json`` (advanced override) — one source per JSON entry.
+      2. ``cameras`` list from yaml — build one source per named camera block.
+    """
+    sources_json = str(params.get("sources_json", "") or "").strip()
+    if sources_json:
+        try:
+            specs = json.loads(sources_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Invalid sources_json: {exc}") from exc
+        if not isinstance(specs, list) or not specs:
+            raise RuntimeError("sources_json must be a non-empty JSON array.")
+        sources: list[VideoSourceAdapter] = []
+        layouts: list[dict[str, Any]] = []
+        for spec in specs:
+            sources.append(_build_one_source(node, spec))
+            layouts.append(dict(spec.get("layout", {})))
+        _LOG.info(f"built {len(sources)} sources from sources_json")
+        return sources, layouts
+
+    cameras = params.get("cameras") or []
+    if not cameras:
+        raise RuntimeError(
+            "No cameras configured. Set 'cameras' in params.yaml or pass sources_json."
+        )
+    sources = []
+    layouts = []
+    for name in cameras:
+        spec = _spec_from_camera_block(node, str(name))
+        sources.append(_build_one_source(node, spec))
+        layouts.append(spec["layout"])
+    _LOG.info(f"built {len(sources)} sources from cameras={list(cameras)}")
+    return sources, layouts
+
+
+def _spec_from_camera_block(node: Node, name: str) -> dict[str, Any]:
+    """Read a nested camera block (dotted params, e.g. 'd435i.preset')."""
+    source = str(_get_param(node, f"{name}.source", "ros")).lower()
+    device = _get_param(node, f"{name}.device", "/dev/video0")
+    topic = str(_get_param(node, f"{name}.topic", "/camera/camera/color/image_raw"))
+    preset = str(_get_param(node, f"{name}.preset", "720p30"))
+    fov_h = float(_get_param(node, f"{name}.fov_h_deg", 69.0))
+    label = str(_get_param(node, f"{name}.label", name))
+    force_mjpg = bool(_get_param(node, f"{name}.force_mjpg", True))
+    pos = _get_param(node, f"{name}.layout.position", [0.0, -0.1, 1.8])
+    distance = float(_get_param(node, f"{name}.layout.distance", 1.8))
+    size_mult = float(_get_param(node, f"{name}.layout.size_multiplier", 1.0))
+    layout = {
+        "position": [float(p) for p in pos],
+        "distance": distance,
+        "size_multiplier": size_mult,
+    }
+    spec: dict[str, Any] = {
+        "preset": preset,
+        "fov_h_deg": fov_h,
+        "label": label,
+        "layout": layout,
+    }
+    if source == "v4l2":
+        # cv2 direct V4L2 read (low latency, no ROS/DDS).
+        spec["type"] = "webcam"
+        spec["webcam_index"] = _device_to_index(device)
+        spec["force_mjpg"] = force_mjpg
+    elif source == "webcam":
+        spec["type"] = "webcam"
+        spec["webcam_index"] = _device_to_index(device)
+        spec["force_mjpg"] = force_mjpg
+    else:  # ros
+        spec["type"] = "ros"
+        spec["topic"] = topic
+    return spec
+
+
+async def _run_telemetry_sink(host: str, port: int, verbose: bool) -> asyncio.AbstractServer:
+    """Accept the Quest mocap TCP connection and drain/discard its lines.
+
+    The VR app expects a listening TCP endpoint to enter the streaming phase.
+    For a pure video-return host the mocap data is not needed, so we just
+    drain it.
+    """
+
+    async def _handle(reader: asyncio.StreamReader, _writer: asyncio.StreamWriter) -> None:
+        if verbose:
+            _LOG.info(f"[telemetry-sink] client connected on {host}:{port}")
+        try:
+            while not reader.at_eof():
+                await reader.readline()
+        except (ConnectionError, asyncio.CancelledError):
+            pass
+
+    server = await asyncio.start_server(_handle, host, port)
+    if verbose:
+        _LOG.info(f"[telemetry-sink] listening on {host}:{port}")
+    return server
+
+
+def _get_param(node: Node, name: str, default: Any) -> Any:
+    """Read a parameter, falling back to default if undeclared/missing."""
+    try:
+        val = node.get_parameter(name).value
+        if val is None:
+            return default
+        return val
+    except Exception:
+        return default
+
+
+def _safe_declare(node: Node, name: str, default: Any) -> None:
+    """Declare a parameter, ignoring the case where an override already did."""
+    try:
+        node.declare_parameter(name, default)
+    except rclpy.exceptions.ParameterAlreadyDeclaredException:
+        pass
+
+
+def _declare_params(node: Node) -> None:
+    # Common params (declared with defaults; yaml/CLI overrides win and may
+    # already have auto-declared them).
+    _safe_declare(node, "sources_json", "")
+    _safe_declare(node, "cameras", ["d435i"])
+    _safe_declare(node, "signaling_host", "0.0.0.0")
+    _safe_declare(node, "signaling_port", 8765)
+    _safe_declare(node, "mocap_tcp_host", "0.0.0.0")
+    _safe_declare(node, "mocap_tcp_port", 8000)
+    _safe_declare(node, "enable_mocap_tcp", False)
+    _safe_declare(node, "verbose", False)
+    # Legacy single-source params (kept for backward compatibility).
+    _safe_declare(node, "source_type", "ros")
+    _safe_declare(node, "image_topic", "/camera/camera/color/image_raw")
+    _safe_declare(node, "webcam_index", 0)
+    _safe_declare(node, "preset", "1080p30")
+    _safe_declare(node, "fov_h_deg", 69.0)
+    _safe_declare(node, "source_label", "d435i")
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s] [%(name)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    rclpy.init()
+    # Auto-declare nested per-camera params coming from the yaml overrides so
+    # dotted names like 'd435i.preset' are readable without explicit declare.
+    node = rclpy.create_node(
+        "quest3_video_streamer",
+        allow_undeclared_parameters=True,
+        automatically_declare_parameters_from_overrides=True,
+    )
+    _declare_params(node)
+
+    params = {name: _get_param(node, name, None) for name in [
+        "sources_json", "cameras",
+        "signaling_host", "signaling_port", "mocap_tcp_host",
+        "mocap_tcp_port", "enable_mocap_tcp", "verbose",
+        "preset",
+    ]}
+
+    verbose = bool(params["verbose"])
+    if verbose:
+        logging.getLogger("quest3_video_streamer").setLevel(logging.DEBUG)
+
+    # Spin rclpy in a daemon thread so image callbacks fire while the asyncio
+    # WebRTC service runs in the main thread.
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
+
+    sources, layouts = _build_sources(node, params)
+
+    config = VideoServiceConfig(
+        signaling_host=str(params["signaling_host"]),
+        signaling_port=int(params["signaling_port"]),
+        preset=str(params["preset"]),
+        verbose=verbose,
+        log_hook=lambda msg: _LOG.info(msg),
+    )
+
+    try:
+        asyncio.run(_async_main(node, sources, layouts, config, params, verbose))
+    except KeyboardInterrupt:
+        _LOG.info("interrupted")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+async def _async_main(
+    node: Node,
+    sources: list[VideoSourceAdapter],
+    layouts: list[dict[str, Any]],
+    config: VideoServiceConfig,
+    params: dict[str, Any],
+    verbose: bool,
+) -> None:
+    install_bitrate_diagnostics(verbose=verbose)
+
+    sink_server: asyncio.AbstractServer | None = None
+    if bool(params["enable_mocap_tcp"]):
+        sink_server = await _run_telemetry_sink(
+            str(params["mocap_tcp_host"]), int(params["mocap_tcp_port"]), verbose
+        )
+
+    service = Quest3VideoService(sources=sources, layouts=layouts, config=config)
+    await service.start()
+    _LOG.info(
+        f"video service started host={config.signaling_host} port={config.signaling_port} "
+        f"sources={len(sources)} preset={config.preset}"
+    )
+    _LOG.info(f"signaling endpoint (WebSocket): ws://<HOST_IP>:{config.signaling_port}")
+
+    try:
+        while rclpy.ok():
+            await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await service.stop()
+        if sink_server is not None:
+            sink_server.close()
+            await sink_server.wait_closed()
+        _LOG.info("shutdown complete")
+
+
+if __name__ == "__main__":
+    main()

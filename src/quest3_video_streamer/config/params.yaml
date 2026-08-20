@@ -1,0 +1,80 @@
+# quest3_video_streamer 默认参数（单一可调来源）。
+#
+# 加载方式（launch 会自动加载本文件）：
+#   ros2 run quest3_video_streamer quest3_video_streamer \
+#       --ros-args --params-file <this file>
+#
+# 所有相机可调项都在这里。launch 文件不再写死 preset/fov/layout/device，
+# 只负责加载本 yaml 并按需覆盖个别参数。
+#
+# cameras: 要推流的相机名列表（顺序 = WebRTC track 顺序）。想只推 D435i 就改成
+#          ["d435i"]；想加相机就在下面新增一个同名块并加进列表。
+quest3_video_streamer:
+  ros__parameters:
+    cameras: ["d435i", "wrist_left", "wrist_right"]
+
+    # 每个相机块的字段：
+    #   source      : "v4l2"（cv2 直连，低延迟）/ "ros"（订阅 sensor_msgs/Image）
+    #   device      : v4l2 模式的设备节点，如 /dev/video8（ros 模式忽略）
+    #   topic       : ros 模式的图像话题（v4l2 模式忽略）
+    #   preset      : 480p30 / 720p30 / 1080p30（采集分辨率+帧率）
+    #   fov_h_deg   : 水平视场角，Quest 用它按真实尺度缩放面板（修 2x 放大）
+    #   label       : track 标签，用于 Quest 端识别和统计
+    #   force_mjpg  : 是否强制 MJPG（USB 腕部相机 true；D435i UVC 彩色是 YUYV 用 false）
+    #   layout      : Quest 端 3D 布局
+    #     position        : [x, y, z] 米，相对眼睛（z=1.8 为面板距离）
+    #     distance       : 面板距离（米）
+    #     size_multiplier: 面板缩放系数（1.0 = 按 fov 自然尺度）
+
+    d435i:
+      source: "v4l2"
+      device: "/dev/video8"
+      topic: "/camera/camera/color/image_raw"
+      preset: "1080p30"
+      fov_h_deg: 69.0
+      label: "d435i"
+      force_mjpg: false
+      layout:
+        position: [0.5, -0.1, 1.8]
+        distance: 1.8
+        size_multiplier: 0.6
+
+    wrist_left:
+      source: "webcam"
+      device: "/dev/video0"
+      topic: ""
+      preset: "720p30"
+      fov_h_deg: 60.0
+      label: "wrist_left"
+      force_mjpg: true
+      layout:
+        position: [-0.6, 0.32, 1.8]
+        distance: 1.8
+        size_multiplier: 0.38
+
+    wrist_right:
+      source: "webcam"
+      device: "/dev/video2"
+      topic: ""
+      preset: "720p30"
+      fov_h_deg: 60.0
+      label: "wrist_right"
+      force_mjpg: true
+      layout:
+        position: [-0.6, -0.42, 1.8]
+        distance: 1.8
+        size_multiplier: 0.38
+
+    # --- 公共参数 ---
+    # WebSocket 信令服务器（Quest 连这里）。
+    signaling_host: "0.0.0.0"
+    signaling_port: 8765
+
+    # Quest mocap 遥测 TCP sink。默认不启用：与 quest3_hand_mocap 同时运行时让
+    # hand_mocap 独占 8000 接收 mocap 数据；本包只负责视频信令 8765。
+    # 仅在单独运行本包（不跑 hand_mocap）且需要 Quest app 进入 streaming 阶段时设为 true。
+    mocap_tcp_host: "0.0.0.0"
+    mocap_tcp_port: 8000
+    enable_mocap_tcp: false
+
+    verbose: false

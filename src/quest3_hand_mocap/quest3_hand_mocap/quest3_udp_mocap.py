@@ -40,6 +40,31 @@ class FPSCounter:
         return False
 
 
+class BandwidthMeter:
+    """Bytes-per-second meter for a network link, printed on an interval."""
+    def __init__(self, print_interval=2.0):
+        self._print_interval = print_interval
+        self._bytes = 0
+        self._last_print = time.time()
+
+    def add(self, n: int) -> None:
+        self._bytes += int(n)
+
+    def should_print(self):
+        now = time.time()
+        if now - self._last_print >= self._print_interval:
+            return True
+        return False
+
+    def take_kbps(self) -> float:
+        now = time.time()
+        dt = max(1e-9, now - self._last_print)
+        kbps = (self._bytes * 8.0 / dt) / 1000.0
+        self._bytes = 0
+        self._last_print = now
+        return kbps
+
+
 OPERATOR2MANO_RIGHT = np.array([
     [0, 0, -1],
     [-1, 0, 0],
@@ -270,6 +295,9 @@ class Quest3UDPMocap(Node):
             float(self.get_parameter("latency_print_interval").value)
         )
         self._last_wrist_arrival = {"left": 0.0, "right": 0.0}
+        self._bw = BandwidthMeter(
+            print_interval=float(self.get_parameter("latency_print_interval").value)
+        )
 
         self.get_logger().info(
             f"Quest 3 Hand Mocap: side=[{self.arm_side.upper()}], "
@@ -400,10 +428,15 @@ class Quest3UDPMocap(Node):
             try:
                 data, _ = self.socket.recvfrom(65536)
                 arrival_time = time.time()
+                self._bw.add(len(data))
                 message = data.decode('utf-8')
                 for line in message.splitlines():
                     if not line: continue
                     self.process_line(line, arrival_time)
+                if self._bw.should_print():
+                    self.get_logger().info(
+                        f"[Mocap Downlink] {self._bw.take_kbps():.1f} kbps"
+                    )
             except socket.timeout:
                 continue
             except Exception as e:
@@ -437,11 +470,16 @@ class Quest3UDPMocap(Node):
                         self.get_logger().info(f"TCP {addr} disconnected")
                         break
                     arrival_time = time.time()
+                    self._bw.add(len(data))
                     buf += data.decode('utf-8')
                     while '\n' in buf:
                         line, buf = buf.split('\n', 1)
                         if line.strip():
                             self.process_line(line.strip(), arrival_time)
+                    if self._bw.should_print():
+                        self.get_logger().info(
+                            f"[Mocap Downlink] {self._bw.take_kbps():.1f} kbps"
+                        )
                 except Exception as e:
                     self.get_logger().error(f"TCP read error from {addr}: {e}")
                     break
