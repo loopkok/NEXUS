@@ -5,6 +5,8 @@ Quest3 → **Astral 双臂** + **Wuji 双手** 的 ROS 2 工作空间。
 
 ```text
 Quest3 (quest3_hand_mocap, convert_to_robot:=true)
+  ├─ mixed: 一侧手柄 + 一侧手（controller 默认同写 wrist_pose）
+  ├─ IOBT: hips 世界系；head/wrist/controller/body_joints 在 hips 系
   ├─ quest3/{left,right}_wrist_pose
   │     → astral_quest_teleop → /{side}_arm/joint_commands
   │           → 仿真 astral_mujoco_sim    或  真机 astral_robot_control
@@ -25,7 +27,7 @@ Quest3 ← WebRTC（quest3_video_streamer，信令 :8765）
 
 | 包 | 作用 |
 |----|------|
-| `quest3_hand_mocap` | Quest HTS 腕姿 / 21 点 landmark（Wuji 用 `landmark_preprocess:=raw`） |
+| `quest3_hand_mocap` | Quest 腕/手柄/头/IOBT 身体（Wuji 用 `landmark_preprocess:=raw`） |
 | `quest3_video_streamer` | PC 相机 WebRTC 推到 Quest（遥操第一视角）；与 mocap 独立 |
 | `wuji_glove` | 手套 mocap（可选） |
 

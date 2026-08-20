@@ -1,28 +1,48 @@
 # quest3_hand_mocap
 
-Quest3 VR 手部追踪 + 头部位姿数据接收节点。支持 UDP / TCP 有线 / TCP 无线。
+Quest3 VR 手部 / 手柄 / 头部 / IOBT 身体数据接收节点。支持 UDP / TCP 有线 / TCP 无线。
+
+对接 Quest 端 **astral-tracking**：Mixed 时手柄和手可同时有数据（通常左右各一种）；IOBT 开启时额外发全身关节，且头/手/手柄已在 **hips 身体系**。
 
 ---
 
 ## 功能
 
-接收 Quest3 HTS 的手部 landmark（21×3）、腕部位姿、头部（HMD）位姿，发布 ROS2 话题。
+接收 Quest3 推流并发布 ROS2 话题：
+
+| 线协议 | 内容 |
+|--------|------|
+| `Left/Right wrist:` | 人手腕 6DoF |
+| `Left/Right landmarks:` | 21×3 腕局部关键点 |
+| `Left/Right controller:` | Touch 手柄 6DoF |
+| `Head pose:` | 头显 |
+| `body iobt \| fid=...:` | IOBT 全身关节（世界系进包，本节点转到 hips 系） |
 
 **下游（本工作空间 `astral_ws`）：**
 
-- **Astral 臂**：订 `quest3/{side}_wrist_pose`（`convert_to_robot:=true` → `robot_world`）
-- **Wuji 手**：Wuji launch 强制 `landmark_preprocess:=raw`（Unity→机器人轴后相对腕心），由 `wuji_retargeting` 再做一次 MANO，避免双重变换
+- **Astral 臂**：订 `quest3/{side}_wrist_pose`。默认 `controller_as_wrist:=true`，握柄时手柄位姿会写到同一话题，臂 IK 不用改。
+- **Wuji 手**：Wuji launch 强制 `landmark_preprocess:=raw`（Unity→机器人轴后相对腕心），由 `wuji_retargeting` 再做一次 MANO，避免双重变换。landmark 始终是腕局部，与 IOBT 无关。
 
 默认 `landmark_preprocess:=mano` 是给旧 XHand 链路用的；本仓库 Wuji pipeline 会覆盖为 `raw`。
 
-**遥操坐标系：**
+**坐标系：**
 
 ```text
-robot_world|vr_world (convert_to_robot 时为 X左 Y后 Z上)
- ├── head          ← quest3/head_pose
- ├── wrist         ← quest3/{side}_wrist_pose（与 head 同世界系，不再相对头）
- └── landmarks    ← hand_landmarks/{side}（腕局部 + raw|mano + EMA）
+IOBT 关：
+  robot_world|vr_world
+   ├── head                 ← quest3/head_pose
+   └── wrist | controller   ← quest3/{side}_wrist_pose（手柄默认也写这里）
+        └── landmarks       ← hand_landmarks/{side}（腕局部 + raw|mano + EMA）
+
+IOBT 开（Quest 已把头/手/手柄变到 hips 系）：
+  robot_world|vr_world
+   └── hips                 ← quest3/hips_pose（人在房间里的位置）
+  robot_body|vr_body        ← hips 为原点
+   ├── head / wrist|controller / body_joints
+   └── landmarks            ← 仍是腕局部
 ```
+
+`frame_id` 随最近一次 IOBT 包切换（约 0.4 s 无身体包则回到世界系）。臂 IK 若仍把 `wrist_pose` 当世界目标：IOBT 开启后实际是相对躯干，走路不会把整条臂拖走。
 
 **Unity → 机器人轴（`convert_to_robot:=true` 时）：**
 
@@ -55,16 +75,19 @@ robot_world|vr_world (convert_to_robot 时为 X左 Y后 Z上)
 
 | 数据 | VR 原始 | 本节点处理 | 最终 `frame_id` |
 |------|---------|------------|-----------------|
-| head | Unity 追踪世界 | 可选 Unity→机器人轴 | `robot_world` / `vr_world` |
-| wrist | Unity 追踪世界 | 可选 Unity→机器人轴（与 head 同系，不相对头） | 同 head |
+| hips | Unity 世界 | 可选 Unity→机器人轴 | `robot_world` / `vr_world` |
+| body joints | Unity 世界 | 先变到 hips 系，再可选 Unity→机器人轴 | `robot_body` / `vr_body` |
+| head / wrist / controller | IOBT 关：世界；开：hips 系（Quest 已转） | 可选 Unity→机器人轴 | 关=`robot_world`；开=`robot_body` |
 | landmarks | Unity 腕局部 21×3 | ① Unity→机器人轴或旧版翻 X ② `raw`/`mano` ③ EMA | `hand_{side}` |
 
 ## 数据流
 
 ```text
-Quest3 HTS (Unity LH)
-  ├── head    → [convert_to_robot?] → quest3/head_pose     [robot_world|vr_world]
-  ├── wrist   → [convert_to_robot?] → quest3/{side}_wrist  [同上]
+Quest3 astral-tracking (Unity LH)
+  ├── body iobt  → hips 世界 + body_joints（hips 系）
+  ├── head       → [convert_to_robot?] → quest3/head_pose
+  ├── wrist      → [convert_to_robot?] → quest3/{side}_wrist_pose
+  ├── controller → 同上，并默认镜像到 wrist_pose（臂 IK）
   └── landmarks
         → Unity→robot 或翻 X → process_landmarks()
              ├── raw  → 相对腕心（Wuji）
@@ -72,15 +95,23 @@ Quest3 HTS (Unity LH)
                         → EMA → hand_landmarks/{left,right}
 ```
 
+Mixed：左右可一边 `controller` 一边 `hand`。同侧 Quest 只发一种（手柄优先）。Meta 不支持 IOBT + Mixed 同时开。
+
 ## 话题
 
 | 话题 | 类型 | `frame_id` | 说明 |
 |------|------|------------|------|
 | `hand_landmarks/left` | PoseArray | `hand_left` | 左手 21 点（腕局部） |
 | `hand_landmarks/right` | PoseArray | `hand_right` | 右手 21 点（腕局部） |
-| `quest3/left_wrist_pose` | PoseStamped | `robot_world`/`vr_world` | 左手腕，世界系 |
-| `quest3/right_wrist_pose` | PoseStamped | `robot_world`/`vr_world` | 右手腕，世界系 |
-| `quest3/head_pose` | PoseStamped | `robot_world`/`vr_world` | HMD，世界系 |
+| `quest3/left_wrist_pose` | PoseStamped | 世界或身体 | 左手腕；握柄时也可是手柄 |
+| `quest3/right_wrist_pose` | PoseStamped | 世界或身体 | 右手腕 |
+| `quest3/left_controller_pose` | PoseStamped | 世界或身体 | 左手柄（仅手柄行） |
+| `quest3/right_controller_pose` | PoseStamped | 世界或身体 | 右手柄 |
+| `quest3/head_pose` | PoseStamped | 世界或身体 | HMD |
+| `quest3/hips_pose` | PoseStamped | `robot_world`/`vr_world` | IOBT hips，房间系 |
+| `quest3/body_joints` | PoseArray | `robot_body`/`vr_body` | IOBT 关节，hips 系，顺序见 names |
+| `quest3/body_joint_names` | String | latch | JSON 字符串数组，与 PoseArray 对齐 |
+| `quest3/input_mix` | String | latch | 如 `left=ctrl right=hand` |
 | `quest3/{side}_hand_markers` | MarkerArray | `world` | RViz（可选） |
 
 ## 参数
@@ -96,6 +127,7 @@ Quest3 HTS (Unity LH)
 | `landmark_preprocess` | `mano` | `mano`（XHand）或 `raw`（Wuji） |
 | `enable_xhand_pinky_adapt` | `false` | XHand 小指顺序拉伸；Wuji 必须 `false` |
 | `convert_to_robot` | `true` | `true`：Unity→机器人轴（X左 Y后 Z上）；`false`：保留 Unity 轴（landmarks 仅旧版翻 X） |
+| `controller_as_wrist` | `true` | 手柄 6DoF 同时写到 `quest3/{side}_wrist_pose`，臂 IK 跟柄 |
 
 Wuji 相关 launch（`wujihand_tuning` / `sim_pipeline` / `real_pipeline`）已写死：
 `landmark_preprocess:=raw`，`enable_xhand_pinky_adapt:=False`。
@@ -178,8 +210,9 @@ rx.stop()
 
 ```text
 quest3_udp_mocap
-  ├── head_pose (世界系) → 可选：人形 base / map
-  ├── wrist_pose (世界系，同 head) → 双臂 IK / Nero
+  ├── hips_pose (世界系) + body_joints (hips 系)
+  ├── head_pose（IOBT 关：世界；开：身体系）
+  ├── wrist_pose / controller_pose（同上；默认手柄镜像到 wrist）
   ├── XHand:  mano landmarks → xhand_retargeting
   └── Wuji:   raw landmarks → wujihand_retargeting
 ```
@@ -188,6 +221,7 @@ quest3_udp_mocap
 
 | 日期 | 项 | 说明 |
 |------|----|------|
+| 2026-08-20 | Mixed + IOBT | 解析 `controller` / `body iobt`；IOBT 时 head/wrist 用 `robot_body`；手柄默认同写 wrist_pose |
 | 2026-08 | 腕改回世界系 | 取消 wrist 相对 head；head 与 wrist 同属 `robot_world`/`vr_world` |
 | 2026-08 | convert_to_robot | 启动可选 Unity→机器人轴 |
 详见顶层 [README](../../README.md) 与 [CHANGELOG.md](../../CHANGELOG.md)。

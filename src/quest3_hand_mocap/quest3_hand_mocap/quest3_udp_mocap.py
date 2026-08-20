@@ -6,15 +6,23 @@ from rclpy.node import Node
 from geometry_msgs.msg import Pose, Point, Quaternion, PoseStamped, PoseArray
 from visualization_msgs.msg import Marker, MarkerArray
 from builtin_interfaces.msg import Time as RosTime
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
+from std_msgs.msg import String
 
+import json
 import socket
 import threading
 import time
 import numpy as np
 import re
-from typing import Tuple
+from typing import Optional, Tuple
 
 from quest3_hand_mocap.latency_meter import LatencyMeter
+
+# Quest opens one TCP socket per streamer (hands / head / controller / body).
+_TCP_LISTEN_BACKLOG = 8
+# No body packet for this long → head/wrist/controller are world again.
+_IOBT_TIMEOUT_S = 0.4
 
 
 class FPSCounter:
@@ -268,6 +276,9 @@ class Quest3UDPMocap(Node):
         # Unity LH → robot (X left, Y back, Z up). If false: keep Unity axes
         # (landmarks only apply legacy X flip).
         self.declare_parameter("convert_to_robot", True)
+        # Mixed/IOBT: Touch 6DoF also published on quest3/{side}_wrist_pose so
+        # existing arm IK keeps tracking the held controller.
+        self.declare_parameter("controller_as_wrist", True)
 
         self.protocol = self.get_parameter("protocol").value.lower()
         self.udp_port = self.get_parameter("udp_port").value
@@ -288,6 +299,7 @@ class Quest3UDPMocap(Node):
                 f"got {self.landmark_preprocess}"
             )
         self.convert_to_robot = bool(self.get_parameter("convert_to_robot").value)
+        self.controller_as_wrist = bool(self.get_parameter("controller_as_wrist").value)
         self.declare_parameter("print_latency", True)
         self.declare_parameter("latency_print_interval", 2.0)
         self._print_latency = bool(self.get_parameter("print_latency").value)
@@ -304,26 +316,53 @@ class Quest3UDPMocap(Node):
             f"protocol={self.protocol}, "
             f"preprocess={self.landmark_preprocess}, "
             f"xhand_pinky_adapt={self.enable_xhand_pinky_adapt}, "
-            f"convert_to_robot={self.convert_to_robot}"
+            f"convert_to_robot={self.convert_to_robot}, "
+            f"controller_as_wrist={self.controller_as_wrist}"
         )
 
         # 缓存用于 EMA 平滑滤波
         self.landmark_cache_right = np.zeros((21, 3))
         self.landmark_cache_left = np.zeros((21, 3))
 
-        # World frame for head & wrist (same parent; not wrist-under-head).
+        # World frame for hips / (head,wrist,controller when IOBT is off).
+        # When IOBT is on, Quest already expressed head/hand/controller in the
+        # hips frame — those use robot_body|vr_body instead.
         self._world_frame_id = "robot_world" if self.convert_to_robot else "vr_world"
+        self._body_frame_id = "robot_body" if self.convert_to_robot else "vr_body"
+        self._iobt_lock = threading.Lock()
+        self._last_iobt_time = 0.0
+        self._logged_iobt_fidelity = ""
+        self._wrist_src = {"left": "none", "right": "none"}
 
         # 发布者：始终按左右分 topic
-        # Frame tree:
-        #   robot_world|vr_world ── head
-        #                        ── wrist
-        #                             └── landmarks (wrist-local)
+        # Frame tree (IOBT off):
+        #   robot_world|vr_world ── head / wrist|controller
+        # Frame tree (IOBT on):
+        #   robot_world|vr_world ── hips
+        #   robot_body|vr_body   ── head / wrist|controller / body_joints
+        #                                └── landmarks (wrist-local, unchanged)
         self.mocap_pub_right = self.create_publisher(PoseArray, "hand_landmarks/right", 10)
         self.mocap_pub_left = self.create_publisher(PoseArray, "hand_landmarks/left", 10)
         self.wrist_pub_right = self.create_publisher(PoseStamped, "quest3/right_wrist_pose", 10)
         self.wrist_pub_left = self.create_publisher(PoseStamped, "quest3/left_wrist_pose", 10)
+        self.ctrl_pub_right = self.create_publisher(
+            PoseStamped, "quest3/right_controller_pose", 10
+        )
+        self.ctrl_pub_left = self.create_publisher(
+            PoseStamped, "quest3/left_controller_pose", 10
+        )
         self.head_pub = self.create_publisher(PoseStamped, "quest3/head_pose", 10)
+        latch_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+        self.body_pub = self.create_publisher(PoseArray, "quest3/body_joints", 10)
+        self.body_names_pub = self.create_publisher(
+            String, "quest3/body_joint_names", latch_qos
+        )
+        self.hips_pub = self.create_publisher(PoseStamped, "quest3/hips_pose", 10)
+        self.mix_pub = self.create_publisher(String, "quest3/input_mix", latch_qos)
         
         # 新增：RViz 可视化发布者
         if self.viz:
@@ -361,7 +400,7 @@ class Quest3UDPMocap(Node):
         self.tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.tcp_server.bind((host, self.tcp_port))
-        self.tcp_server.listen(3)
+        self.tcp_server.listen(_TCP_LISTEN_BACKLOG)
         self.tcp_server.settimeout(1.0)
         mode = "wired (adb reverse)" if self.protocol == "tcp_wired" else "wireless (WiFi)"
         self.get_logger().info(
@@ -498,6 +537,197 @@ class Quest3UDPMocap(Node):
             return
         self.get_logger().info(f"[Latency][VR] {self._lat.format_and_reset()}")
 
+    def _iobt_active(self) -> bool:
+        with self._iobt_lock:
+            return (time.time() - self._last_iobt_time) < _IOBT_TIMEOUT_S
+
+    def _mark_iobt(self) -> None:
+        with self._iobt_lock:
+            self._last_iobt_time = time.time()
+
+    def _pose_frame_id(self) -> str:
+        """Parent of head / wrist / controller (and hips-relative body joints)."""
+        return self._body_frame_id if self._iobt_active() else self._world_frame_id
+
+    def _unity_to_out(
+        self, pos_u: np.ndarray, quat_u: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        if self.convert_to_robot:
+            return unity_pose_to_robot(pos_u, quat_u)
+        return pos_u, quat_u
+
+    @staticmethod
+    def _parse_pose7(line: str) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+        parts = line.split(",")
+        if len(parts) < 7:
+            return None
+        try:
+            vals = [float(p.strip()) for p in parts[-7:]]
+        except ValueError:
+            return None
+        pos = np.array(vals[0:3], dtype=float)
+        quat = _quat_normalize(np.array(vals[3:7], dtype=float))
+        return pos, quat
+
+    def _make_pose_stamped(
+        self,
+        pos: np.ndarray,
+        quat: np.ndarray,
+        arrival_time: float,
+        frame_id: str,
+    ) -> PoseStamped:
+        msg = PoseStamped()
+        msg.header.stamp = self._float_to_ros_time(arrival_time)
+        msg.header.frame_id = frame_id
+        msg.pose.position.x = float(pos[0])
+        msg.pose.position.y = float(pos[1])
+        msg.pose.position.z = float(pos[2])
+        msg.pose.orientation.x = float(quat[0])
+        msg.pose.orientation.y = float(quat[1])
+        msg.pose.orientation.z = float(quat[2])
+        msg.pose.orientation.w = float(quat[3])
+        return msg
+
+    def _note_mix(self, side: str, src: str) -> None:
+        tag = "ctrl" if src == "controller" else src
+        last = self._wrist_src.get(side)
+        if last == tag:
+            return
+        self._wrist_src[side] = tag
+        mix = f"left={self._wrist_src['left']} right={self._wrist_src['right']}"
+        self.get_logger().info(f"[HTS] mix {mix}")
+        msg = String()
+        msg.data = mix
+        self.mix_pub.publish(msg)
+
+    def _note_wrist_gap(self, side: str, arrival_time: float) -> None:
+        if not self._print_latency or arrival_time <= 0.0:
+            return
+        self._lat.add("recv_to_pub", (time.time() - arrival_time) * 1000.0)
+        prev = self._last_wrist_arrival[side]
+        if prev > 0.0:
+            self._lat.add(f"wrist_gap.{side}", (arrival_time - prev) * 1000.0)
+        self._last_wrist_arrival[side] = arrival_time
+        self._maybe_log_latency()
+
+    def _publish_side_pose(
+        self,
+        side: str,
+        pos: np.ndarray,
+        quat: np.ndarray,
+        arrival_time: float,
+        src: str,
+    ) -> None:
+        pose_msg = self._make_pose_stamped(
+            pos, quat, arrival_time, self._pose_frame_id()
+        )
+        if src == "controller":
+            (
+                self.ctrl_pub_right if side == "right" else self.ctrl_pub_left
+            ).publish(pose_msg)
+            if self.controller_as_wrist:
+                (
+                    self.wrist_pub_right if side == "right" else self.wrist_pub_left
+                ).publish(pose_msg)
+        else:
+            (
+                self.wrist_pub_right if side == "right" else self.wrist_pub_left
+            ).publish(pose_msg)
+        self._note_mix(side, src)
+        self._note_wrist_gap(side, arrival_time)
+
+    def _process_body_line(self, line: str, arrival_time: float) -> None:
+        """Parse ``body iobt | fid=High: hips,x,y,z,qx,qy,qz,qw spine-lower,...``.
+
+        Quest sends IOBT joints in Unity world. Hips stay in world; the PoseArray
+        is expressed in the hips frame so it shares ``robot_body`` with the
+        already body-relative head / hand / controller packets.
+        """
+        self._mark_iobt()
+        prefix, _, rest = line.partition(":")
+        fid = ""
+        if "fid=" in prefix.lower():
+            fid = prefix.lower().split("fid=", 1)[1].split()[0].strip(" |")
+        if fid and fid != self._logged_iobt_fidelity:
+            self._logged_iobt_fidelity = fid
+            self.get_logger().info(f"[HTS] IOBT fidelity={fid}")
+
+        names = []
+        unity_poses = []  # (name, pos_u, quat_u)
+        hips_u = None
+        for tok in rest.split():
+            parts = tok.split(",")
+            if len(parts) != 8:
+                continue
+            name = parts[0]
+            try:
+                pos_u = np.array(
+                    [float(parts[1]), float(parts[2]), float(parts[3])], dtype=float
+                )
+                quat_u = _quat_normalize(
+                    np.array(
+                        [
+                            float(parts[4]),
+                            float(parts[5]),
+                            float(parts[6]),
+                            float(parts[7]),
+                        ],
+                        dtype=float,
+                    )
+                )
+            except ValueError:
+                continue
+            unity_poses.append((name, pos_u, quat_u))
+            if name == "hips":
+                hips_u = (pos_u, quat_u)
+
+        if not unity_poses:
+            return
+
+        stamp = self._float_to_ros_time(arrival_time)
+        if hips_u is not None:
+            hips_pos, hips_quat = self._unity_to_out(*hips_u)
+            hips = PoseStamped()
+            hips.header.stamp = stamp
+            hips.header.frame_id = self._world_frame_id
+            hips.pose.position.x = float(hips_pos[0])
+            hips.pose.position.y = float(hips_pos[1])
+            hips.pose.position.z = float(hips_pos[2])
+            hips.pose.orientation.x = float(hips_quat[0])
+            hips.pose.orientation.y = float(hips_quat[1])
+            hips.pose.orientation.z = float(hips_quat[2])
+            hips.pose.orientation.w = float(hips_quat[3])
+            self.hips_pub.publish(hips)
+
+        poses = []
+        for name, pos_u, quat_u in unity_poses:
+            if hips_u is not None:
+                pos_u, quat_u = pose_in_parent_frame(
+                    hips_u[0], hips_u[1], pos_u, quat_u
+                )
+            pos, quat = self._unity_to_out(pos_u, quat_u)
+            pose = Pose()
+            pose.position.x = float(pos[0])
+            pose.position.y = float(pos[1])
+            pose.position.z = float(pos[2])
+            pose.orientation.x = float(quat[0])
+            pose.orientation.y = float(quat[1])
+            pose.orientation.z = float(quat[2])
+            pose.orientation.w = float(quat[3])
+            names.append(name)
+            poses.append(pose)
+
+        msg = PoseArray()
+        msg.header.stamp = stamp
+        msg.header.frame_id = (
+            self._body_frame_id if hips_u is not None else self._world_frame_id
+        )
+        msg.poses = poses
+        self.body_pub.publish(msg)
+        names_msg = String()
+        names_msg.data = json.dumps(names)
+        self.body_names_pub.publish(names_msg)
+
     def process_line(self, line, arrival_time: float = 0.0):
         # FPS tracking
         if not hasattr(self, '_fps'):
@@ -508,35 +738,25 @@ class Quest3UDPMocap(Node):
 
         line_lower = line.lower()
 
-        # ===== 头部解析（无左右区分，全局）=====
-        # Head: Unity world → optional robot axes (X left, Y back, Z up).
+        # IOBT body packet contains a "head" joint — must run before head match.
+        if line_lower.startswith("body"):
+            self._process_body_line(line, arrival_time)
+            return
+
+        # Head / HMD. IOBT on: already hips-relative on the wire.
         if "head" in line_lower or "hmd" in line_lower:
-            # Format: head, x, y, z, qx, qy, qz, qw  (or colon-separated)
-            line_clean = line_lower.replace(":", ",")
-            parts = line_clean.split(",")
-            if len(parts) >= 7:
+            parsed = self._parse_pose7(line)
+            if parsed is not None:
                 try:
-                    vals = [float(p.strip()) for p in parts[-7:]]
-                    head_pos_u = np.array(vals[0:3], dtype=float)
-                    head_quat_u = _quat_normalize(np.array(vals[3:7], dtype=float))
-                    if self.convert_to_robot:
-                        head_pos, head_quat = unity_pose_to_robot(head_pos_u, head_quat_u)
-                    else:
-                        head_pos, head_quat = head_pos_u, head_quat_u
-                    pose_msg = PoseStamped()
-                    pose_msg.header.stamp = self._float_to_ros_time(arrival_time)
-                    pose_msg.header.frame_id = self._world_frame_id
-                    pose_msg.pose.position.x = float(head_pos[0])
-                    pose_msg.pose.position.y = float(head_pos[1])
-                    pose_msg.pose.position.z = float(head_pos[2])
-                    pose_msg.pose.orientation.x = float(head_quat[0])
-                    pose_msg.pose.orientation.y = float(head_quat[1])
-                    pose_msg.pose.orientation.z = float(head_quat[2])
-                    pose_msg.pose.orientation.w = float(head_quat[3])
-                    self.head_pub.publish(pose_msg)
+                    pos, quat = self._unity_to_out(*parsed)
+                    self.head_pub.publish(
+                        self._make_pose_stamped(
+                            pos, quat, arrival_time, self._pose_frame_id()
+                        )
+                    )
                 except Exception:
                     pass
-            return  # 头部行不继续处理
+            return
 
         side = "right" if "right" in line_lower else "left"
 
@@ -544,45 +764,15 @@ class Quest3UDPMocap(Node):
         if not self.both and side != self.arm_side:
             return
 
-        # 1. 腕部：与 head 同属世界系（不再相对 head）
-        if "wrist" in line.lower():
-            parts = line.split(",")
-            if len(parts) >= 7:
+        # Wrist or Touch controller (same 7-float pose). Mixed: one side can be
+        # controller while the other is hand. Same side: Quest sends only one.
+        if "wrist" in line_lower or "controller" in line_lower:
+            parsed = self._parse_pose7(line)
+            if parsed is not None:
                 try:
-                    vals = [float(p.strip()) for p in parts[-7:]]
-                    wrist_pos_u = np.array(vals[0:3], dtype=float)
-                    wrist_quat_u = _quat_normalize(np.array(vals[3:7], dtype=float))
-                    if self.convert_to_robot:
-                        wrist_pos, wrist_quat = unity_pose_to_robot(
-                            wrist_pos_u, wrist_quat_u
-                        )
-                    else:
-                        wrist_pos, wrist_quat = wrist_pos_u, wrist_quat_u
-
-                    pose_msg = PoseStamped()
-                    pose_msg.header.stamp = self._float_to_ros_time(arrival_time)
-                    pose_msg.header.frame_id = self._world_frame_id
-                    pose_msg.pose.position.x = float(wrist_pos[0])
-                    pose_msg.pose.position.y = float(wrist_pos[1])
-                    pose_msg.pose.position.z = float(wrist_pos[2])
-                    pose_msg.pose.orientation.x = float(wrist_quat[0])
-                    pose_msg.pose.orientation.y = float(wrist_quat[1])
-                    pose_msg.pose.orientation.z = float(wrist_quat[2])
-                    pose_msg.pose.orientation.w = float(wrist_quat[3])
-                    (
-                        self.wrist_pub_right if side == "right" else self.wrist_pub_left
-                    ).publish(pose_msg)
-                    if self._print_latency and arrival_time > 0.0:
-                        self._lat.add(
-                            "recv_to_pub", (time.time() - arrival_time) * 1000.0
-                        )
-                        prev = self._last_wrist_arrival[side]
-                        if prev > 0.0:
-                            self._lat.add(
-                                f"wrist_gap.{side}", (arrival_time - prev) * 1000.0
-                            )
-                        self._last_wrist_arrival[side] = arrival_time
-                        self._maybe_log_latency()
+                    pos, quat = self._unity_to_out(*parsed)
+                    src = "controller" if "controller" in line_lower else "hand"
+                    self._publish_side_pose(side, pos, quat, arrival_time, src)
                 except Exception as e:
                     self.get_logger().error(f"解析浮点数失败: {e}")
         # 2. 手指：Unity 腕局部 → robot 轴，再 raw/mano + EMA

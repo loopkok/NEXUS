@@ -5,9 +5,13 @@ Mirrors ``quest3_hand_mocap.quest3_udp_mocap`` processing:
 
 Frame tree (Unity LH → optional robot: X left, Y back, Z up)::
 
-    robot_world|vr_world ── head
-                         ── wrist
-                              └── landmarks  (wrist-local + raw|mano + EMA)
+    IOBT off:
+        robot_world|vr_world ── head / wrist|controller
+                                     └── landmarks  (wrist-local + raw|mano + EMA)
+    IOBT on:
+        robot_world|vr_world ── hips
+        robot_body|vr_body   ── head / wrist|controller / body joints
+                                     └── landmarks  (still wrist-local)
 
 Examples::
 
@@ -60,6 +64,34 @@ HAND_BONES = (
     (0, 13), (13, 14), (14, 15), (15, 16),
     (0, 17), (17, 18), (18, 19), (19, 20),
 )
+
+BODY_BONES = (
+    ("hips", "spine-lower"),
+    ("spine-lower", "spine-middle"),
+    ("spine-middle", "spine-upper"),
+    ("spine-upper", "chest"),
+    ("chest", "neck"),
+    ("neck", "head"),
+    ("chest", "left-shoulder"),
+    ("left-shoulder", "left-scapula"),
+    ("left-scapula", "left-arm-upper"),
+    ("left-arm-upper", "left-arm-lower"),
+    ("chest", "right-shoulder"),
+    ("right-shoulder", "right-scapula"),
+    ("right-scapula", "right-arm-upper"),
+    ("right-arm-upper", "right-arm-lower"),
+    ("hips", "left-upper-leg"),
+    ("left-upper-leg", "left-lower-leg"),
+    ("left-lower-leg", "left-foot-ankle"),
+    ("left-foot-ankle", "left-foot-ball"),
+    ("hips", "right-upper-leg"),
+    ("right-upper-leg", "right-lower-leg"),
+    ("right-lower-leg", "right-foot-ankle"),
+    ("right-foot-ankle", "right-foot-ball"),
+)
+
+_TCP_LISTEN_BACKLOG = 8
+_IOBT_TIMEOUT_S = 0.4
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +218,19 @@ def unity_landmarks_to_robot(points: np.ndarray) -> np.ndarray:
     return (UNITY_TO_ROBOT @ np.asarray(points, dtype=float).T).T
 
 
+def _parse_pose7(line: str) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    parts = line.split(",")
+    if len(parts) < 7:
+        return None
+    try:
+        vals = [float(p.strip()) for p in parts[-7:]]
+    except ValueError:
+        return None
+    pos = np.array(vals[0:3], dtype=float)
+    quat = _quat_normalize(np.array(vals[3:7], dtype=float))
+    return pos, quat
+
+
 def adaptive_retargeting_xhand(landmarks: np.ndarray) -> np.ndarray:
     """XHand-only pinky stretch (keep off for Wuji)."""
     landmarks = landmarks.copy()
@@ -286,6 +331,22 @@ class HandLandmarks:
 
 
 @dataclass
+class BodyJoints:
+    names: list
+    poses: list  # list[Pose6D], hips-relative when IOBT hips present
+    hips_world: Optional[Pose6D]
+    stamp: float
+
+    def to_dict(self) -> dict:
+        return {
+            "stamp": self.stamp,
+            "names": self.names,
+            "poses": [p.to_dict() for p in self.poses],
+            "hips_world": None if self.hips_world is None else self.hips_world.to_dict(),
+        }
+
+
+@dataclass
 class MocapConfig:
     protocol: str = "tcp_wired"  # udp | tcp_wired | tcp_wireless
     udp_port: int = 9000
@@ -295,6 +356,7 @@ class MocapConfig:
     landmark_preprocess: str = "mano"  # mano | raw
     enable_xhand_pinky_adapt: bool = False
     convert_to_robot: bool = True  # Unity LH → X left, Y back, Z up
+    controller_as_wrist: bool = True
     viz: bool = False
     print_every: float = 1.0  # seconds; 0 = print every event
     jsonl_path: Optional[str] = None
@@ -314,6 +376,8 @@ class Quest3MocapStandalone:
         on_head: Optional[Callable[[Pose6D], None]] = None,
         on_wrist: Optional[Callable[[str, Pose6D], None]] = None,
         on_landmarks: Optional[Callable[[HandLandmarks], None]] = None,
+        on_controller: Optional[Callable[[str, Pose6D], None]] = None,
+        on_body: Optional[Callable[[BodyJoints], None]] = None,
     ):
         protocol = config.protocol.lower()
         if protocol not in ("udp", "tcp_wired", "tcp_wireless"):
@@ -333,24 +397,35 @@ class Quest3MocapStandalone:
         self.landmark_preprocess = preprocess
         self.enable_xhand_pinky_adapt = bool(config.enable_xhand_pinky_adapt)
         self.convert_to_robot = bool(config.convert_to_robot)
+        self.controller_as_wrist = bool(config.controller_as_wrist)
 
         self.on_head = on_head
         self.on_wrist = on_wrist
         self.on_landmarks = on_landmarks
+        self.on_controller = on_controller
+        self.on_body = on_body
 
         self.landmark_cache_right = np.zeros((21, 3), dtype=float)
         self.landmark_cache_left = np.zeros((21, 3), dtype=float)
 
         self.world_frame_id = "robot_world" if self.convert_to_robot else "vr_world"
+        self.body_frame_id = "robot_body" if self.convert_to_robot else "vr_body"
         self.head_frame_id = self.world_frame_id
         self.wrist_frame_id = self.world_frame_id
+        self._last_iobt_time = 0.0
+        self._wrist_src = {"left": "none", "right": "none"}
 
         self._latest: Dict[str, object] = {
             "head": None,
             "left_wrist": None,
             "right_wrist": None,
+            "left_controller": None,
+            "right_controller": None,
             "left_landmarks": None,
             "right_landmarks": None,
+            "body": None,
+            "hips": None,
+            "input_mix": "left=none right=none",
         }
         self._latest_lock = threading.Lock()
 
@@ -372,6 +447,9 @@ class Quest3MocapStandalone:
             "head": None,
             "left_wrist": None,
             "right_wrist": None,
+            "left_controller": None,
+            "right_controller": None,
+            "body": None,
         }
         self._viz_lock = threading.Lock()
 
@@ -437,7 +515,7 @@ class Quest3MocapStandalone:
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind((host, self.config.tcp_port))
-        srv.listen(3)
+        srv.listen(_TCP_LISTEN_BACKLOG)
         srv.settimeout(1.0)
         self._tcp_server = srv
         mode = "wired (adb reverse)" if self.protocol == "tcp_wired" else "wireless"
@@ -502,6 +580,97 @@ class Quest3MocapStandalone:
 
     # ---- processing (same as ROS node) ------------------------------------
 
+    def _iobt_active(self) -> bool:
+        return (time.time() - self._last_iobt_time) < _IOBT_TIMEOUT_S
+
+    def _pose_frame_id(self) -> str:
+        return self.body_frame_id if self._iobt_active() else self.world_frame_id
+
+    def _unity_to_out(
+        self, pos_u: np.ndarray, quat_u: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        if self.convert_to_robot:
+            return unity_pose_to_robot(pos_u, quat_u)
+        return pos_u, quat_u
+
+    def _note_mix(self, side: str, src: str) -> None:
+        tag = "ctrl" if src == "controller" else src
+        if self._wrist_src.get(side) == tag:
+            return
+        self._wrist_src[side] = tag
+        mix = f"left={self._wrist_src['left']} right={self._wrist_src['right']}"
+        with self._latest_lock:
+            self._latest["input_mix"] = mix
+        LOG.info("[HTS] mix %s", mix)
+
+    def _process_body_line(self, line: str, arrival_time: float) -> None:
+        self._last_iobt_time = time.time()
+        _, _, rest = line.partition(":")
+        names = []
+        unity_poses = []
+        hips_u = None
+        for tok in rest.split():
+            parts = tok.split(",")
+            if len(parts) != 8:
+                continue
+            name = parts[0]
+            try:
+                pos_u = np.array(
+                    [float(parts[1]), float(parts[2]), float(parts[3])], dtype=float
+                )
+                quat_u = _quat_normalize(
+                    np.array(
+                        [
+                            float(parts[4]),
+                            float(parts[5]),
+                            float(parts[6]),
+                            float(parts[7]),
+                        ],
+                        dtype=float,
+                    )
+                )
+            except ValueError:
+                continue
+            unity_poses.append((name, pos_u, quat_u))
+            if name == "hips":
+                hips_u = (pos_u, quat_u)
+        if not unity_poses:
+            return
+
+        hips_world = None
+        if hips_u is not None:
+            hp, hq = self._unity_to_out(*hips_u)
+            hips_world = Pose6D(
+                position=hp,
+                orientation=hq,
+                frame_id=self.world_frame_id,
+                stamp=arrival_time,
+            )
+
+        out_poses = []
+        for name, pos_u, quat_u in unity_poses:
+            if hips_u is not None:
+                pos_u, quat_u = pose_in_parent_frame(
+                    hips_u[0], hips_u[1], pos_u, quat_u
+                )
+            pos, quat = self._unity_to_out(pos_u, quat_u)
+            names.append(name)
+            out_poses.append(
+                Pose6D(
+                    position=pos,
+                    orientation=quat,
+                    frame_id=self.body_frame_id if hips_u is not None else self.world_frame_id,
+                    stamp=arrival_time,
+                )
+            )
+        body = BodyJoints(
+            names=names,
+            poses=out_poses,
+            hips_world=hips_world,
+            stamp=arrival_time,
+        )
+        self._emit_body(body)
+
     def process_landmarks(self, landmarks: np.ndarray, hand_label: str) -> np.ndarray:
         keypoint_3d_array = landmarks.copy()
         if self.landmark_preprocess == "raw":
@@ -525,22 +694,19 @@ class Quest3MocapStandalone:
 
         line_lower = line.lower()
 
+        if line_lower.startswith("body"):
+            self._process_body_line(line, arrival_time)
+            return
+
         if "head" in line_lower or "hmd" in line_lower:
-            line_clean = line_lower.replace(":", ",")
-            parts = line_clean.split(",")
-            if len(parts) >= 7:
+            parsed = _parse_pose7(line)
+            if parsed is not None:
                 try:
-                    vals = [float(p.strip()) for p in parts[-7:]]
-                    head_pos_u = np.array(vals[0:3], dtype=float)
-                    head_quat_u = _quat_normalize(np.array(vals[3:7], dtype=float))
-                    if self.convert_to_robot:
-                        head_pos, head_quat = unity_pose_to_robot(head_pos_u, head_quat_u)
-                    else:
-                        head_pos, head_quat = head_pos_u, head_quat_u
+                    pos, quat = self._unity_to_out(*parsed)
                     pose = Pose6D(
-                        position=head_pos,
-                        orientation=head_quat,
-                        frame_id=self.world_frame_id,
+                        position=pos,
+                        orientation=quat,
+                        frame_id=self._pose_frame_id(),
                         stamp=arrival_time,
                     )
                     self._emit_head(pose)
@@ -552,28 +718,21 @@ class Quest3MocapStandalone:
         if not self.both and side != self.arm_side:
             return
 
-        if "wrist" in line.lower():
-            parts = line.split(",")
-            if len(parts) >= 7:
+        if "wrist" in line_lower or "controller" in line_lower:
+            parsed = _parse_pose7(line)
+            if parsed is not None:
                 try:
-                    vals = [float(p.strip()) for p in parts[-7:]]
-                    wrist_pos_u = np.array(vals[0:3], dtype=float)
-                    wrist_quat_u = _quat_normalize(np.array(vals[3:7], dtype=float))
-                    if self.convert_to_robot:
-                        wrist_pos, wrist_quat = unity_pose_to_robot(
-                            wrist_pos_u, wrist_quat_u
-                        )
-                    else:
-                        wrist_pos, wrist_quat = wrist_pos_u, wrist_quat_u
+                    pos, quat = self._unity_to_out(*parsed)
                     pose = Pose6D(
-                        position=wrist_pos,
-                        orientation=wrist_quat,
-                        frame_id=self.world_frame_id,
+                        position=pos,
+                        orientation=quat,
+                        frame_id=self._pose_frame_id(),
                         stamp=arrival_time,
                     )
-                    self._emit_wrist(side, pose)
+                    src = "controller" if "controller" in line_lower else "hand"
+                    self._emit_side_pose(side, pose, src)
                 except Exception as exc:
-                    LOG.error("Wrist parse failed: %s", exc)
+                    LOG.error("Wrist/controller parse failed: %s", exc)
 
         if "landmarks" in line.lower():
             parts = line.split(":")
@@ -631,6 +790,22 @@ class Quest3MocapStandalone:
         if self.on_head:
             self.on_head(pose)
 
+    def _emit_side_pose(self, side: str, pose: Pose6D, src: str) -> None:
+        self._note_mix(side, src)
+        if src == "controller":
+            key_c = f"{side}_controller"
+            with self._latest_lock:
+                self._latest[key_c] = pose
+            with self._viz_lock:
+                self._viz_state[key_c] = pose
+            self._write_jsonl("controller", {"side": side, **pose.to_dict()})
+            if self.on_controller:
+                self.on_controller(side, pose)
+            if self.controller_as_wrist:
+                self._emit_wrist(side, pose)
+            return
+        self._emit_wrist(side, pose)
+
     def _emit_wrist(self, side: str, pose: Pose6D) -> None:
         key = f"{side}_wrist"
         with self._latest_lock:
@@ -650,6 +825,16 @@ class Quest3MocapStandalone:
         self._write_jsonl("landmarks", msg.to_dict())
         if self.on_landmarks:
             self.on_landmarks(msg)
+
+    def _emit_body(self, body: BodyJoints) -> None:
+        with self._latest_lock:
+            self._latest["body"] = body
+            self._latest["hips"] = body.hips_world
+        with self._viz_lock:
+            self._viz_state["body"] = body
+        self._write_jsonl("body", body.to_dict())
+        if self.on_body:
+            self.on_body(body)
 
 
 # ---------------------------------------------------------------------------
@@ -740,6 +925,9 @@ def run_matplotlib_viz(receiver: Quest3MocapStandalone) -> None:
             head = receiver._viz_state["head"]
             lw = receiver._viz_state["left_wrist"]
             rw = receiver._viz_state["right_wrist"]
+            lc = receiver._viz_state["left_controller"]
+            rc = receiver._viz_state["right_controller"]
+            body = receiver._viz_state["body"]
 
         ax_hand.cla()
         ax_hand.set_title("landmarks (wrist-local)")
@@ -771,10 +959,10 @@ def run_matplotlib_viz(receiver: Quest3MocapStandalone) -> None:
         except Exception:
             pass
 
-        # World frame: head + both wrists with live RGB axes.
+        # World or body frame: head + wrists + controllers + IOBT skeleton.
         ax_pose.cla()
-        world_name = receiver.world_frame_id
-        ax_pose.set_title(f"head & wrists @{world_name} (RGB=XYZ)")
+        pose_frame = receiver.body_frame_id if body is not None else receiver.world_frame_id
+        ax_pose.set_title(f"head / wrists / body @{pose_frame} (RGB=XYZ)")
         if receiver.convert_to_robot:
             ax_pose.set_xlabel("X (left)")
             ax_pose.set_ylabel("Y (back)")
@@ -785,10 +973,32 @@ def run_matplotlib_viz(receiver: Quest3MocapStandalone) -> None:
             ax_pose.set_zlabel("Z")
 
         pose_pts: list[np.ndarray] = []
+        if body is not None and body.poses:
+            named = {n: p for n, p in zip(body.names, body.poses)}
+            xs, ys, zs = [], [], []
+            for p in body.poses:
+                pose_pts.append(p.position.copy())
+                xs.append(p.position[0])
+                ys.append(p.position[1])
+                zs.append(p.position[2])
+            ax_pose.scatter(xs, ys, zs, c="#ff8c00", s=18, label="body")
+            for a, b in BODY_BONES:
+                if a not in named or b not in named:
+                    continue
+                pa, pb = named[a].position, named[b].position
+                ax_pose.plot(
+                    [pa[0], pb[0]],
+                    [pa[1], pb[1]],
+                    [pa[2], pb[2]],
+                    color="#ffb347",
+                    linewidth=1.5,
+                )
         for pose, color, label, scale in (
             (head, "k", "head", 0.15),
             (lw, "#3399e6", "L_wrist", 0.10),
             (rw, "#e63333", "R_wrist", 0.10),
+            (lc, "#ff1744", "L_ctrl", 0.08),
+            (rc, "#ff1744", "R_ctrl", 0.08),
         ):
             if pose is None:
                 continue
@@ -931,6 +1141,17 @@ def main(argv: Optional[list[str]] = None) -> int:
             f"pos=({p[0]:.3f},{p[1]:.3f},{p[2]:.3f})",
         )
 
+    def on_controller(side: str, pose: Pose6D) -> None:
+        p = pose.position
+        maybe_print(
+            f"controller/{side}",
+            f"frame={pose.frame_id} "
+            f"pos=({p[0]:.3f},{p[1]:.3f},{p[2]:.3f})",
+        )
+
+    def on_body(body: BodyJoints) -> None:
+        maybe_print("body", f"joints={len(body.names)} frame={body.poses[0].frame_id if body.poses else '-'}")
+
     def on_landmarks(msg: HandLandmarks) -> None:
         tip = msg.points[8]
         maybe_print(
@@ -943,6 +1164,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         on_head=on_head,
         on_wrist=on_wrist,
         on_landmarks=on_landmarks,
+        on_controller=on_controller,
+        on_body=on_body,
     )
 
     stop_event = threading.Event()
@@ -956,7 +1179,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     receiver.start()
     print(
-        "Running. Frame tree: world ── head & wrist; landmarks under wrist. "
+        "Running. Mixed: controller+hand; IOBT: body + head/hand in hips frame. "
         f"convert_to_robot={args.convert_to_robot} "
         f"({'robot_world X=left Y=back Z=up' if args.convert_to_robot else 'vr_world Unity axes'}). "
         "Ctrl+C to stop.",
