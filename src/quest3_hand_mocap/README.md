@@ -16,7 +16,7 @@ Quest3 VR 手部 / 手柄 / 头部 / IOBT 身体数据接收节点。支持 UDP 
 | `Left/Right landmarks:` | 21×3 腕局部关键点 |
 | `Left/Right controller:` | Touch 手柄 6DoF |
 | `Head pose:` | 头显 |
-| `body iobt \| fid=...:` | IOBT 全身关节（世界系进包，本节点转到 hips 系） |
+| `body iobt \| fid=...:` | IOBT 全身关节（hips 世界系进包，其余关节已为 hips 系） |
 
 **下游（本工作空间 `astral_ws`）：**
 
@@ -34,11 +34,11 @@ IOBT 关：
    └── wrist | controller   ← quest3/{side}_wrist_pose（手柄默认也写这里）
         └── landmarks       ← hand_landmarks/{side}（腕局部 + raw|mano + EMA）
 
-IOBT 开（Quest 已把头/手/手柄变到 hips 系）：
+IOBT 开（Quest 已把头/手/手柄及 body 关节变到 hips 躯干系；hips 仍为世界系）：
   robot_world|vr_world
    └── hips                 ← quest3/hips_pose（人在房间里的位置）
-  robot_body|vr_body        ← hips 为原点
-   ├── head / wrist|controller / body_joints
+  robot_body|vr_body        ← hips 为原点（+X右/+Y上/+Z前）
+   ├── head / wrist|controller / body_joints   ← 均已 hips 相对，本节点只做轴约定转换
    └── landmarks            ← 仍是腕局部
 ```
 
@@ -75,8 +75,8 @@ IOBT 开（Quest 已把头/手/手柄变到 hips 系）：
 
 | 数据 | VR 原始 | 本节点处理 | 最终 `frame_id` |
 |------|---------|------------|-----------------|
-| hips | Unity 世界 | 可选 Unity→机器人轴 | `robot_world` / `vr_world` |
-| body joints | Unity 世界 | 先变到 hips 系，再可选 Unity→机器人轴 | `robot_body` / `vr_body` |
+| hips | Unity 世界（Quest 已重定向为躯干系朝向） | 可选 Unity→机器人轴 | `robot_world` / `vr_world` |
+| body joints | Quest 已转 hips 相对（非 hips 关节） | 可选 Unity→机器人轴（不再做 pose_in_parent_frame） | `robot_body` / `vr_body` |
 | head / wrist / controller | IOBT 关：世界；开：hips 系（Quest 已转） | 可选 Unity→机器人轴 | 关=`robot_world`；开=`robot_body` |
 | landmarks | Unity 腕局部 21×3 | ① Unity→机器人轴或旧版翻 X ② `raw`/`mano` ③ EMA | `hand_{side}` |
 
@@ -84,7 +84,7 @@ IOBT 开（Quest 已把头/手/手柄变到 hips 系）：
 
 ```text
 Quest3 astral-tracking (Unity LH)
-  ├── body iobt  → hips 世界 + body_joints（hips 系）
+  ├── body iobt  → hips 世界(躯干系朝向) + body_joints（Quest 已转 hips 系）
   ├── head       → [convert_to_robot?] → quest3/head_pose
   ├── wrist      → [convert_to_robot?] → quest3/{side}_wrist_pose
   ├── controller → 同上，并默认镜像到 wrist_pose（臂 IK）
@@ -221,6 +221,8 @@ quest3_udp_mocap
 
 | 日期 | 项 | 说明 |
 |------|----|------|
+| 2026-08-21 | body 关节不再二次转换 | Quest 端已把非 hips 关节转成 hips 相对；本节点 `_process_body_line` 移除 `pose_in_parent_frame`，hips 发世界、其余关节直接 `unity_pose_to_robot`，PoseArray 中 hips 为 identity 根 |
+| 2026-08-21 | hips 躯干系对齐 | Quest 端用 `_hipsBoneToTorsoFix` 把 FullBody_Hips 骨头系(+X下/+Y前/+Z左)重定向为躯干系(+X右/+Y上/+Z前)；本节点无需改，轴映射 `unity_pose_to_robot` 因此从"用错轴"变为正确 |
 | 2026-08-20 | Mixed + IOBT | 解析 `controller` / `body iobt`；IOBT 时 head/wrist 用 `robot_body`；手柄默认同写 wrist_pose |
 | 2026-08 | 腕改回世界系 | 取消 wrist 相对 head；head 与 wrist 同属 `robot_world`/`vr_world` |
 | 2026-08 | convert_to_robot | 启动可选 Unity→机器人轴 |

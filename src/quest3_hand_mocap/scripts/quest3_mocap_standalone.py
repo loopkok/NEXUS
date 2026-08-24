@@ -649,10 +649,11 @@ class Quest3MocapStandalone:
 
         out_poses = []
         for name, pos_u, quat_u in unity_poses:
-            if hips_u is not None:
-                pos_u, quat_u = pose_in_parent_frame(
-                    hips_u[0], hips_u[1], pos_u, quat_u
-                )
+            if name == "hips":
+                # Hips is streamed in world; in the body frame it is the root.
+                pos_u = np.zeros(3, dtype=float)
+                quat_u = np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+            # Non-hips joints are already hips-relative on the wire.
             pos, quat = self._unity_to_out(pos_u, quat_u)
             names.append(name)
             out_poses.append(

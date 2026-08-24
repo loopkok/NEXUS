@@ -639,9 +639,10 @@ class Quest3UDPMocap(Node):
     def _process_body_line(self, line: str, arrival_time: float) -> None:
         """Parse ``body iobt | fid=High: hips,x,y,z,qx,qy,qz,qw spine-lower,...``.
 
-        Quest sends IOBT joints in Unity world. Hips stay in world; the PoseArray
-        is expressed in the hips frame so it shares ``robot_body`` with the
-        already body-relative head / hand / controller packets.
+        Quest streams hips in Unity world (re-axed torso frame) and every other
+        joint already expressed in the hips frame — matching the body-relative
+        head / hand / controller packets. Hips is published in world; the
+        PoseArray (hips as identity root + body joints) shares ``robot_body``.
         """
         self._mark_iobt()
         prefix, _, rest = line.partition(":")
@@ -701,10 +702,12 @@ class Quest3UDPMocap(Node):
 
         poses = []
         for name, pos_u, quat_u in unity_poses:
-            if hips_u is not None:
-                pos_u, quat_u = pose_in_parent_frame(
-                    hips_u[0], hips_u[1], pos_u, quat_u
-                )
+            if name == "hips":
+                # Hips is streamed in world; in the body frame it is the root (identity).
+                pos_u = np.zeros(3, dtype=float)
+                quat_u = np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+            # Non-hips joints are already hips-relative on the wire (Quest side
+            # converted them), so no pose_in_parent_frame here — just axis remap.
             pos, quat = self._unity_to_out(pos_u, quat_u)
             pose = Pose()
             pose.position.x = float(pos[0])
