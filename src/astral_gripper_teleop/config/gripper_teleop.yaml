@@ -1,0 +1,20 @@
+# Quest3 pinch → left gripper. Units: landmark meters, actuator radians.
+#
+# close_ratio 0 = open, 1 = pinched/closed.
+# Tune open_rad / closed_rad on the real 0x31 motor.
+#
+# Swap this node later: another publisher on /left_gripper/command is enough
+# if astral_robot_control is running.
+
+pinch_gripper_node:
+  ros__parameters:
+    hand_side: "left"
+    open_dist_m: 0.08
+    close_dist_m: 0.015
+    open_rad: 0.0
+    closed_rad: 0.8
+    ema_alpha: 0.4
+    publish_rate: 50.0
+    input_timeout_s: 0.4
+    on_timeout: "hold"
+    log_interval_s: 2.0

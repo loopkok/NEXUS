@@ -221,7 +221,7 @@ quest3_udp_mocap
 
 | 日期 | 项 | 说明 |
 |------|----|------|
-| 2026-08-21 | body 关节不再二次转换 | Quest 端已把非 hips 关节转成 hips 相对；本节点 `_process_body_line` 移除 `pose_in_parent_frame`，hips 发世界、其余关节直接 `unity_pose_to_robot`，PoseArray 中 hips 为 identity 根 |
+| 2026-08-21 | body 关节不再二次转换 | Quest 端已把非 hips 关节转成 hips 相对；本节点 `_process_body_line` 移除 `pose_in_parent_frame`，hips 发世界、其余关节直接 `unity_pose_to_robot`，PoseArray 中 hips 为 identity 根。独立脚本同步 |
 | 2026-08-21 | hips 躯干系对齐 | Quest 端用 `_hipsBoneToTorsoFix` 把 FullBody_Hips 骨头系(+X下/+Y前/+Z左)重定向为躯干系(+X右/+Y上/+Z前)；本节点无需改，轴映射 `unity_pose_to_robot` 因此从"用错轴"变为正确 |
 | 2026-08-20 | Mixed + IOBT | 解析 `controller` / `body iobt`；IOBT 时 head/wrist 用 `robot_body`；手柄默认同写 wrist_pose |
 | 2026-08 | 腕改回世界系 | 取消 wrist 相对 head；head 与 wrist 同属 `robot_world`/`vr_world` |

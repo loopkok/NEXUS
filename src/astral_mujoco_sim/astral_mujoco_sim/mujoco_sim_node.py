@@ -4,8 +4,13 @@
 Drop-in stand-in for ``astral_robot_control`` (do not run both on same topics).
 
 Pipeline:
-  quest3 → astral_teleop_{left,right} → /{side}_arm/joint_commands
+  quest3 → astral_arm_teleop_{left,right} → /{side}_arm/joint_commands
                                       → this node (viewer + optional joint_states)
+
+Gripper: the MJCF has no gripper joint yet, so this node only subscribes
+  /{left,right}_gripper/command (Float64 0–1) and /{side}_gripper/joint_commands
+  (JointState rad) and echoes them to /{side}_gripper/joint_states — enough to
+  verify the pinch→gripper chain in sim before a gripper joint is modeled.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64
 
 from astral_mujoco_sim.fps_counter import FPSCounter
 from astral_mujoco_sim.joint_names import (
@@ -39,6 +45,13 @@ def _sensor_qos() -> QoSProfile:
         history=HistoryPolicy.KEEP_LAST,
         depth=50,
     )
+
+
+# Mirror astral_robot_control gripper contract (no SDK / no MJCF joint here —
+# the sim only echoes commands to /{side}_gripper/joint_states so the gripper
+# teleop chain is observable before a gripper joint is added to the MJCF).
+LEFT_GRIPPER_NAME = "left_gripper"
+RIGHT_GRIPPER_NAME = "right_gripper"
 
 
 def _spin_drain(node: Node, max_callbacks: int = 24) -> None:
@@ -86,6 +99,15 @@ class AstralMujocoSimNode(Node):
             "init_pose_right",
             [0.32, -0.11, 0.53, -0.80, 0.28, 0.0, 0.0],
         )
+        # Gripper (mirror astral_robot_control; sim has no MJCF gripper joint,
+        # so we only subscribe + echo joint_states — no qpos/ctrl drive).
+        self.declare_parameter("left_gripper_ns", "left_gripper")
+        self.declare_parameter("right_gripper_ns", "right_gripper")
+        self.declare_parameter("enable_gripper_cmd", True)
+        self.declare_parameter("left_gripper_open_rad", 0.0)
+        self.declare_parameter("left_gripper_closed_rad", 0.8)
+        self.declare_parameter("right_gripper_open_rad", 0.0)
+        self.declare_parameter("right_gripper_closed_rad", 0.8)
 
         mjcf_path = str(self.get_parameter("mjcf_path").value).strip()
         if not mjcf_path:
@@ -159,11 +181,51 @@ class AstralMujocoSimNode(Node):
             rate = float(self.get_parameter("state_rate").value)
             self.create_timer(1.0 / max(1.0, rate), self._publish_states)
 
+        # Gripper: subscribe command topics, echo to joint_states. No MJCF
+        # gripper joint exists yet, so nothing is driven in the viewer.
+        self._grip_open_rad = {
+            "left": float(self.get_parameter("left_gripper_open_rad").value),
+            "right": float(self.get_parameter("right_gripper_open_rad").value),
+        }
+        self._grip_closed_rad = {
+            "left": float(self.get_parameter("left_gripper_closed_rad").value),
+            "right": float(self.get_parameter("right_gripper_closed_rad").value),
+        }
+        self._grip_rad = {
+            "left": self._grip_open_rad["left"],
+            "right": self._grip_open_rad["right"],
+        }
+        self._grip_name = {"left": LEFT_GRIPPER_NAME, "right": RIGHT_GRIPPER_NAME}
+        self._grip_pubs = {}
+        self._grip_log_t = {"left": 0.0, "right": 0.0}
+        if bool(self.get_parameter("enable_gripper_cmd").value):
+            for side, g_ns in (
+                ("left", str(self.get_parameter("left_gripper_ns").value).strip("/")),
+                ("right", str(self.get_parameter("right_gripper_ns").value).strip("/")),
+            ):
+                self.create_subscription(
+                    JointState, f"/{g_ns}/joint_commands",
+                    lambda msg, s=side: self._on_grip_js(s, msg), qos,
+                )
+                self.create_subscription(
+                    Float64, f"/{g_ns}/command",
+                    lambda msg, s=side: self._on_grip_ratio(s, msg), qos,
+                )
+                if self._pub_state:
+                    self._grip_pubs[side] = self.create_publisher(
+                        JointState, f"/{g_ns}/joint_states", qos
+                    )
+
         self.enable_viewer = bool(self.get_parameter("enable_viewer").value)
         self.realtime = bool(self.get_parameter("realtime").value)
+        grip_topics = (
+            "/left_gripper|/right_gripper/(command|joint_commands)"
+            if self._grip_pubs or bool(self.get_parameter("enable_gripper_cmd").value)
+            else "gripper disabled"
+        )
         self.get_logger().info(
             f"Astral MuJoCo sim ready: nq={self.model.nq} viewer={self.enable_viewer} "
-            f"topics=/left_arm|/right_arm/joint_commands"
+            f"arms=/left_arm|/right_arm/joint_commands gripper={grip_topics}"
         )
 
     def _addrs(self, joint_names: List[str]) -> np.ndarray:
@@ -182,6 +244,29 @@ class AstralMujocoSimNode(Node):
 
     def _on_right(self, msg: JointState) -> None:
         self._on_cmd("right", msg)
+
+    def _on_grip_js(self, side: str, msg: JointState) -> None:
+        if not msg.position:
+            return
+        self._set_grip_rad(side, float(msg.position[0]))
+
+    def _on_grip_ratio(self, side: str, msg: Float64) -> None:
+        r = max(0.0, min(1.0, float(msg.data)))
+        lo = self._grip_open_rad[side]
+        hi = self._grip_closed_rad[side]
+        self._set_grip_rad(side, lo + r * (hi - lo))
+
+    def _set_grip_rad(self, side: str, rad: float) -> None:
+        with self._lock:
+            self._grip_rad[side] = float(rad)
+        now = time.monotonic()
+        if now - self._grip_log_t[side] > 1.0:
+            self._grip_log_t[side] = now
+            self.get_logger().info(
+                f"[Gripper][{side}] cmd rad={rad:.3f} "
+                f"(open={self._grip_open_rad[side]:.3f} "
+                f"closed={self._grip_closed_rad[side]:.3f})"
+            )
 
     def _on_cmd(self, side: str, msg: JointState) -> None:
         q = _pack_arm(msg, self._cmd_names[side])
@@ -236,6 +321,14 @@ class AstralMujocoSimNode(Node):
             msg.name = list(names)
             msg.position = [float(x) for x in q.tolist()]
             self._state_pubs[side].publish(msg)
+        for side, pub in self._grip_pubs.items():
+            with self._lock:
+                rad = float(self._grip_rad[side])
+            gmsg = JointState()
+            gmsg.header.stamp = now
+            gmsg.name = [self._grip_name[side]]
+            gmsg.position = [rad]
+            pub.publish(gmsg)
 
     def run(self) -> None:
         viewer = None

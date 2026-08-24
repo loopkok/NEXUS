@@ -50,6 +50,9 @@ GRIPPER_JOINT_NAMES: List[str] = ROBOT_JOINT_NAMES[16:18]
 LEFT_ARM_NS = "left_arm"
 RIGHT_ARM_NS = "right_arm"
 ASTRAL_NS = "astral"
+LEFT_GRIPPER_NS = "left_gripper"
+RIGHT_GRIPPER_NS = "right_gripper"
+CMD_RATIO_SUFFIX = "command"
 
 CMD_SUFFIX = "joint_commands"
 STATE_SUFFIX = "joint_states"

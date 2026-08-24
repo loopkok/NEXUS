@@ -8,7 +8,7 @@ Quest3 (quest3_hand_mocap, convert_to_robot:=true)
   ├─ mixed: 一侧手柄 + 一侧手（controller 默认同写 wrist_pose）
   ├─ IOBT: hips 世界系；head/wrist/controller/body_joints 在 hips 系
   ├─ quest3/{left,right}_wrist_pose
-  │     → astral_quest_teleop → /{side}_arm/joint_commands
+  │     → astral_arm_teleop → /{side}_arm/joint_commands
   │           → 仿真 astral_mujoco_sim    或  真机 astral_robot_control
   └─ hand_landmarks/{left,right}
         → wujihand_retargeting → /{side}_hand/joint_commands
@@ -35,7 +35,9 @@ Quest3 ← WebRTC（quest3_video_streamer，信令 :8765）
 
 | 包 | 作用 |
 |----|------|
-| `astral_quest_teleop` | IK（`analytic_dh` / `urdf_numerical`）+ 安全滤波 |
+| `astral_arm_teleop` | 双臂遥操 IK（`analytic_dh` / `urdf_numerical`）+ 安全滤波（原 `astral_quest_teleop`，纯臂） |
+| `astral_teleop` | 整机遥操编排 launch：mocap + 双臂 + 左夹爪 + 右 Wuji（Quest 或手套） |
+| `astral_gripper_teleop` | Quest3 左手捏合 → `/left_gripper/command`（可换硬件源） |
 | `astral_robot_description` | 双臂 URDF（`astral_robot.pin.urdf`，SW 原约定） |
 | `astral_robot_control` | 真机驱动（`astral_robot_sdk`） |
 | `astral_mujoco_sim` | 双臂 MuJoCo（默认 `astral_dual.xml`） |
@@ -63,7 +65,8 @@ export PATH=/usr/bin:$PATH
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-select \
   quest3_hand_mocap quest3_video_streamer \
-  astral_robot_description astral_quest_teleop astral_robot_control astral_mujoco_sim \
+  astral_robot_description astral_arm_teleop astral_gripper_teleop astral_teleop \
+  astral_robot_control astral_mujoco_sim \
   wuji_glove wujihand_retargeting wujihand_control \
   wujihand_driver wujihand_msgs wujihand_bringup \
   wujihand_mujoco_sim
@@ -80,12 +83,18 @@ URDF 数值 IK：`pip install pin`。
 # 臂仿真（求解器 / 协议在 yaml，默认 URDF IK + HTS 有线 TCP）
 ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
 
-# 臂仿真改 DH：把 astral_teleop_{left,right}.yaml 的 solver_type 改成 analytic_dh
+# 臂仿真改 DH：把 astral_arm_teleop_{left,right}.yaml 的 solver_type 改成 analytic_dh
 # 臂仿真改 UDP：把 quest3_mocap.yaml 的 protocol 改成 udp
 
-# 臂真机
-ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
+# 臂真机（默认左手捏合控左夹爪）
+ros2 launch astral_arm_teleop astral_dual_arm_teleop.launch.py \
   with_driver:=true control_board_ip:=192.168.10.2
+
+# 整机真机：双臂 + 左夹爪 + 右 Wuji（右手 quest3 或 glove）
+ros2 launch astral_teleop full_teleop.launch.py \
+  with_arm_driver:=true with_hand_driver:=true \
+  right_hand_source:=quest3
+
 
 # 手仿真 / 调参
 ros2 launch wujihand_mujoco_sim wujihand_sim_pipeline.launch.py \
@@ -108,13 +117,13 @@ Quest 视频回传：`ros2 launch quest3_video_streamer multi_camera.launch.py`�
 | `analytic_dh` | 干净 MDH 基座；yaml `vr_to_arm_rot=I` 再乘 \(R_\text{base}^\top\) | DH 约定求解后 `flip_q` 成 SW 约定 |
 | `urdf_numerical`（yaml 默认） | SW `*_base_link`；`astral_robot.pin.urdf` | 已是硬件约定，不 flip |
 
-仿真 MJCF **未改**（`astral_dual.xml`）。细节见 [`astral_quest_teleop/README.md`](src/astral_quest_teleop/README.md)。
+仿真 MJCF **未改**（`astral_dual.xml`）。细节见 [`astral_arm_teleop/README.md`](src/astral_arm_teleop/README.md)。
 
 ## 文档
 
 | 文件 | 内容 |
 |------|------|
-| [`src/astral_quest_teleop/README.md`](src/astral_quest_teleop/README.md) | DH / flip / `vr_to_arm_rot` |
+| [`src/astral_arm_teleop/README.md`](src/astral_arm_teleop/README.md) | DH / flip / `vr_to_arm_rot` |
 | [`src/astral_mujoco_sim/README.md`](src/astral_mujoco_sim/README.md) | 臂仿真 |
 | [`src/astral_robot_control/README.md`](src/astral_robot_control/README.md) | 臂真机驱动 |
 | [`src/wujihand_control/README.md`](src/wujihand_control/README.md) | 手真机 |

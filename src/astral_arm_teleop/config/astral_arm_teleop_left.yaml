@@ -1,0 +1,42 @@
+# Astral left arm — IK in left_base_link
+# Quest wrist: robot_world (convert_to_robot:=true). Default vr_to_arm_rot=I.
+astral_arm_teleop_left:
+  ros__parameters:
+    arm_side: "left"
+    control_rate: 150.0
+    # analytic_dh | urdf_numerical  — launch 不覆盖；改这里即可
+    solver_type: "urdf_numerical"
+    urdf_path: ""  # empty → astral_robot.pin.urdf
+    # URDF LM (ignored by DH; hot-tunable)
+    ik_max_iter: 20
+    ik_tol: 0.00000001
+    ik_w_pos: 1.0
+    ik_w_ori: 0.3
+    ik_w_reg: 0.0001
+
+    vr_to_arm_rot: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+    pos_smoothing: 0.8   # 0=无滤波 1=几乎不跟；可热改（tune 滑动条）
+    rot_smoothing: 0.8
+    motion_scale: 0.65
+    flip_pitch: false
+    tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    max_joint_vel: 4.0  # rad/s  (0.08 rad/tick @ 50 Hz)
+    workspace_radius: 0.0
+    data_timeout: 1.5
+    dry_run: false
+    require_clench_to_start: false
+    auto_arm_on_start: true
+    use_joint_state_seed: true
+    # Startup: slow joint-space move to init_pose (like Nero), then VR teleop.
+    move_to_init_pose: true
+    init_speed_percent: 10  # of max_joint_vel
+    init_arrive_tol: 0.05
+    init_timeout: 15.0
+    print_latency: true
+    latency_print_interval: 2.0
+    publish_tune: true
+
+    init_pose: [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]

@@ -17,5 +17,8 @@ quest3_udp_mocap:
     convert_to_robot: true
     # Mixed/IOBT: also publish Touch 6DoF on quest3/{side}_wrist_pose (arm IK).
     controller_as_wrist: true
+    # Set false if another source (e.g. glove) owns that landmarks topic.
+    publish_landmarks_left: true
+    publish_landmarks_right: true
     print_latency: true
     latency_print_interval: 2.0

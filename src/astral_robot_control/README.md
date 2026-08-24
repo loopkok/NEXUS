@@ -1,7 +1,7 @@
 # astral_robot_control
 
 ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji/XHand 风格的
-`joint_commands` / `joint_states` 话题，供后续 `astral_quest_teleop` 使用。
+`joint_commands` / `joint_states` 话题，供后续 `astral_arm_teleop` 使用。
 
 **本包不做 IK / Quest**；只负责连接控制板、收指令、发反馈。
 
@@ -18,9 +18,12 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 | `/left_arm/joint_commands` | sub | `JointState.position[7]` → `move_arm_js` |
 | `/right_arm/joint_commands` | sub | `JointState.position[7]` → `move_arm_js` |
 | `/astral/joint_commands` | sub | `JointState.position[18]` → `move_js`（有新数据时优先） |
+| `/left_gripper/command` | sub | `Float64` 0=开 1=合 → `set_gripper_angle` |
+| `/left_gripper/joint_commands` | sub | `JointState` 弧度 → `set_gripper_angle`（与 command 均可） |
 | `/left_arm/joint_states` | pub | 左臂 7 |
 | `/right_arm/joint_states` | pub | 右臂 7 |
 | `/astral/joint_states` | pub | 全身 18 |
+| `/left_gripper/joint_states` | pub | 左夹爪 1 |
 
 - QoS：**BEST_EFFORT**（SensorData）
 - 关节名可选；无名时按位置顺序；有名时按 `joint_layout.py` 对齐
@@ -83,17 +86,18 @@ ros2 topic echo /left_arm/joint_states --once
 
 ## 与遥操
 
-全链路见 [`astral_quest_teleop`](../astral_quest_teleop/README.md)：
+全链路见 [`astral_arm_teleop`](../astral_arm_teleop/README.md)：
 
 ```bash
-ros2 launch astral_quest_teleop astral_dual_arm_teleop.launch.py \
+ros2 launch astral_arm_teleop astral_dual_arm_teleop.launch.py \
   with_driver:=true control_board_ip:=192.168.10.2
 ```
 
 ```text
 quest3 / IK  →  /{left,right}_arm/joint_commands
+pinch_gripper →  /left_gripper/command
                      ↓
               astral_robot_driver  →  astral_robot_sdk  →  板
                      ↓
-              /{left,right,astral}/joint_states
+              /{left,right,astral,left_gripper}/joint_states
 ```

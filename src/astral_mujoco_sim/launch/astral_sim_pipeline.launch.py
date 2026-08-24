@@ -2,10 +2,14 @@
 
 Do NOT start astral_robot_control alongside this launch.
 
+Nodes: quest3_udp_mocap + 2× astral_arm_teleop_node + mujoco_sim_node
+      + optional astral_gripper_teleop (left pinch → /left_gripper/command;
+        sim echoes to /left_gripper/joint_states, no MJCF gripper joint yet).
+
 Node config lives in yaml (not launch defaults):
-  astral_teleop_{left,right}.yaml  — solver_type, smoothing, …
+  astral_arm_teleop_{left,right}.yaml  — solver_type, smoothing, …
   quest3_mocap.yaml                — protocol, convert_to_robot, …
-  astral_mujoco_sim.yaml           — viewer, mjcf, …
+  astral_mujoco_sim.yaml           — viewer, mjcf, gripper echo, …
 
 Launch arguments are optional overrides (empty → yaml).
 """
@@ -16,7 +20,9 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -61,12 +67,12 @@ def _opt(context, name: str) -> str:
 
 
 def _launch_setup(context, *args, **kwargs):
-    teleop_pkg = get_package_share_directory("astral_quest_teleop")
+    teleop_pkg = get_package_share_directory("astral_arm_teleop")
     sim_pkg = get_package_share_directory("astral_mujoco_sim")
     quest_pkg = get_package_share_directory("quest3_hand_mocap")
 
-    cfg_l = os.path.join(teleop_pkg, "config", "astral_teleop_left.yaml")
-    cfg_r = os.path.join(teleop_pkg, "config", "astral_teleop_right.yaml")
+    cfg_l = os.path.join(teleop_pkg, "config", "astral_arm_teleop_left.yaml")
+    cfg_r = os.path.join(teleop_pkg, "config", "astral_arm_teleop_right.yaml")
     quest_cfg = os.path.join(quest_pkg, "config", "quest3_mocap.yaml")
     sim_cfg = os.path.join(sim_pkg, "config", "astral_mujoco_sim.yaml")
 
@@ -103,19 +109,32 @@ def _launch_setup(context, *args, **kwargs):
     if sim_extra:
         sim_params.append(sim_extra)
 
+    gripper = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("astral_gripper_teleop"),
+                "launch",
+                "gripper_teleop.launch.py",
+            )
+        ),
+        condition=IfCondition(LaunchConfiguration("with_gripper")),
+        launch_arguments={"hand_side": "left"}.items(),
+    )
+
     return [
         mocap,
+        gripper,
         Node(
-            package="astral_quest_teleop",
-            executable="astral_teleop_arm_node",
-            name="astral_teleop_left",
+            package="astral_arm_teleop",
+            executable="astral_arm_teleop_node",
+            name="astral_arm_teleop_left",
             output="screen",
             parameters=[cfg_l, teleop_extra],
         ),
         Node(
-            package="astral_quest_teleop",
-            executable="astral_teleop_arm_node",
-            name="astral_teleop_right",
+            package="astral_arm_teleop",
+            executable="astral_arm_teleop_node",
+            name="astral_arm_teleop_right",
             output="screen",
             parameters=[cfg_r, teleop_extra],
         ),
@@ -150,12 +169,17 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "solver_type",
                 default_value="",
-                description="empty → astral_teleop_{left,right}.yaml",
+                description="empty → astral_arm_teleop_{left,right}.yaml",
             ),
             DeclareLaunchArgument(
                 "urdf_path",
                 default_value="",
                 description="empty → astral_robot.pin.urdf (still passed so DH↔URDF hot-switch works)",
+            ),
+            DeclareLaunchArgument(
+                "with_gripper",
+                default_value="true",
+                description="Quest3 left pinch → /left_gripper/command (sim echoes, no MJCF gripper joint yet)",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

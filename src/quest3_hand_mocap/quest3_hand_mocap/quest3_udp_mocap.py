@@ -279,6 +279,9 @@ class Quest3UDPMocap(Node):
         # Mixed/IOBT: Touch 6DoF also published on quest3/{side}_wrist_pose so
         # existing arm IK keeps tracking the held controller.
         self.declare_parameter("controller_as_wrist", True)
+        # When glove owns a side, skip Quest landmarks on that topic (wrist still published).
+        self.declare_parameter("publish_landmarks_left", True)
+        self.declare_parameter("publish_landmarks_right", True)
 
         self.protocol = self.get_parameter("protocol").value.lower()
         self.udp_port = self.get_parameter("udp_port").value
@@ -300,6 +303,12 @@ class Quest3UDPMocap(Node):
             )
         self.convert_to_robot = bool(self.get_parameter("convert_to_robot").value)
         self.controller_as_wrist = bool(self.get_parameter("controller_as_wrist").value)
+        self.publish_landmarks_left = bool(
+            self.get_parameter("publish_landmarks_left").value
+        )
+        self.publish_landmarks_right = bool(
+            self.get_parameter("publish_landmarks_right").value
+        )
         self.declare_parameter("print_latency", True)
         self.declare_parameter("latency_print_interval", 2.0)
         self._print_latency = bool(self.get_parameter("print_latency").value)
@@ -317,7 +326,9 @@ class Quest3UDPMocap(Node):
             f"preprocess={self.landmark_preprocess}, "
             f"xhand_pinky_adapt={self.enable_xhand_pinky_adapt}, "
             f"convert_to_robot={self.convert_to_robot}, "
-            f"controller_as_wrist={self.controller_as_wrist}"
+            f"controller_as_wrist={self.controller_as_wrist}, "
+            f"landmarks_L={self.publish_landmarks_left}, "
+            f"landmarks_R={self.publish_landmarks_right}"
         )
 
         # 缓存用于 EMA 平滑滤波
@@ -826,6 +837,10 @@ class Quest3UDPMocap(Node):
         publisher.publish(ma)
 
     def publish_mocap_data(self, landmarks, side, arrival_time: float = 0.0):
+        if side == "right" and not self.publish_landmarks_right:
+            return
+        if side == "left" and not self.publish_landmarks_left:
+            return
         if side == 'right':
             self.landmark_cache_right = self.ema_alpha * landmarks + (1 - self.ema_alpha) * self.landmark_cache_right
             landmarks = self.landmark_cache_right
