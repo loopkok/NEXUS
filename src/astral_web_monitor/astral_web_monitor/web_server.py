@@ -1,0 +1,245 @@
+"""FastAPI control plane + WebSocket telemetry + SPA static hosting.
+
+Architecture follows rob_station's control_server:
+  * REST  /api/v1/*  for control (start/stop/pause/resume/presets/health)
+  * WS    /ws/telemetry  pushes a 30 Hz `ui_state` frame built from the ROS
+    snapshot + launch state; broadcast is skipped when there are no clients
+  * Static files served from web/dist (production) with SPA history fallback
+
+The ROS node runs in a background thread (monitor_node.init_node); this
+module runs uvicorn on the main thread.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from . import config
+from .launch_manager import (
+    LaunchManager,
+    PAUSED,
+    RUNNING,
+    load_presets,
+)
+from .monitor_node import get_node, init_node, shutdown_node
+from .schemas import ApiEnvelope, PresetInfo, StartRequest
+
+
+# --- globals ---------------------------------------------------------------
+_launch_mgr = LaunchManager()
+_presets = load_presets()
+_web_dist = Path(os.environ.get("ASTRAL_WEB_MONITOR_DIST", ""))
+
+
+def _build_ui_state() -> dict[str, Any]:
+    """Aggregate one telemetry frame from ROS snapshot + launch state."""
+    node = get_node()
+    ros = node.snapshot() if node else {"joints": {}, "rates_hz": {}}
+    return {
+        "type": "ui_state",
+        "ts": time.time(),
+        "teleop": {
+            "state": _launch_mgr.state,
+            "preset": _launch_mgr.preset,
+            "uptime_s": _launch_mgr.uptime_s(),
+            "pid": _launch_mgr.pid,
+        },
+        "joints": ros["joints"],
+        "rates_hz": ros["rates_hz"],
+        "log_tail": _launch_mgr.log_tail()[-50:],
+    }
+
+
+# --- connection manager ---------------------------------------------------
+class _ConnectionManager:
+    def __init__(self) -> None:
+        self.active: list[WebSocket] = []
+
+    async def connect(self, ws: WebSocket) -> None:
+        await ws.accept()
+        self.active.append(ws)
+
+    def disconnect(self, ws: WebSocket) -> None:
+        if ws in self.active:
+            self.active.remove(ws)
+
+    @property
+    def count(self) -> int:
+        return len(self.active)
+
+    async def broadcast(self, message: dict) -> None:
+        text = json.dumps(message, ensure_ascii=False)
+        dead: list[WebSocket] = []
+        for ws in self.active:
+            try:
+                await ws.send_text(text)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+
+_conn = _ConnectionManager()
+
+
+# --- lifespan --------------------------------------------------------------
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    init_node()
+    broadcaster = asyncio.create_task(_ui_state_broadcaster())
+    try:
+        yield
+    finally:
+        broadcaster.cancel()
+        try:
+            await broadcaster
+        except asyncio.CancelledError:
+            pass
+        shutdown_node()
+
+
+async def _ui_state_broadcaster() -> None:
+    interval = 1.0 / config.WS_PUSH_HZ
+    while True:
+        await asyncio.sleep(interval)
+        if _conn.count <= 0:
+            continue
+        msg = await asyncio.to_thread(_build_ui_state)
+        await _conn.broadcast(msg)
+
+
+# --- app -------------------------------------------------------------------
+app = FastAPI(title="astral_web_monitor", version="0.1.0", lifespan=_lifespan)
+
+
+@app.get("/api/v1/health")
+async def health() -> ApiEnvelope:
+    return ApiEnvelope(
+        ok=True,
+        data={
+            "ros_ok": get_node() is not None,
+            "launch_state": _launch_mgr.state,
+            "launch_pid": _launch_mgr.pid,
+            "uptime_s": _launch_mgr.uptime_s(),
+            "ws_clients": _conn.count,
+        },
+    )
+
+
+@app.get("/api/v1/presets", response_model=ApiEnvelope)
+async def list_presets() -> ApiEnvelope:
+    items = [
+        PresetInfo(
+            name=p.name, package=p.package, launch=p.launch,
+            args=p.args, description=p.description,
+        )
+        for p in _presets.values()
+    ]
+    return ApiEnvelope(ok=True, data=[m.model_dump() for m in items])
+
+
+@app.get("/api/v1/state")
+async def get_state() -> ApiEnvelope:
+    return ApiEnvelope(ok=True, data=_build_ui_state())
+
+
+@app.post("/api/v1/start")
+async def start(req: StartRequest) -> ApiEnvelope:
+    preset = _presets.get(req.preset)
+    if preset is None:
+        raise HTTPException(status_code=404, detail=f"未知预设: {req.preset}")
+    ok, msg = _launch_mgr.start(preset)
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message=msg)
+
+
+@app.post("/api/v1/stop")
+async def stop() -> ApiEnvelope:
+    ok, msg = _launch_mgr.stop()
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message=msg)
+
+
+@app.post("/api/v1/pause")
+async def pause() -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    if _launch_mgr.state not in (RUNNING,):
+        raise HTTPException(status_code=409, detail=f"当前状态 {_launch_mgr.state} 无法暂停")
+    node.publish_disarm()
+    _launch_mgr.mark_paused()
+    return ApiEnvelope(ok=True, message="已暂停 (disarm)")
+
+
+@app.post("/api/v1/resume")
+async def resume() -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    if _launch_mgr.state != PAUSED:
+        raise HTTPException(status_code=409, detail=f"当前状态 {_launch_mgr.state} 非暂停")
+    node.publish_arm()
+    _launch_mgr.mark_resumed()
+    return ApiEnvelope(ok=True, message="已恢复 (arm)")
+
+
+# --- WebSocket -------------------------------------------------------------
+@app.websocket("/ws/telemetry")
+async def ws_telemetry(websocket: WebSocket):
+    await _conn.connect(websocket)
+    # Send an immediate snapshot so the client doesn't wait for the next tick.
+    snapshot = await asyncio.to_thread(_build_ui_state)
+    await websocket.send_text(json.dumps(snapshot, ensure_ascii=False))
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            if raw == "ping":
+                await websocket.send_text(json.dumps({"type": "pong", "ts": time.time()}))
+    except WebSocketDisconnect:
+        _conn.disconnect(websocket)
+    except Exception:
+        _conn.disconnect(websocket)
+
+
+# --- SPA static hosting ----------------------------------------------------
+if _web_dist.is_dir():
+    assets = _web_dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        # API and WS routes are matched first; anything else serves the SPA.
+        if full_path.startswith(("api/", "ws/")):
+            raise HTTPException(status_code=404)
+        index = _web_dist / "index.html"
+        if index.is_file():
+            return FileResponse(str(index))
+        raise HTTPException(status_code=404, detail="前端未构建")
+
+
+def main() -> None:
+    """Entry point (console_scripts). Runs uvicorn on the main thread."""
+    import uvicorn
+    uvicorn.run(
+        app,
+        host=config.WEB_HOST,
+        port=config.WEB_PORT,
+        log_level=os.environ.get("ASTRAL_WEB_MONITOR_LOG_LEVEL", "info"),
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,36 @@
+# Launch presets for astral_web_monitor.
+# Each preset maps to a `ros2 launch <package> <launch> <args>` invocation.
+# Add or edit presets here without touching code.
+
+presets:
+  - name: "Arms only (sim, no driver)"
+    package: astral_arm_teleop
+    launch: astral_dual_arm_teleop.launch.py
+    args:
+      with_mocap: "true"
+      with_driver: "false"
+    description: "双臂遥操作 + Quest mocap，无真机驱动（仿真/调试）"
+
+  - name: "Full real (Quest right hand)"
+    package: astral_teleop
+    launch: full_teleop.launch.py
+    args:
+      with_arm_driver: "true"
+      with_hand_driver: "true"
+      right_hand_source: "quest3"
+    description: "完整真机：双臂 + 左夹爪 + 右灵巧手，右手来自 Quest"
+
+  - name: "Full real (Glove right hand)"
+    package: astral_teleop
+    launch: full_teleop.launch.py
+    args:
+      with_arm_driver: "true"
+      with_hand_driver: "true"
+      right_hand_source: "glove"
+    description: "完整真机：双臂 + 左夹爪 + 右灵巧手，右手来自 Wuji Glove"
+
+  - name: "MuJoCo sim pipeline"
+    package: astral_mujoco_sim
+    launch: astral_sim_pipeline.launch.py
+    args: {}
+    description: "MuJoCo 仿真全链路：mocap + 双臂 + 左夹爪"
