@@ -30,19 +30,6 @@ ros2 run quest3_hand_mocap quest3_udp_mocap --ros-args \
   -p convert_to_robot:=true -p arm_side:=both -p protocol:=tcp_wired
 ```
 
-## IOBT（身体系）手腕支持
-
-`quest3_udp_mocap` 在 IOBT 开时把手腕发成 `robot_body`/`vr_body`（髋部相对），`frame_id` 与 Mixed 的 `robot_world` 不同。本节点订阅 `quest3/hips_pose`，在 `_on_wrist` 按 `frame_id` 分流：
-
-- **`robot_world`（Mixed）**：直接喂 `PoseProcessor`（世界系增量映射，原行为）。
-- **`robot_body`（IOBT）**：用**校准时刻**捕获的 hips 位姿（`_hips_init_pos/_rot`）把身体系手腕重定向成"世界锚定"pose 再喂：
-  - `pos = R_hips_init · p_body + hips_init_pos`
-  - `rot = R_hips_init · q_body`
-
-效果：`PoseProcessor` 看到的始终是世界系 pose，`vr_to_arm_rot`（按 `robot_world` 调）继续生效；而身体**平移和转动**都不拖动臂——只有手相对身体（在校准身体轴下）的运动驱动臂。等价于固定映射 `vr_to_arm_rot · R_hips_init`：身体初始系 → 臂基座。
-
-检测到 `frame_id` 在 body/world 间切换时自动 `pose.reset()` 重新校准（并清掉 `_hips_init_*`），避免跨系增量错乱。IOBT 首个手腕到达前若还没收到 `hips_pose`，则跳过该帧直到 hips 到达。
-
 ## 两套约定
 
 | | DH / analytic IK | 真机 / 旧 MJCF / URDF 数值 |

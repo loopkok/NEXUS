@@ -233,22 +233,8 @@ class AstralTeleopArmNode(Node):
             self.get_logger().info(
                 f"tune topics: /teleop/{self.side}/tune/ee_{{vr,filt,cmd}} + xyz"
             )
-        # IOBT body-frame support: when the wrist arrives in robot_body/vr_body
-        # (hips-relative), reconstruct a world-anchored pose using the hips pose
-        # captured at calibration, so the existing world-frame delta mapper works
-        # and walking/turning the body does not drag the arm — only hand motion
-        # relative to the body (in the calibration body axes) drives the arm.
-        self._hips_pos = None        # latest hips world pos
-        self._hips_rot = None        # latest hips world orientation (Rotation)
-        self._hips_init_pos = None  # hips pose captured at calibration
-        self._hips_init_rot = None
-        self._last_wrist_frame_body = None  # bool: last wrist was body-frame?
-
         self.create_subscription(
             PoseStamped, f"quest3/{self.side}_wrist_pose", self._on_wrist, 10
-        )
-        self.create_subscription(
-            PoseStamped, "quest3/hips_pose", self._on_hips, 10
         )
         if self._homing or bool(self.get_parameter("use_joint_state_seed").value):
             self.create_subscription(
@@ -428,20 +414,6 @@ class AstralTeleopArmNode(Node):
             self.state_q = np.asarray(msg.position[:7], dtype=float)
             self._got_state = True
 
-    def _on_hips(self, msg: PoseStamped) -> None:
-        self._hips_pos = np.array(
-            [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
-        )
-        q = [
-            msg.pose.orientation.x,
-            msg.pose.orientation.y,
-            msg.pose.orientation.z,
-            msg.pose.orientation.w,
-        ]
-        if abs(np.linalg.norm(q) - 1.0) > 0.1:
-            return
-        self._hips_rot = Rotation.from_quat(q)
-
     def _on_wrist(self, msg: PoseStamped) -> None:
         if self._homing:
             return
@@ -456,34 +428,7 @@ class AstralTeleopArmNode(Node):
         ]
         if abs(np.linalg.norm(q) - 1.0) > 0.1:
             return
-        rot = Rotation.from_quat(q)
-
-        is_body = "body" in (msg.header.frame_id or "").lower()
-        # Frame switch (Mixed <-> IOBT): re-calibrate in the new frame.
-        if (
-            self._last_wrist_frame_body is not None
-            and self._last_wrist_frame_body != is_body
-        ):
-            self.pose.reset()
-            self._hips_init_pos = None
-            self._hips_init_rot = None
-        self._last_wrist_frame_body = is_body
-
-        if is_body:
-            # Wrist is hips-relative (IOBT). Reconstruct a world-anchored pose
-            # using the hips pose captured at calibration: the world-frame
-            # delta mapper then sees a fixed-frame target, so body translation
-            # AND rotation after calibration do not drag the arm — only hand
-            # motion relative to the body drives it.
-            if self._hips_pos is None or self._hips_rot is None:
-                return  # need hips before a body-frame wrist can be used
-            if self._hips_init_pos is None:
-                self._hips_init_pos = self._hips_pos.copy()
-                self._hips_init_rot = self._hips_rot
-            pos = self._hips_init_rot.apply(pos) + self._hips_init_pos
-            rot = self._hips_init_rot * rot
-
-        self.pose.update_vr_pose(pos, rot)
+        self.pose.update_vr_pose(pos, Rotation.from_quat(q))
         self._last_vr_t = time.monotonic()
         self._last_vr_stamp = msg.header.stamp
         if self._print_latency:

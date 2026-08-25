@@ -18,11 +18,6 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 - `astral_robot_control` 收上述话题，调用 SDK `set_gripper_angle`（左 0x31）；`move_arm_js` 不带动夹爪。
 - 夹爪 include 原在 `astral_dual_arm_teleop.launch.py`（`with_gripper:=true`），现移到 `astral_teleop/full_teleop.launch.py` 编排；臂包不再含夹爪。以后换硬件：新节点发同一 `command` 即可。
 
-`astral_arm_teleop`：支持 IOBT 身体系手腕输入，修复 IOBT 下臂 IK 失败。
-
-- 根因：`PoseProcessor` 是世界系增量映射（`vr_to_arm_rot` 按 `robot_world` 调），`_on_wrist` 不看 `frame_id`。IOBT 把手腕发成 `robot_body`（髋部相对，随身体转）→ delta 落在错误轴/被身体转动注入假位移 → IK 目标出工作空间 → `ik.solve()` 返回 `None`。Mixed 发 `robot_world` 故正常。
-- 修复：订阅 `quest3/hips_pose`；`_on_wrist` 按 `frame_id` 分流。身体系手腕用**校准时刻**的 hips 位姿重定向成"世界锚定" pose（`R_hips_init·p_body + hips_init_pos`，`R_hips_init·q_body`）再喂 `PoseProcessor`。身体平移/转动不再拖动臂，只有手相对身体的运动驱动臂。`frame_id` 切换时自动 `pose.reset()` 重新校准。
-
 ## 2026-08-21
 
 `quest3_hand_mocap`：配合 Quest **astral-tracking** 坐标系修复，下游不再二次转换参考系。
