@@ -65,6 +65,17 @@ class RateRegistry:
             if pair.command:
                 self._counters[f"{entity}_cmd"] = RateCounter(f"{entity}_cmd")
 
+    @classmethod
+    def for_state_topics(cls) -> "RateRegistry":
+        """Registry that ticks on state topics (one counter per entity)."""
+        from .config import TOPICS
+        reg = cls.__new__(cls)
+        reg._counters = {
+            f"{entity}_state": RateCounter(f"{entity}_state")
+            for entity in TOPICS
+        }
+        return reg
+
     def get(self, key: str) -> RateCounter | None:
         return self._counters.get(key)
 

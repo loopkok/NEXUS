@@ -6,6 +6,22 @@ export interface JointSlot {
   stale: boolean
 }
 
+export type HealthStatus = 'ok' | 'slow' | 'stale' | 'down'
+
+export interface EntityHealth {
+  stale: boolean
+  state_hz: number
+  cmd_hz: number
+  expected_hz: number
+  slow: boolean
+  status: HealthStatus
+}
+
+export interface HealthSummary {
+  overall: HealthStatus
+  entities: Record<string, EntityHealth>
+}
+
 export interface UiState {
   type: 'ui_state'
   ts: number
@@ -17,6 +33,8 @@ export interface UiState {
   }
   joints: Record<string, JointSlot>
   rates_hz: Record<string, number>
+  state_rates_hz?: Record<string, number>
+  health?: HealthSummary
   log_tail: string[]
 }
 
@@ -42,10 +60,11 @@ export interface ApiEnvelope<T = unknown> {
   data: T
 }
 
-export interface Health {
+export interface HealthData {
   ros_ok: boolean
   launch_state: TeleopState
   launch_pid: number | null
   uptime_s: number
   ws_clients: number
+  health: HealthSummary
 }

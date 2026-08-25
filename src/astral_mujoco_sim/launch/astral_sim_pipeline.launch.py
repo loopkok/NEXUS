@@ -83,6 +83,9 @@ def _launch_setup(context, *args, **kwargs):
     urdf_arg = _opt(context, "urdf_path") or _resolve_astral_urdf()
     if urdf_arg:
         teleop_extra["urdf_path"] = urdf_arg
+    require_start = _opt(context, "require_start_signal")
+    if require_start:
+        teleop_extra["require_start_signal"] = require_start.lower() in ("true", "1", "yes")
 
     mocap_extra = {"arm_side": "both"}
     protocol = _opt(context, "protocol")
@@ -180,6 +183,14 @@ def generate_launch_description() -> LaunchDescription:
                 "with_gripper",
                 default_value="true",
                 description="Quest3 left pinch → /left_gripper/command (sim echoes, no MJCF gripper joint yet)",
+            ),
+            DeclareLaunchArgument(
+                "require_start_signal",
+                default_value="",
+                description=(
+                    "empty → yaml. true → wait for /teleop/start to capture vr_init "
+                    "and arm (test the external start gate in sim)."
+                ),
             ),
             OpaqueFunction(function=_launch_setup),
         ]

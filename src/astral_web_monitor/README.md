@@ -1,12 +1,13 @@
 # astral_web_monitor
 
-非侵入式 Web 监控面板：通过浏览器启动/暂停/停止遥操作栈，实时查看关节状态与指令频率。
+非侵入式 Web 监控面板：通过浏览器启动/暂停/停止遥操作栈，实时查看关节状态、指令频率、健康巡检与实时图表。
 
-**不修改任何现有功能包**。只做三件事：
+**不修改任何现有功能包**。只做四件事：
 
 1. **只读订阅**现有关节话题（`joint_states` / `joint_commands`）
-2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复）、`/teleop/start`（外部启动闸门）
+2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复/急停）、`/teleop/start`（外部启动闸门）
 3. **subprocess 启停** `ros2 launch`（与命令行操作等价）
+4. **只读健康巡检**：估算各源状态流/指令流频率与新鲜度，不下发任何命令
 
 ```text
 ┌─────────────── astral_ws 现有功能包（不修改）──────────────┐
@@ -85,14 +86,20 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/v1/health` | ROS 节点状态、launch 状态、PID、运行时长 |
+| GET | `/api/v1/health` | ROS 节点状态、launch 状态、PID、运行时长、WS 客户数、health 汇总 |
 | GET | `/api/v1/presets` | 启动预设列表 |
-| GET | `/api/v1/state` | 当前快照（同步） |
+| GET | `/api/v1/state` | 当前快照（同步，含 health + state_rates_hz） |
 | POST | `/api/v1/start` | `{preset: "..."}` 启动指定预设 |
 | POST | `/api/v1/stop` | SIGINT 停止 launch（30s 超时 SIGKILL） |
 | POST | `/api/v1/pause` | 发 `/teleop/disarm`（软暂停，节点保持运行） |
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
 | POST | `/api/v1/teleop/start` | 发 `/teleop/start`（一次性，记录 `vr_init` 并 arm；配合 `require_start_signal`；无条件发送，臂节点自行判断有效性） |
+| POST | `/api/v1/restart` | 重启当前预设（停止后重新启动；仅对经本监控启动的预设有效） |
+| POST | `/api/v1/robot/ready` | 调 driver `~/ready`（one_click_ready，上电+零位） |
+| POST | `/api/v1/robot/home` | 调 driver `~/home`（全关节归零） |
+| POST | `/api/v1/robot/position` | 调 driver `~/position`（motion_mode=1，位置保持） |
+| POST | `/api/v1/robot/damping` | 调 driver `~/damping`（motion_mode=0，阻尼释放，可手动拖拽） |
+| POST | `/api/v1/robot/estop` | **真急停**：调 driver `~/estop` → SDK `e_stop()`/`disable()` 断电，臂失去保持力 |
 
 ## WebSocket
 
@@ -118,6 +125,17 @@
     "left_arm_cmd": 149.8, "right_arm_cmd": 149.9,
     "left_gripper_cmd": 50.0, "right_hand_cmd": 30.1
   },
+  "state_rates_hz": {
+    "left_arm_state": 200.0, "right_arm_state": 200.0,
+    "left_gripper_state": 100.0, "right_hand_state": 100.0,
+    "full_body_state": 100.0
+  },
+  "health": {
+    "overall": "ok",
+    "entities": {
+      "left_arm": {"stale": false, "state_hz": 200.0, "cmd_hz": 149.8, "expected_hz": 30.0, "slow": false, "status": "ok"}
+    }
+  },
   "log_tail": ["[INFO] mocap connected ...", "..."]
 }
 ```
@@ -133,6 +151,23 @@ stopped ──start──► starting ──2s暖机──► running
    │                                       │
    └────────── stop(SIGINT) ◄──────────────┘
 ```
+
+## Web UI 功能
+
+顶栏：标题 + WS/ROS/数据 三色状态徽标 + ControlBar（急停[真断电] / 阻尼释放 / 开始遥操 / 暂停 / 恢复）。
+下方三 Tab：
+
+| Tab | 内容 |
+|-----|------|
+| 监控 | 4 个关节面板（左/右臂、左夹爪、右灵巧手）+ 指令频率 chips + 实时折线图（指令 Hz、臂关节0 角度） |
+| 健康 | 总体徽标 + 每实体卡片（状态流 Hz / 指令流 Hz / 期望 / 数据龄期 / ok·slow·stale） |
+| 系统 | 预设管理（启动/停止/重启）+ **机器人模式**（一键就绪/归零/位置保持/阻尼释放/急停断电）+ Launch 日志控制台 |
+
+- **急停（真断电）**：红色常驻按钮，确认后调 driver `~/estop` → SDK `e_stop()`/`disable()`，臂失去保持力；恢复需重新「一键就绪」。区别于「暂停」（软 disarm，臂仍上电保持位姿）
+- **阻尼释放**：调 driver `~/damping` → `motion_mode=0`，电机仍上电、关节可手动拖拽。典型流程：遥操中 → 停止（臂保持末位姿）→ 阻尼释放（手动拖回 home）→ 位置保持/归零
+- **Toast 通知**：操作成功/失败以右上角浮窗提示（替代 alert），自动消失
+- **实时图表**：手写 SVG 折线（无第三方图表库），环形缓冲 200 样本（≈6.7s @ 30Hz）
+- **健康巡检**：`expected_hz` 阈值经 `ASTRAL_WEB_MONITOR_EXPECTED_HZ` 配置（默认 30Hz），只读估算
 
 ## 启动预设
 
@@ -163,10 +198,13 @@ source install/setup.bash
 
 ```bash
 # 生产模式：后端托管已构建前端
-ASTRAL_WEB_MONITOR_DIST=$(ros2 pkg prefix astral_web_monitor)/../src/astral_web_monitor/web/dist \
+# 注意：ros2 pkg prefix 返回 install/<pkg>，需 ../../ 回到工作区根再进 src
+ASTRAL_WEB_MONITOR_DIST=$(ros2 pkg prefix astral_web_monitor)/../../src/astral_web_monitor/web/dist \
   ros2 launch astral_web_monitor web_monitor.launch.py
 
 # 浏览器访问 http://<host>:8080
+# 若 8080 被占（如 Cursor IDE），换端口：
+# ASTRAL_WEB_MONITOR_PORT=8090 ros2 launch astral_web_monitor web_monitor.launch.py
 ```
 
 开发模式（前端热更新）：
@@ -213,7 +251,15 @@ npm run build    # → web/dist/
 | 暂停 | 发布 `/teleop/disarm`（已有话题） | 否 |
 | 恢复 | 发布 `/teleop/armed`（已有话题） | 否 |
 | 开始遥操 | 发布 `/teleop/start`（已有话题） | 否 |
+| 重启 | stop + start 同一预设（subprocess） | 否 |
+| 急停（真断电） | 调 driver 已有服务 `~/estop`（SDK `e_stop`） | 否（仅调用 driver 已暴露的服务） |
+| 阻尼释放 | 调 driver 已有服务 `~/damping`（`motion_mode=0`） | 否 |
+| 位置保持 | 调 driver 已有服务 `~/position`（`motion_mode=1`） | 否 |
+| 一键就绪 / 归零 | 调 driver 已有服务 `~/ready` / `~/home` | 否 |
+| 健康巡检 | 订阅现有 state/command 话题估算频率 | 否 |
 | 日志 | 采集 subprocess stdout | 否 |
+
+> 注：机器人模式按钮调用 `astral_robot_control` driver **已暴露**的 Trigger 服务（`~/ready`/`~/home`/`~/position`/`~/damping`/`~/estop`）。driver 是硬件权威，monitor 仅作为服务客户端调用——不新增硬件写入路径、不修改 driver 逻辑。若 driver 未启动，端点返回 503。
 
 ## 包结构
 
@@ -230,8 +276,12 @@ astral_web_monitor/
 ├── launch/web_monitor.launch.py
 └── web/                     # React + Vite 前端
     ├── src/
-    │   ├── hooks/useRealtime.ts   # 单例 WebSocket
-    │   ├── components/            # ControlBar, JointPanel, LogConsole
+    │   ├── hooks/useRealtime.ts   # 单例 WebSocket + 连接状态
+    │   ├── hooks/useToast.ts      # Toast 通知 store
+    │   ├── hooks/historyStore.ts  # 图表环形缓冲
+    │   ├── components/            # ControlBar, MonitorTab, HealthPanel,
+    │   │                          # SystemTab, ChartPanel, ToastHost,
+    │   │                          # Tabs, JointPanel, LogConsole, StatusBadge
     │   └── lib/mapUiState.ts      # 数据归一化
     └── dist/                # 构建产物
 ```

@@ -53,8 +53,10 @@ def _build_ui_state() -> dict[str, Any]:
             "uptime_s": _launch_mgr.uptime_s(),
             "pid": _launch_mgr.pid,
         },
-        "joints": ros["joints"],
-        "rates_hz": ros["rates_hz"],
+        "joints": ros.get("joints", {}),
+        "rates_hz": ros.get("rates_hz", {}),
+        "state_rates_hz": ros.get("state_rates_hz", {}),
+        "health": ros.get("health", {"overall": "ok", "entities": {}}),
         "log_tail": _launch_mgr.log_tail()[-50:],
     }
 
@@ -123,14 +125,17 @@ app = FastAPI(title="astral_web_monitor", version="0.1.0", lifespan=_lifespan)
 
 @app.get("/api/v1/health")
 async def health() -> ApiEnvelope:
+    node = get_node()
+    ros = node.snapshot() if node else {"health": {"overall": "down", "entities": {}}}
     return ApiEnvelope(
         ok=True,
         data={
-            "ros_ok": get_node() is not None,
+            "ros_ok": node is not None,
             "launch_state": _launch_mgr.state,
             "launch_pid": _launch_mgr.pid,
             "uptime_s": _launch_mgr.uptime_s(),
             "ws_clients": _conn.count,
+            "health": ros.get("health", {"overall": "down", "entities": {}}),
         },
     )
 
@@ -214,6 +219,80 @@ async def teleop_start() -> ApiEnvelope:
         ok=True,
         message="已发送 /teleop/start（臂节点记 vr_init 并 arm；homing 中或无 VR 时会忽略并告警）",
     )
+
+
+@app.post("/api/v1/restart")
+async def restart() -> ApiEnvelope:
+    """Restart the current preset: stop then start the same preset.
+
+    Only valid for a launch started via this monitor's preset manager. If the
+    teleop was started from a separate CLI, use stop+start manually instead.
+    """
+    name = _launch_mgr.preset
+    if not name or name not in _presets:
+        raise HTTPException(status_code=409, detail="无当前预设可重启（CLI 启动的遥操不支持重启）")
+    ok_stop, _ = _launch_mgr.stop()
+    # Wait briefly for the stop to take effect before restarting.
+    await asyncio.sleep(1.0)
+    ok_start, msg = _launch_mgr.start(_presets[name])
+    if not ok_start:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message=f"已重启预设: {name}")
+
+
+# --- Robot hardware mode (driver services) ----------------------------------
+# These call the driver's already-exposed Trigger services. The driver is the
+# hardware authority; the monitor only invokes its services (non-intrusive).
+# All run in a worker thread so the ROS spin thread can complete the future.
+
+def _driver_call(name: str) -> tuple[bool, str]:
+    node = get_node()
+    if node is None:
+        return False, "ROS 节点未就绪"
+    return node.call_driver_service(name)
+
+
+@app.post("/api/v1/robot/ready")
+async def robot_ready() -> ApiEnvelope:
+    ok, msg = await asyncio.to_thread(_driver_call, "ready")
+    if not ok:
+        raise HTTPException(status_code=503, detail=msg)
+    return ApiEnvelope(ok=True, message=msg or "一键就绪 OK")
+
+
+@app.post("/api/v1/robot/home")
+async def robot_home() -> ApiEnvelope:
+    ok, msg = await asyncio.to_thread(_driver_call, "home")
+    if not ok:
+        raise HTTPException(status_code=503, detail=msg)
+    return ApiEnvelope(ok=True, message=msg or "全关节归零")
+
+
+@app.post("/api/v1/robot/estop")
+async def robot_estop() -> ApiEnvelope:
+    """真急停：调 driver ~/estop → SDK disable()（断电）。"""
+    ok, msg = await asyncio.to_thread(_driver_call, "estop")
+    if not ok:
+        raise HTTPException(status_code=503, detail=msg)
+    return ApiEnvelope(ok=True, message=msg or "已断电 (e_stop)")
+
+
+@app.post("/api/v1/robot/damping")
+async def robot_damping() -> ApiEnvelope:
+    """阻尼释放：调 driver ~/damping → motion_mode=0，可手动拖拽。"""
+    ok, msg = await asyncio.to_thread(_driver_call, "damping")
+    if not ok:
+        raise HTTPException(status_code=503, detail=msg)
+    return ApiEnvelope(ok=True, message=msg or "阻尼释放 (可手动拖拽)")
+
+
+@app.post("/api/v1/robot/position")
+async def robot_position() -> ApiEnvelope:
+    """位置保持：调 driver ~/position → motion_mode=1，恢复位置保持。"""
+    ok, msg = await asyncio.to_thread(_driver_call, "position")
+    if not ok:
+        raise HTTPException(status_code=503, detail=msg)
+    return ApiEnvelope(ok=True, message=msg or "位置保持")
 
 
 # --- WebSocket -------------------------------------------------------------

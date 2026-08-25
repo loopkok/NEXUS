@@ -11,6 +11,16 @@ presets:
       with_driver: "false"
     description: "双臂遥操作 + Quest mocap，无真机驱动（仿真/调试）"
 
+  - name: "Dual arms + left gripper (no right hand)"
+    package: astral_teleop
+    launch: full_teleop.launch.py
+    args:
+      with_arm_driver: "true"
+      with_hand_driver: "false"
+      right_hand_source: "none"
+      with_gripper: "true"
+    description: "真机双臂 + 左夹爪，无右灵巧手（right_hand_source=none）"
+
   - name: "Full real (Quest right hand)"
     package: astral_teleop
     launch: full_teleop.launch.py

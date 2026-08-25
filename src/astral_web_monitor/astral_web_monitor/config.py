@@ -29,6 +29,36 @@ STOP_SIGKILL_GRACE_S = float(os.environ.get("ASTRAL_WEB_MONITOR_KILL_GRACE_S", "
 # --- Rate counter EWMA -----------------------------------------------------
 RATE_EWMA_ALPHA = float(os.environ.get("ASTRAL_WEB_MONITOR_RATE_ALPHA", "0.7"))
 
+# --- Health inspection ------------------------------------------------------
+# Expected command-rate floor (Hz) per entity, used by the health panel to flag
+# a stream as "slow"/"dead". Read-only — the monitor never enforces these.
+# Override via env as comma-separated name=hz pairs.
+_DEFAULT_EXPECTED = {
+    "left_arm_cmd": 30.0,
+    "right_arm_cmd": 30.0,
+    "left_gripper_cmd": 30.0,
+    "right_hand_cmd": 30.0,
+}
+
+
+def _parse_expected() -> dict[str, float]:
+    raw = os.environ.get("ASTRAL_WEB_MONITOR_EXPECTED_HZ", "")
+    out = dict(_DEFAULT_EXPECTED)
+    if not raw:
+        return out
+    for part in raw.split(","):
+        part = part.strip()
+        if "=" in part:
+            k, v = part.split("=", 1)
+            try:
+                out[k.strip()] = float(v)
+            except ValueError:
+                pass
+    return out
+
+
+EXPECTED_RATES_HZ: dict[str, float] = _parse_expected()
+
 # --- ROS topic names (read-only subscriptions) -----------------------------
 # Grouped by entity. Each entry: (state_topic, command_topic).
 # command_topic is "" when there is no command stream to monitor for that entity.
@@ -62,6 +92,18 @@ TOPIC_DISARM = "/teleop/disarm"
 # require_start_signal is true. Deliberately volatile (not latched) so a
 # late-joining arm node does not auto-start from a stale start signal.
 TOPIC_START = "/teleop/start"
+
+# --- Driver ROS services (call, robot hardware mode) -----------------------
+# These services already exist on astral_robot_control's driver node. Calling
+# them is non-intrusive (the driver owns the SDK/hardware; the monitor just
+# invokes its already-exposed services). Override the node name via env if the
+# driver is remapped.
+DRIVER_NODE = os.environ.get("ASTRAL_WEB_MONITOR_DRIVER_NODE", "astral_robot_driver")
+DRIVER_SRV_READY = f"/{DRIVER_NODE}/ready"
+DRIVER_SRV_HOME = f"/{DRIVER_NODE}/home"
+DRIVER_SRV_ESTOP = f"/{DRIVER_NODE}/estop"
+DRIVER_SRV_DAMPING = f"/{DRIVER_NODE}/damping"
+DRIVER_SRV_POSITION = f"/{DRIVER_NODE}/position"
 
 # --- Orphan process detection ----------------------------------------------
 # Regex fragment matched against the full command line of running processes

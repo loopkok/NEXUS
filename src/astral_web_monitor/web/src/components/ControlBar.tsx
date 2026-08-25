@@ -1,30 +1,39 @@
 import type { NormalisedState } from '../lib/mapUiState'
 import { api } from '../api/client'
-import type { Preset, TeleopState } from '../types'
+import type { TeleopState } from '../types'
 import { StatusBadge } from './StatusBadge'
+import { pushToast } from '../hooks/useToast'
 
 interface Props {
   state: NormalisedState | null
-  presets: Preset[]
-  selected: string
-  onSelect: (name: string) => void
   onAction: () => void
 }
 
-export function ControlBar({ state, presets, selected, onSelect, onAction }: Props) {
+export function ControlBar({ state, onAction }: Props) {
   const teleopState = (state?.teleopState ?? 'stopped') as TeleopState
-  const canStart = teleopState === 'stopped' || teleopState === 'start_failed'
-  const canStop = teleopState === 'running' || teleopState === 'paused' || teleopState === 'starting'
   const canPause = teleopState === 'running'
   const canResume = teleopState === 'paused'
-  // /teleop/start (capture vr_init + arm) is meaningful once the teleop launch
-  // is running (arm nodes are up, waiting for the start signal).
-  const canTeleopStart = teleopState === 'running' || teleopState === 'paused'
+  // E-STOP + 开始遥操 are unconditional on the backend (arm node is the
+  // authority). Enable whenever the monitor is alive.
+  const alive = state != null
 
-  const run = async (fn: () => Promise<{ ok: boolean; message: string }>) => {
+  async function run(fn: () => Promise<{ ok: boolean; message: string }>, okMsg?: string) {
     const res = await fn()
-    if (!res.ok) alert(res.message)
+    if (res.ok) {
+      pushToast(okMsg ?? res.message, 'success')
+    } else {
+      pushToast(res.message, 'error')
+    }
     onAction()
+  }
+
+  function estop() {
+    if (!confirm('确认急停？将下发 driver ~/estop → 断电（真急停，臂失去保持力）。')) return
+    void run(() => api.robotEstop(), '已断电 (e_stop)')
+  }
+  function damping() {
+    if (!confirm('确认阻尼释放？切换运动模式=阻尼，可手动拖拽臂回 home（电机仍上电）。')) return
+    void run(() => api.robotDamping(), '阻尼释放 (可手动拖拽)')
   }
 
   return (
@@ -37,23 +46,24 @@ export function ControlBar({ state, presets, selected, onSelect, onAction }: Pro
 
       <div style={spacer} />
 
-      <select
-        value={selected}
-        onChange={(e) => onSelect(e.target.value)}
-        disabled={!canStart}
-        style={selectStyle}
+      {/* E-STOP: real hardware power-off via driver ~/estop. */}
+      <button
+        style={estopBtn}
+        disabled={!alive}
+        onClick={estop}
+        title="真急停：调 driver ~/estop → SDK disable() 断电，臂失去保持力"
       >
-        {presets.map((p) => (
-          <option key={p.name} value={p.name}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-
-      <button style={btn('#22c55e')} disabled={!canStart} onClick={() => run(() => api.start(selected))}>
-        启动
+        ⛔ 急停
       </button>
-      <button style={btn('#f59e0b')} disabled={!canTeleopStart} onClick={() => run(() => api.teleopStart())}>
+      <button
+        style={btn('#f59e0b')}
+        disabled={!alive}
+        onClick={damping}
+        title="阻尼释放：调 driver ~/damping → motion_mode=0，可手动拖拽臂"
+      >
+        阻尼释放
+      </button>
+      <button style={btn('#f59e0b')} disabled={!alive} onClick={() => run(() => api.teleopStart())}>
         开始遥操
       </button>
       <button style={btn('#3b82f6')} disabled={!canPause} onClick={() => run(() => api.pause())}>
@@ -61,9 +71,6 @@ export function ControlBar({ state, presets, selected, onSelect, onAction }: Pro
       </button>
       <button style={btn('#22c55e')} disabled={!canResume} onClick={() => run(() => api.resume())}>
         恢复
-      </button>
-      <button style={btn('#ef4444')} disabled={!canStop} onClick={() => run(() => api.stop())}>
-        停止
       </button>
     </div>
   )
@@ -90,14 +97,6 @@ const barStyle: React.CSSProperties = {
 const spacer: React.CSSProperties = { flex: 1 }
 const presetStyle: React.CSSProperties = { color: '#9ca3af', fontSize: '13px' }
 const uptimeStyle: React.CSSProperties = { color: '#6b7280', fontSize: '13px' }
-const selectStyle: React.CSSProperties = {
-  background: '#374151',
-  color: '#e5e7eb',
-  border: '1px solid #4b5563',
-  borderRadius: '6px',
-  padding: '6px 10px',
-  fontSize: '13px',
-}
 const btn = (color: string): React.CSSProperties => ({
   background: color,
   color: 'white',
@@ -108,3 +107,14 @@ const btn = (color: string): React.CSSProperties => ({
   fontWeight: 600,
   cursor: 'pointer',
 })
+const estopBtn: React.CSSProperties = {
+  background: '#dc2626',
+  color: 'white',
+  border: '2px solid #fca5a5',
+  borderRadius: '6px',
+  padding: '7px 18px',
+  fontSize: '14px',
+  fontWeight: 800,
+  cursor: 'pointer',
+  letterSpacing: '0.5px',
+}

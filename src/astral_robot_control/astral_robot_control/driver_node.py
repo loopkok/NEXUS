@@ -17,9 +17,11 @@ Contract (default)::
   Pub  /head/joint_states
   Pub  /{left,right}_gripper/joint_states   (last commanded; not OBS 0x31/0x32)
 
-  Srv  ~/ready   Trigger  — one_click_ready (WORK→POSITION→enable→zero)
-  Srv  ~/home    Trigger  — set_all_joints_zero
-  Srv  ~/estop   Trigger  — disable / e-stop
+  Srv  ~/ready    Trigger  — one_click_ready (WORK→POSITION→enable→zero)
+  Srv  ~/home     Trigger  — set_all_joints_zero
+  Srv  ~/estop    Trigger  — disable / e-stop (真断电)
+  Srv  ~/damping  Trigger  — motion_mode=0 阻尼释放（可手动拖拽）
+  Srv  ~/position Trigger  — motion_mode=1 位置保持
 """
 
 from __future__ import annotations
@@ -213,6 +215,8 @@ class AstralRobotDriverNode(Node):
         self.create_service(Trigger, "~/ready", self._srv_ready)
         self.create_service(Trigger, "~/home", self._srv_home)
         self.create_service(Trigger, "~/estop", self._srv_estop)
+        self.create_service(Trigger, "~/damping", self._srv_damping)
+        self.create_service(Trigger, "~/position", self._srv_position)
 
         self._lock = threading.Lock()
         self._left_cmd: Optional[List[float]] = None
@@ -613,6 +617,51 @@ class AstralRobotDriverNode(Node):
             self._robot.e_stop()
             res.success = True
             res.message = "e_stop / disable"
+        except Exception as exc:  # noqa: BLE001
+            res.success = False
+            res.message = str(exc)
+        return res
+
+    def _srv_damping(self, _req, res):
+        """阻尼释放：运动模式切 0（阻尼），电机仍上电、关节可手动拖拽。
+
+        典型用法：遥操停止后臂保持在遥操末位姿，点此按钮后可手动把臂拖回 home。
+        需机器人已上电（work+enable）；若已下电需先 ~/ready。
+        """
+        if self.dry_run:
+            res.success = True
+            res.message = "dry_run: skipped damping"
+            return res
+        if self._robot is None:
+            res.success = False
+            res.message = "robot not connected"
+            return res
+        try:
+            self._robot.set_motion_mode(0)
+            res.success = True
+            res.message = "motion_mode=0 (damping, 可手动拖拽)"
+        except Exception as exc:  # noqa: BLE001
+            res.success = False
+            res.message = str(exc)
+        return res
+
+    def _srv_position(self, _req, res):
+        """位置保持：运动模式切 1（位置），关节恢复位置保持。
+
+        典型用法：阻尼释放拖回 home 后点此按钮，臂在当前位置保持（不再可拖拽）。
+        """
+        if self.dry_run:
+            res.success = True
+            res.message = "dry_run: skipped position"
+            return res
+        if self._robot is None:
+            res.success = False
+            res.message = "robot not connected"
+            return res
+        try:
+            self._robot.set_motion_mode(1)
+            res.success = True
+            res.message = "motion_mode=1 (position, 位置保持)"
         except Exception as exc:  # noqa: BLE001
             res.success = False
             res.message = str(exc)

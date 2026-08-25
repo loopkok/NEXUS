@@ -41,8 +41,13 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 | 服务 | 说明 |
 |------|------|
 | `/astral_robot_driver/ready` | `one_click_ready`（WORK→POSITION→enable→zero） |
-| `/astral_robot_driver/home` | `set_all_joints_zero` |
-| `/astral_robot_driver/estop` | `e_stop` / disable |
+| `/astral_robot_driver/home` | `set_all_joints_zero`（全关节归零） |
+| `/astral_robot_driver/estop` | **真急停**：`e_stop` / disable（断电，臂失去保持力） |
+| `/astral_robot_driver/damping` | 阻尼释放：`motion_mode=0`（电机仍上电、关节可手动拖拽） |
+| `/astral_robot_driver/position` | 位置保持：`motion_mode=1`（恢复位置保持） |
+
+> 典型遥操收尾流程：遥操中 → 停止（臂保持末位姿）→ `damping`（手动拖回 home）→ `position` 或 `home`。
+> 真急停 `estop` 会断电，恢复需重新 `ready`。
 
 ## 依赖
 

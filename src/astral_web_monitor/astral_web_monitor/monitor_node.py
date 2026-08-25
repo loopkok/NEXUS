@@ -31,6 +31,12 @@ from .config import (
     TOPIC_ARMED,
     TOPIC_DISARM,
     TOPIC_START,
+    EXPECTED_RATES_HZ,
+    DRIVER_SRV_READY,
+    DRIVER_SRV_HOME,
+    DRIVER_SRV_ESTOP,
+    DRIVER_SRV_DAMPING,
+    DRIVER_SRV_POSITION,
 )
 from .rate_counter import RateRegistry
 
@@ -63,6 +69,10 @@ class MonitorNode(Node):
         self._lock = threading.Lock()
         self._state: dict[str, JointSlot] = {k: JointSlot() for k in TOPICS}
         self._rates = RateRegistry()
+        # State-topic rate counters (one per entity) for health inspection.
+        self._state_rates = RateRegistry.for_state_topics()
+        # Cached driver service clients (created lazily on first call).
+        self._driver_clients: dict[str, object] = {}
 
         # Pause/resume publishers (latched/transient so late arm nodes pick up).
         qos = QoSProfile(
@@ -92,10 +102,16 @@ class MonitorNode(Node):
                 lambda msg, e=entity: self._on_state(e, msg),
                 _qos_best_effort(),
             )
+            # State-topic rate tick (health: is the source itself alive?).
+            self.create_subscription(
+                JointState, pair.state,
+                lambda msg, e=entity: self._state_rates.tick(f"{e}_state"),
+                _qos_best_effort(),
+            )
             if pair.command:
                 self.create_subscription(
                     JointState, pair.command,
-                    lambda msg, e=entity: self._rates.tick(f"{entity}_cmd"),
+                    lambda msg, e=entity: self._rates.tick(f"{e}_cmd"),
                     _qos_best_effort(),
                 )
 
@@ -123,10 +139,51 @@ class MonitorNode(Node):
                 }
                 for e, s in self._state.items()
             }
+        cmd_rates = self._rates.snapshot()
+        state_rates = self._state_rates.snapshot()
         return {
             "joints": joints,
-            "rates_hz": self._rates.snapshot(),
+            "rates_hz": cmd_rates,
+            "state_rates_hz": state_rates,
+            "health": self._health_summary(joints, cmd_rates, state_rates, now),
         }
+
+    @staticmethod
+    def _health_summary(
+        joints: dict[str, Any],
+        cmd_rates: dict[str, float],
+        state_rates: dict[str, float],
+        now: float,
+    ) -> dict[str, Any]:
+        """Per-entity health: alive (state stream fresh) + command rate vs floor."""
+        entities: dict[str, Any] = {}
+        any_stale = False
+        any_slow = False
+        for e, slot in joints.items():
+            stale = bool(slot["stale"])
+            state_hz = float(state_rates.get(f"{e}_state", 0.0))
+            cmd_key = f"{e}_cmd"
+            cmd_hz = float(cmd_rates.get(cmd_key, 0.0))
+            expected = float(EXPECTED_RATES_HZ.get(cmd_key, 0.0))
+            slow = expected > 0.0 and cmd_hz < expected and not stale
+            if stale:
+                any_stale = True
+            if slow:
+                any_slow = True
+            entities[e] = {
+                "stale": stale,
+                "state_hz": state_hz,
+                "cmd_hz": cmd_hz,
+                "expected_hz": expected,
+                "slow": slow,
+                "status": "stale" if stale else ("slow" if slow else "ok"),
+            }
+        overall = "ok"
+        if any_stale:
+            overall = "stale"
+        elif any_slow:
+            overall = "slow"
+        return {"overall": overall, "entities": entities}
 
     # --- pause/resume -----------------------------------------------------
     def publish_disarm(self) -> None:
@@ -138,6 +195,46 @@ class MonitorNode(Node):
     def publish_start(self) -> None:
         """One-shot /teleop/start: arm teleop captures vr_init and arms."""
         self._pub_start.publish(Bool(data=True))
+
+    # --- driver service calls (hardware mode) -----------------------------
+    # The driver node (astral_robot_control) already exposes Trigger services
+    # for one_click_ready / home / e_stop / damping / position. The monitor
+    # calls them as a client — non-intrusive (the driver owns the hardware).
+    # Clients are cached; the background spin thread completes the futures.
+    _DRIVER_SERVICES = {
+        "ready": DRIVER_SRV_READY,
+        "home": DRIVER_SRV_HOME,
+        "estop": DRIVER_SRV_ESTOP,
+        "damping": DRIVER_SRV_DAMPING,
+        "position": DRIVER_SRV_POSITION,
+    }
+
+    def call_driver_service(self, name: str, timeout_s: float = 4.0) -> tuple[bool, str]:
+        """Invoke a driver Trigger service by short name (ready/home/estop/...).
+
+        Returns (success, message). The driver is the hardware authority; this
+        only calls its already-exposed service. Safe to call from the web
+        thread — the background rclpy spin thread completes the future.
+        """
+        from std_srvs.srv import Trigger  # local import keeps module import light
+        srv_name = self._DRIVER_SERVICES.get(name)
+        if srv_name is None:
+            return False, f"unknown driver service: {name}"
+        cli = self._driver_clients.get(name)
+        if cli is None:
+            cli = self.create_client(Trigger, srv_name)
+            self._driver_clients[name] = cli
+        if not cli.service_is_ready():
+            if not cli.wait_for_service(timeout_sec=2.0):
+                return False, f"driver service 未就绪: {srv_name}（driver 未启动？）"
+        future = cli.call_async(Trigger.Request())
+        deadline = time.time() + timeout_s
+        while time.time() < deadline and not future.done():
+            time.sleep(0.02)
+        if not future.done():
+            return False, f"driver service 超时: {srv_name}"
+        res = future.result()
+        return bool(res.success), str(res.message)
 
 
 # --- module-level singleton helpers -----------------------------------------
