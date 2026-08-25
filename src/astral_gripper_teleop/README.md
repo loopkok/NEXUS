@@ -7,7 +7,7 @@ hand_landmarks/left
         → pinch_gripper_node
               ├── /left_gripper/command          Float64  0=开  1=合
               └── /left_gripper/joint_commands   JointState 弧度
-                    → astral_robot_control → set_gripper_angle（左，0x31）
+                    → astral_robot_control → set_gripper_angle（左，CMD 0x97）
 ```
 
 以后换硬件：新节点发同一个 `/left_gripper/command`（或直接发 `joint_commands` 弧度），关掉本节点即可。左臂仍走 `quest3/left_wrist_pose`。

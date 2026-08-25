@@ -8,12 +8,14 @@ Contract (default)::
   Sub  /left_arm/joint_commands   JointState.position[7]
   Sub  /right_arm/joint_commands  JointState.position[7]
   Sub  /astral/joint_commands     JointState.position[18]   (optional full-body)
+  Sub  /head/joint_commands       JointState [head_yaw, head_pitch] → 0x31/0x32
   Sub  /{left,right}_gripper/joint_commands  JointState  (radians)
-  Sub  /{left,right}_gripper/command         Float64 0=open 1=closed
+  Sub  /{left,right}_gripper/command         Float64 0=open 1=closed → 0x97/0x98
   Pub  /left_arm/joint_states
   Pub  /right_arm/joint_states
-  Pub  /astral/joint_states       (18-DoF, always)
-  Pub  /{left,right}_gripper/joint_states
+  Pub  /astral/joint_states       (18-DoF: arms+waist+head)
+  Pub  /head/joint_states
+  Pub  /{left,right}_gripper/joint_states   (last commanded; not OBS 0x31/0x32)
 
   Srv  ~/ready   Trigger  — one_click_ready (WORK→POSITION→enable→zero)
   Srv  ~/home    Trigger  — set_all_joints_zero
@@ -39,7 +41,8 @@ from astral_robot_control.joint_layout import (
     ASTRAL_NS,
     CMD_RATIO_SUFFIX,
     CMD_SUFFIX,
-    GRIPPER_JOINT_NAMES,
+    HEAD_JOINT_NAMES,
+    HEAD_NS,
     LEFT_ARM_JOINT_NAMES,
     LEFT_ARM_NS,
     LEFT_GRIPPER_NS,
@@ -50,7 +53,6 @@ from astral_robot_control.joint_layout import (
     RIGHT_GRIPPER_NS,
     ROBOT_JOINT_NAMES,
     STATE_SUFFIX,
-    WAIST_JOINT_NAMES,
     pack_named_positions,
     split_full_q,
 )
@@ -87,10 +89,12 @@ class AstralRobotDriverNode(Node):
         self.declare_parameter("left_arm_ns", LEFT_ARM_NS)
         self.declare_parameter("right_arm_ns", RIGHT_ARM_NS)
         self.declare_parameter("astral_ns", ASTRAL_NS)
+        self.declare_parameter("head_ns", HEAD_NS)
+        self.declare_parameter("enable_head_cmd", True)
         self.declare_parameter("left_gripper_ns", LEFT_GRIPPER_NS)
         self.declare_parameter("right_gripper_ns", RIGHT_GRIPPER_NS)
         self.declare_parameter("enable_gripper_cmd", True)
-        # Float64 0–1 mapping → set_gripper_angle (must match teleop yaml if used)
+        # Float64 0–1 → set_gripper_angle (CMD 0x97/0x98；不是 0x31/0x32)
         # 真机方向：0.8=张开, 0.0=合拢。
         self.declare_parameter("left_gripper_open_rad", 0.8)
         self.declare_parameter("left_gripper_closed_rad", 0.0)
@@ -117,8 +121,10 @@ class AstralRobotDriverNode(Node):
         left_ns = str(self.get_parameter("left_arm_ns").value).strip("/")
         right_ns = str(self.get_parameter("right_arm_ns").value).strip("/")
         astral_ns = str(self.get_parameter("astral_ns").value).strip("/")
+        head_ns = str(self.get_parameter("head_ns").value).strip("/")
         left_g_ns = str(self.get_parameter("left_gripper_ns").value).strip("/")
         right_g_ns = str(self.get_parameter("right_gripper_ns").value).strip("/")
+        self.enable_head_cmd = bool(self.get_parameter("enable_head_cmd").value)
         self.enable_gripper_cmd = bool(self.get_parameter("enable_gripper_cmd").value)
         self._grip_open_rad = {
             "left": float(self.get_parameter("left_gripper_open_rad").value),
@@ -133,9 +139,11 @@ class AstralRobotDriverNode(Node):
         self._left_cmd_topic = f"/{left_ns}/{CMD_SUFFIX}"
         self._right_cmd_topic = f"/{right_ns}/{CMD_SUFFIX}"
         self._full_cmd_topic = f"/{astral_ns}/{CMD_SUFFIX}"
+        self._head_cmd_topic = f"/{head_ns}/{CMD_SUFFIX}"
         self._left_state_topic = f"/{left_ns}/{STATE_SUFFIX}"
         self._right_state_topic = f"/{right_ns}/{STATE_SUFFIX}"
         self._full_state_topic = f"/{astral_ns}/{STATE_SUFFIX}"
+        self._head_state_topic = f"/{head_ns}/{STATE_SUFFIX}"
         self._left_grip_cmd_topic = f"/{left_g_ns}/{CMD_SUFFIX}"
         self._right_grip_cmd_topic = f"/{right_g_ns}/{CMD_SUFFIX}"
         self._left_grip_ratio_topic = f"/{left_g_ns}/{CMD_RATIO_SUFFIX}"
@@ -151,6 +159,9 @@ class AstralRobotDriverNode(Node):
         )
         self._pub_full = self.create_publisher(
             JointState, self._full_state_topic, qos
+        )
+        self._pub_head = self.create_publisher(
+            JointState, self._head_state_topic, qos
         )
         self._pub_left_grip = self.create_publisher(
             JointState, self._left_grip_state_topic, qos
@@ -168,6 +179,10 @@ class AstralRobotDriverNode(Node):
         if self.enable_full_body_cmd:
             self.create_subscription(
                 JointState, self._full_cmd_topic, self._on_full_cmd, qos
+            )
+        if self.enable_head_cmd:
+            self.create_subscription(
+                JointState, self._head_cmd_topic, self._on_head_cmd, qos
             )
         if self.enable_gripper_cmd:
             self.create_subscription(
@@ -203,9 +218,11 @@ class AstralRobotDriverNode(Node):
         self._left_cmd: Optional[List[float]] = None
         self._right_cmd: Optional[List[float]] = None
         self._full_cmd: Optional[List[float]] = None
+        self._head_cmd: Optional[List[float]] = None
         self._left_cmd_t = 0.0
         self._right_cmd_t = 0.0
         self._full_cmd_t = 0.0
+        self._head_cmd_t = 0.0
         self._use_full_priority = False
         self._grip_rad: dict = {"left": None, "right": None}
 
@@ -215,20 +232,22 @@ class AstralRobotDriverNode(Node):
         self.create_timer(1.0 / max(1.0, state_rate), self._on_state_timer)
         self.create_timer(1.0 / max(1.0, control_rate), self._on_control_timer)
 
+        extra_cmd = ""
+        if self.enable_head_cmd:
+            extra_cmd += f", {self._head_cmd_topic}"
+        if self.enable_gripper_cmd:
+            extra_cmd += f", {self._left_grip_cmd_topic}|{self._left_grip_ratio_topic}"
         self.get_logger().info(
             "Astral driver ready: "
             f"board={self.board_ip}:{self.board_port} "
             f"dry_run={self.dry_run} "
             f"cmd=[{self._left_cmd_topic}, {self._right_cmd_topic}"
             + (f", {self._full_cmd_topic}" if self.enable_full_body_cmd else "")
-            + (
-                f", {self._left_grip_cmd_topic}|{self._left_grip_ratio_topic}"
-                if self.enable_gripper_cmd
-                else ""
-            )
+            + extra_cmd
             + "] "
             f"state=[{self._left_state_topic}, {self._right_state_topic}, "
-            f"{self._full_state_topic}]"
+            f"{self._full_state_topic}, {self._head_state_topic}] "
+            "(0x31/0x32=head via 0x90; grippers via 0x97/0x98)"
         )
 
     # ------------------------------------------------------------------ SDK
@@ -322,12 +341,25 @@ class AstralRobotDriverNode(Node):
             self._full_cmd_t = time.monotonic()
             self._use_full_priority = True
 
+    def _on_head_cmd(self, msg: JointState) -> None:
+        q = pack_named_positions(msg.name, msg.position, HEAD_JOINT_NAMES)
+        if len(q) != 2:
+            self.get_logger().warning(
+                f"head cmd len={len(q)} != 2",
+                throttle_duration_sec=2.0,
+            )
+            return
+        with self._lock:
+            self._head_cmd = q
+            self._head_cmd_t = time.monotonic()
+
     def _set_grip_rad(self, side: str, rad: float) -> None:
         with self._lock:
             self._grip_rad[side] = float(rad)
 
     def _on_grip_js(self, side: str, msg: JointState) -> None:
-        expected = [GRIPPER_JOINT_NAMES[0 if side == "left" else 1]]
+        # 机械夹爪：话题名 left_gripper/right_gripper → CMD 0x97/0x98
+        expected = [f"{side}_gripper"]
         q = pack_named_positions(msg.name, msg.position, expected)
         if not q:
             return
@@ -353,7 +385,7 @@ class AstralRobotDriverNode(Node):
         right_hand = side == "right"
         if self.dry_run:
             self.get_logger().info(
-                f"[dry_run] set_gripper_angle {side}={rad:.3f} rad",
+                f"[dry_run] set_gripper_angle {side}={rad:.3f} rad (0x97/0x98)",
                 throttle_duration_sec=1.0,
             )
             return
@@ -365,6 +397,32 @@ class AstralRobotDriverNode(Node):
             self.get_logger().error(
                 f"set_gripper_angle({side}) failed: {exc}",
                 throttle_duration_sec=1.0,
+            )
+
+    def _send_head(self) -> None:
+        if not self.enable_head_cmd:
+            return
+        now = time.monotonic()
+        with self._lock:
+            head = None if self._head_cmd is None else list(self._head_cmd)
+            head_t = self._head_cmd_t
+        if head is None:
+            return
+        if self.command_timeout_s > 0 and (now - head_t) > self.command_timeout_s:
+            return
+        if self.dry_run:
+            self.get_logger().info(
+                f"[dry_run] move_head_js yaw={head[0]:.3f} pitch={head[1]:.3f}",
+                throttle_duration_sec=1.0,
+            )
+            return
+        if self._robot is None:
+            return
+        try:
+            self._robot.move_head_js(head[0], head[1])
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().error(
+                f"move_head_js failed: {exc}", throttle_duration_sec=1.0
             )
 
     def _on_control_timer(self) -> None:
@@ -406,6 +464,7 @@ class AstralRobotDriverNode(Node):
                 right = [0.0] * NUM_ARM_JOINTS
             self._send_arms(left, right)
 
+        self._send_head()
         self._send_grippers()
 
     def _send_arms(self, left: List[float], right: List[float]) -> None:
@@ -461,7 +520,7 @@ class AstralRobotDriverNode(Node):
         q = self._read_q18()
         if q is None:
             return
-        left, right, _waist, grip = split_full_q(q)
+        left, right, _waist, head = split_full_q(q)
         stamp = self.get_clock().now().to_msg()
 
         msg_l = JointState()
@@ -482,16 +541,26 @@ class AstralRobotDriverNode(Node):
         msg_f.position = [float(x) for x in q]
         self._pub_full.publish(msg_f)
 
+        msg_h = JointState()
+        msg_h.header.stamp = stamp
+        msg_h.name = list(HEAD_JOINT_NAMES)
+        msg_h.position = [float(x) for x in head]
+        self._pub_head.publish(msg_h)
+
+        # 夹爪无 OBS 槽位（0x31/0x32 是头）；发布最近一次指令角
+        with self._lock:
+            gl = self._grip_rad.get("left")
+            gr = self._grip_rad.get("right")
         msg_gl = JointState()
         msg_gl.header.stamp = stamp
-        msg_gl.name = [GRIPPER_JOINT_NAMES[0]]
-        msg_gl.position = [float(grip[0])]
+        msg_gl.name = ["left_gripper"]
+        msg_gl.position = [0.0 if gl is None else float(gl)]
         self._pub_left_grip.publish(msg_gl)
 
         msg_gr = JointState()
         msg_gr.header.stamp = stamp
-        msg_gr.name = [GRIPPER_JOINT_NAMES[1]]
-        msg_gr.position = [float(grip[1])]
+        msg_gr.name = ["right_gripper"]
+        msg_gr.position = [0.0 if gr is None else float(gr)]
         self._pub_right_grip.publish(msg_gr)
 
     # ------------------------------------------------------------------ srvs

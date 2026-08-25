@@ -47,7 +47,7 @@ class PinchGripperNode(Node):
         # Pinch distances in the same units as landmarks (Quest wrist-local meters).
         self.declare_parameter("open_dist_m", 0.08)
         self.declare_parameter("close_dist_m", 0.015)
-        # Actuator radians for motor 0x31 / 0x32 — tune on hardware.
+        # Actuator radians for mechanical gripper (CMD 0x97/0x98) — tune on hardware.
         # 真机方向：0.8=张开, 0.0=合拢（与 driver/sim 一致）。
         self.declare_parameter("open_rad", 0.8)
         self.declare_parameter("closed_rad", 0.0)

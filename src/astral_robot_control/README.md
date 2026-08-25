@@ -10,20 +10,24 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 18 轴顺序与 SDK `ROBOT_JOINT_NAMES` 一致：
 
 ```text
-[ left_arm×7 | right_arm×7 | waist×2 | grippers×2 ]
+[ left_arm×7 | right_arm×7 | waist×2 | head×2 ]
 ```
+
+真机：`0x21/0x22`=腰，`0x31/0x32`=头。机械夹爪走 `0x97`/`0x98`（`set_gripper_angle`），不是 0x31/0x32。
 
 | 话题 | 方向 | 内容 |
 |------|------|------|
 | `/left_arm/joint_commands` | sub | `JointState.position[7]` → `move_arm_js` |
 | `/right_arm/joint_commands` | sub | `JointState.position[7]` → `move_arm_js` |
 | `/astral/joint_commands` | sub | `JointState.position[18]` → `move_js`（有新数据时优先） |
-| `/left_gripper/command` | sub | `Float64` 0=开 1=合 → `set_gripper_angle` |
-| `/left_gripper/joint_commands` | sub | `JointState` 弧度 → `set_gripper_angle`（与 command 均可） |
+| `/head/joint_commands` | sub | `[head_yaw, head_pitch]` → `move_head_js` |
+| `/left_gripper/command` | sub | `Float64` 0=开 1=合 → `set_gripper_angle`（0x97） |
+| `/left_gripper/joint_commands` | sub | `JointState` 弧度 → `set_gripper_angle` |
 | `/left_arm/joint_states` | pub | 左臂 7 |
 | `/right_arm/joint_states` | pub | 右臂 7 |
-| `/astral/joint_states` | pub | 全身 18 |
-| `/left_gripper/joint_states` | pub | 左夹爪 1 |
+| `/astral/joint_states` | pub | 全身 18（含腰+头） |
+| `/head/joint_states` | pub | 头 2 |
+| `/left_gripper/joint_states` | pub | 左夹爪（最近指令） |
 
 - QoS：**BEST_EFFORT**（SensorData）
 - 关节名可选；无名时按位置顺序；有名时按 `joint_layout.py` 对齐

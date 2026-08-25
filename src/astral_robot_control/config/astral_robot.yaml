@@ -3,15 +3,18 @@
 # Joint contract (aligned with astral_robot_sdk ROBOT_JOINT_NAMES):
 #   left_arm  [7]: left_shoulder_pitch … left_wrist_roll
 #   right_arm [7]: right_shoulder_pitch … right_wrist_roll
-#   astral   [18]: left(7)+right(7)+waist(2)+grippers(2)
+#   astral   [18]: left(7)+right(7)+waist(2)+head(2)   # 0x31/0x32 = head
+#   head      [2]: head_yaw / head_pitch → move_head_js (0x90)
+#   grippers: CMD 0x97/0x98 via set_gripper_angle (not motor 0x31/0x32)
 #
 # Topics:
 #   /left_arm/joint_commands   → move_arm_js (with right hold)
 #   /right_arm/joint_commands  → move_arm_js (with left hold)
 #   /astral/joint_commands     → move_js (18-DoF, takes priority while fresh)
+#   /head/joint_commands       → move_head_js
 #   /left_gripper/command      → Float64 0=open 1=closed → set_gripper_angle
 #   /left_gripper/joint_commands → JointState radians → set_gripper_angle
-#   /{left_arm,right_arm,astral,left_gripper,right_gripper}/joint_states
+#   /{left_arm,right_arm,astral,head,left_gripper,right_gripper}/joint_states
 #
 # QoS: BEST_EFFORT (SensorData) on all joint streams.
 
@@ -32,6 +35,8 @@ astral_robot_driver:
     left_arm_ns: "left_arm"
     right_arm_ns: "right_arm"
     astral_ns: "astral"
+    head_ns: "head"
+    enable_head_cmd: true
     left_gripper_ns: "left_gripper"
     right_gripper_ns: "right_gripper"
     enable_gripper_cmd: true

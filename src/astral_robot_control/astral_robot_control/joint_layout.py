@@ -2,7 +2,9 @@
 
 Aligned with ``astral_robot_sdk.api.robot_options``:
 
-  18-DoF order = left_arm(7) + right_arm(7) + waist(2) + grippers(2)
+  18-DoF order = left_arm(7) + right_arm(7) + waist(2) + head(2)
+
+Mechanical grippers use CMD 0x97/0x98 (``set_gripper_angle``), not 0x31/0x32.
 """
 
 from __future__ import annotations
@@ -34,8 +36,8 @@ except ImportError:  # pragma: no cover
         "right_wrist_roll",
         "waist_front",
         "waist_side",
-        "left_gripper",
-        "right_gripper",
+        "head_yaw",
+        "head_pitch",
     ]
 
 NUM_JOINTS = 18
@@ -44,12 +46,15 @@ NUM_ARM_JOINTS = 7
 LEFT_ARM_JOINT_NAMES: List[str] = ROBOT_JOINT_NAMES[0:7]
 RIGHT_ARM_JOINT_NAMES: List[str] = ROBOT_JOINT_NAMES[7:14]
 WAIST_JOINT_NAMES: List[str] = ROBOT_JOINT_NAMES[14:16]
-GRIPPER_JOINT_NAMES: List[str] = ROBOT_JOINT_NAMES[16:18]
+HEAD_JOINT_NAMES: List[str] = ROBOT_JOINT_NAMES[16:18]
+# 兼容旧导入名（曾误称夹爪）
+GRIPPER_JOINT_NAMES = HEAD_JOINT_NAMES
 
 # Default ROS topic contract (absolute names).
 LEFT_ARM_NS = "left_arm"
 RIGHT_ARM_NS = "right_arm"
 ASTRAL_NS = "astral"
+HEAD_NS = "head"
 LEFT_GRIPPER_NS = "left_gripper"
 RIGHT_GRIPPER_NS = "right_gripper"
 CMD_RATIO_SUFFIX = "command"
@@ -88,7 +93,7 @@ def pack_named_positions(
 
 
 def split_full_q(q18: Sequence[float]) -> Tuple[List[float], List[float], List[float], List[float]]:
-    """Split 18-DoF vector into left, right, waist, grippers."""
+    """Split 18-DoF vector into left, right, waist, head."""
     q = list(q18)
     if len(q) < NUM_JOINTS:
         q = q + [0.0] * (NUM_JOINTS - len(q))
