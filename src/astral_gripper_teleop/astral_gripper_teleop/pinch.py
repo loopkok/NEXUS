@@ -39,6 +39,26 @@ def close_ratio_from_pinch(
     return 1.0 - open_amt
 
 
+def close_ratio_from_range(
+    dist_m: float,
+    lo_m: float,
+    hi_m: float,
+    min_span_m: float = 0.01,
+) -> float:
+    """Close ratio from an (auto-tracked) distance envelope.
+
+    lo_m = observed min distance (full pinch), hi_m = observed max (full open).
+    Span is clamped to ``min_span_m`` so a still hand does not blow up the
+    denominator. 0 = open, 1 = pinched/closed.
+    """
+    span = float(hi_m) - float(lo_m)
+    if span < float(min_span_m):
+        span = float(min_span_m)
+    t = (float(dist_m) - float(lo_m)) / span
+    open_amt = max(0.0, min(1.0, t))
+    return 1.0 - open_amt
+
+
 def ratio_to_rad(close_ratio: float, open_rad: float, closed_rad: float) -> float:
     r = max(0.0, min(1.0, float(close_ratio)))
     return float(open_rad) + r * (float(closed_rad) - float(open_rad))
