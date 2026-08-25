@@ -104,10 +104,10 @@ class AstralMujocoSimNode(Node):
         self.declare_parameter("left_gripper_ns", "left_gripper")
         self.declare_parameter("right_gripper_ns", "right_gripper")
         self.declare_parameter("enable_gripper_cmd", True)
-        self.declare_parameter("left_gripper_open_rad", 0.0)
-        self.declare_parameter("left_gripper_closed_rad", 0.8)
-        self.declare_parameter("right_gripper_open_rad", 0.0)
-        self.declare_parameter("right_gripper_closed_rad", 0.8)
+        self.declare_parameter("left_gripper_open_rad", 0.8)
+        self.declare_parameter("left_gripper_closed_rad", 0.0)
+        self.declare_parameter("right_gripper_open_rad", 0.8)
+        self.declare_parameter("right_gripper_closed_rad", 0.0)
 
         mjcf_path = str(self.get_parameter("mjcf_path").value).strip()
         if not mjcf_path:

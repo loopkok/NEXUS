@@ -91,10 +91,11 @@ class AstralRobotDriverNode(Node):
         self.declare_parameter("right_gripper_ns", RIGHT_GRIPPER_NS)
         self.declare_parameter("enable_gripper_cmd", True)
         # Float64 0–1 mapping → set_gripper_angle (must match teleop yaml if used)
-        self.declare_parameter("left_gripper_open_rad", 0.0)
-        self.declare_parameter("left_gripper_closed_rad", 0.8)
-        self.declare_parameter("right_gripper_open_rad", 0.0)
-        self.declare_parameter("right_gripper_closed_rad", 0.8)
+        # 真机方向：0.8=张开, 0.0=合拢。
+        self.declare_parameter("left_gripper_open_rad", 0.8)
+        self.declare_parameter("left_gripper_closed_rad", 0.0)
+        self.declare_parameter("right_gripper_open_rad", 0.8)
+        self.declare_parameter("right_gripper_closed_rad", 0.0)
 
         self.board_ip = str(self.get_parameter("control_board_ip").value)
         self.board_port = int(self.get_parameter("board_cmd_port").value)

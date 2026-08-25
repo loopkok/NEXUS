@@ -17,4 +17,4 @@ ros2 launch astral_gripper_teleop gripper_teleop.launch.py
 # 已包含在 astral_teleop/full_teleop.launch.py（with_gripper:=true）
 ```
 
-调参：`config/gripper_teleop.yaml` 里 `open_dist_m` / `close_dist_m`（米）和 `open_rad` / `closed_rad`（夹爪电机）。
+调参：`config/gripper_teleop.yaml` 里 `open_dist_m` / `close_dist_m`（米）和 `open_rad` / `closed_rad`（夹爪电机）。真机方向 `open_rad=0.8`（张开）、`closed_rad=0.0`（合拢），故捏合→合、张开→开。

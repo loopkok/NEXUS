@@ -47,8 +47,9 @@ class PinchGripperNode(Node):
         self.declare_parameter("open_dist_m", 0.08)
         self.declare_parameter("close_dist_m", 0.015)
         # Actuator radians for motor 0x31 / 0x32 — tune on hardware.
-        self.declare_parameter("open_rad", 0.0)
-        self.declare_parameter("closed_rad", 0.8)
+        # 真机方向：0.8=张开, 0.0=合拢（与 driver/sim 一致）。
+        self.declare_parameter("open_rad", 0.8)
+        self.declare_parameter("closed_rad", 0.0)
         self.declare_parameter("ema_alpha", 0.4)
         self.declare_parameter("publish_rate", 50.0)
         self.declare_parameter("input_timeout_s", 0.4)
