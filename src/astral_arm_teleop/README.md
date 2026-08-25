@@ -8,8 +8,13 @@ Quest3 腕部 → 双臂 IK（DH / URDF）→ `/left_arm|/right_arm/joint_comman
 ## 数据流（2× 单臂节点）
 
 ```text
-quest3_udp_mocap (convert_to_robot:=true)  → robot_world
-  (X left, Y back, Z up)
+quest3_udp_mocap (convert_to_robot:=true)
+  Mixed → robot_world (X left, Y back, Z up)
+  IOBT  → robot_body  (hips 系；+X右/+Y上/+Z前)
+  # mocap 保证整段流 frame_id 稳定（sticky latch + hold gate）：
+  # 见过 body 包即不回退世界系；启动后 head/wrist/controller 在帧确定前不发布。
+  # 本节点按 "当前 - vr_init" 算增量；稳定系下增量有界、IK 可达。
+  # IOBT 下增量即"手相对躯干"的位移，正是以髋为父、手身解耦的语义。
 
 astral_arm_teleop_{left|right}                 # 进程并行
   PoseProcessor × vr_to_arm_rot

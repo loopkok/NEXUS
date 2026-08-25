@@ -7,6 +7,8 @@ Quest3 → **Astral 双臂** + **Wuji 双手** 的 ROS 2 工作空间。
 Quest3 (quest3_hand_mocap, convert_to_robot:=true)
   ├─ mixed: 一侧手柄 + 一侧手（controller 默认同写 wrist_pose）
   ├─ IOBT: hips 世界系；head/wrist/controller/body_joints 在 hips 系
+  │        mocap 保证 frame_id 整段稳定（sticky latch + hold gate），
+  │        下游按稳定系增量算 IK，不再跨系做 delta。
   ├─ quest3/{left,right}_wrist_pose
   │     → astral_arm_teleop → /{side}_arm/joint_commands
   │           → 仿真 astral_mujoco_sim    或  真机 astral_robot_control

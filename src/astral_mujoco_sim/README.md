@@ -3,7 +3,8 @@
 Astral 双臂 MuJoCo 仿真：订阅 teleop 的 `joint_commands`，驱动 MJCF（真机驱动替身）。
 
 ```text
-quest3 (convert_to_robot:=true → robot_world)
+quest3 (convert_to_robot:=true)
+  Mixed → robot_world   IOBT → robot_body   # mocap 保证 frame_id 稳定
   → astral_arm_teleop_{left,right}
       analytic_dh: R_baseᵀ + flip_q → 发布旧约定 q
       urdf_numerical: 无 flip，直接旧约定 q
