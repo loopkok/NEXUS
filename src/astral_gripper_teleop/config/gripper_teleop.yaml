@@ -1,8 +1,9 @@
 # Quest3 pinch → left gripper. Units: landmark meters, actuator radians.
 #
 # close_ratio 0 = open, 1 = pinched/closed.
-# open_rad / closed_rad = 夹爪电机角度（CMD 0x97，非 0x31）。真机方向：0.8=张开, 0.0=合拢，
-# 故 close_ratio=1(捏合)→0.0(合)、close_ratio=0(张开)→0.8(开)。
+# open_rad / closed_rad = 夹爪电机角度（CMD 0x97，非 0x31）。真机方向：2.0=全张开, 0.0=合拢，
+# 故 close_ratio=1(捏合)→0.0(合)、close_ratio=0(张开)→2.0(开)。
+# 2.0 经 CLI 递增 rad 实测为真机左夹爪全开角度。
 #
 # Swap this node later: another publisher on /left_gripper/command is enough
 # if astral_robot_control is running.
@@ -12,7 +13,7 @@ pinch_gripper_node:
     hand_side: "left"
     open_dist_m: 0.08
     close_dist_m: 0.015
-    open_rad: 0.8
+    open_rad: 2.0
     closed_rad: 0.0
     ema_alpha: 0.4
     publish_rate: 50.0
