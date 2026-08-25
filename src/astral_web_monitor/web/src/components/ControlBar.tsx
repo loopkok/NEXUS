@@ -17,6 +17,9 @@ export function ControlBar({ state, presets, selected, onSelect, onAction }: Pro
   const canStop = teleopState === 'running' || teleopState === 'paused' || teleopState === 'starting'
   const canPause = teleopState === 'running'
   const canResume = teleopState === 'paused'
+  // /teleop/start (capture vr_init + arm) is meaningful once the teleop launch
+  // is running (arm nodes are up, waiting for the start signal).
+  const canTeleopStart = teleopState === 'running' || teleopState === 'paused'
 
   const run = async (fn: () => Promise<{ ok: boolean; message: string }>) => {
     const res = await fn()
@@ -49,6 +52,9 @@ export function ControlBar({ state, presets, selected, onSelect, onAction }: Pro
 
       <button style={btn('#22c55e')} disabled={!canStart} onClick={() => run(() => api.start(selected))}>
         启动
+      </button>
+      <button style={btn('#f59e0b')} disabled={!canTeleopStart} onClick={() => run(() => api.teleopStart())}>
+        开始遥操
       </button>
       <button style={btn('#3b82f6')} disabled={!canPause} onClick={() => run(() => api.pause())}>
         暂停

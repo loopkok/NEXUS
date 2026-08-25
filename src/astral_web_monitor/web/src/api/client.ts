@@ -25,4 +25,5 @@ export const api = {
   stop: () => post<unknown>('/api/v1/stop'),
   pause: () => post<unknown>('/api/v1/pause'),
   resume: () => post<unknown>('/api/v1/resume'),
+  teleopStart: () => post<unknown>('/api/v1/teleop/start'),
 }

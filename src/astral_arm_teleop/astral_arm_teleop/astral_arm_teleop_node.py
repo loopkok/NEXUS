@@ -26,6 +26,7 @@ from rclpy.qos import (
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float64MultiArray
+from std_srvs.srv import Trigger
 
 from astral_arm_teleop.ik.factory import make_single_arm_ik
 from astral_arm_teleop.latency_meter import LatencyMeter, stamp_age_ms
@@ -111,6 +112,10 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("dry_run", False)
         self.declare_parameter("require_clench_to_start", False)
         self.declare_parameter("auto_arm_on_start", True)
+        self.declare_parameter(
+            "require_start_signal",
+            False,
+        )
         self.declare_parameter("use_joint_state_seed", True)
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
@@ -185,12 +190,14 @@ class AstralTeleopArmNode(Node):
             # analytic DH works in the clean base (joint1 axis = +Z); map the VR
             # delta from the original torso base into the clean base frame.
             R = _R_BASE_T @ R
+        self._require_start = bool(self.get_parameter("require_start_signal").value)
         self.pose = PoseProcessor(
             vr_to_arm_rot=R,
             pos_smoothing=float(self.get_parameter("pos_smoothing").value),
             rot_smoothing=float(self.get_parameter("rot_smoothing").value),
             motion_scale=float(self.get_parameter("motion_scale").value),
             flip_pitch=bool(self.get_parameter("flip_pitch").value),
+            auto_calibrate=not self._require_start,
         )
         tcp = list(self.get_parameter("tcp_offset").value)
         T_ft = np.eye(4)
@@ -246,9 +253,16 @@ class AstralTeleopArmNode(Node):
 
         require = bool(self.get_parameter("require_clench_to_start").value)
         auto = bool(self.get_parameter("auto_arm_on_start").value)
-        self._armed = (not require) or auto
+        if self._require_start:
+            # Wait for /teleop/start (or ~/start): do not arm or auto-zero on the
+            # first VR pose. The user triggers start once their hand is placed.
+            self._armed = False
+        else:
+            self._armed = (not require) or auto
         self.create_subscription(Bool, "/teleop/armed", self._on_armed, 10)
         self.create_subscription(Bool, "/teleop/disarm", self._on_disarm, 10)
+        self.create_subscription(Bool, "/teleop/start", self._on_start, 10)
+        self.create_service(Trigger, "~/start", self._start_srv)
 
         self._last_vr_t = 0.0
         self._last_vr_stamp = None
@@ -270,6 +284,12 @@ class AstralTeleopArmNode(Node):
             f"EE0={np.round(self.robot_init_pos, 3).tolist()} "
             f"scale={self.pose.motion_scale} dry_run={self.dry_run} {home_msg}"
         )
+        if self._require_start:
+            self.get_logger().warn(
+                f"[{self.side}] require_start_signal=true: waiting for "
+                "/teleop/start (Bool true) or ~/start service. Place your hand "
+                "at the initial pose, then send start to capture vr_init and arm."
+            )
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
     def _on_set_parameters(self, params):
@@ -408,6 +428,40 @@ class AstralTeleopArmNode(Node):
 
     def _on_disarm(self, _msg: Bool) -> None:
         self._armed = False
+
+    def _on_start(self, msg: Bool) -> None:
+        if msg.data:
+            self._start_teleop()
+
+    def _start_srv(self, _req: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
+        ok, message = self._start_teleop()
+        resp.success = ok
+        resp.message = message
+        return resp
+
+    def _start_teleop(self):
+        """Capture vr_init from the current VR pose and arm teleop.
+
+        Triggered by /teleop/start (global, both arms) or ~/start (per arm).
+        Re-sending re-captures the zero from the current pose (re-center).
+        """
+        if self._homing:
+            msg = "homing in progress; wait for init pose, then send start"
+            self.get_logger().warn(f"[{self.side}] start: {msg}")
+            return False, msg
+        if self.pose.vr_current_pos is None:
+            msg = "no VR wrist pose yet; start Quest stream, place hand, then send start"
+            self.get_logger().warn(f"[{self.side}] start: {msg}")
+            return False, msg
+        if not self.pose.calibrate_from_current():
+            msg = "calibrate failed (no VR pose)"
+            self.get_logger().warn(f"[{self.side}] start: {msg}")
+            return False, msg
+        self._armed = True
+        self.get_logger().warn(
+            f"[{self.side}] START: vr_init captured from current pose, teleop armed"
+        )
+        return True, "started"
 
     def _on_state(self, msg: JointState) -> None:
         if len(msg.position) >= 7:

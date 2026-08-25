@@ -58,6 +58,10 @@ TOPICS["right_hand"] = TopicPair(_right_hand_state, _right_hand_cmd)
 # write path the monitor uses. It never touches hardware topics.
 TOPIC_ARMED = "/teleop/armed"
 TOPIC_DISARM = "/teleop/disarm"
+# One-shot "capture vr_init + arm" trigger for astral_arm_teleop when
+# require_start_signal is true. Deliberately volatile (not latched) so a
+# late-joining arm node does not auto-start from a stale start signal.
+TOPIC_START = "/teleop/start"
 
 # --- Orphan process detection ----------------------------------------------
 # Regex fragment matched against the full command line of running processes

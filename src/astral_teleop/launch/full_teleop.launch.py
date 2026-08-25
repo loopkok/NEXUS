@@ -91,6 +91,7 @@ def _setup(context, *args, **kwargs):
             "urdf_path": _opt(context, "urdf_path"),
             "protocol": protocol,
             "convert_to_robot": convert,
+            "require_start_signal": _opt(context, "require_start_signal"),
         }.items(),
     )
 
@@ -210,6 +211,14 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("convert_to_robot", default_value=""),
             DeclareLaunchArgument("solver_type", default_value=""),
             DeclareLaunchArgument("urdf_path", default_value=""),
+            DeclareLaunchArgument(
+                "require_start_signal",
+                default_value="",
+                description=(
+                    "empty → yaml. true → wait for /teleop/start to capture vr_init "
+                    "and arm (use after placing hand at initial pose)."
+                ),
+            ),
             OpaqueFunction(function=_setup),
         ]
     )

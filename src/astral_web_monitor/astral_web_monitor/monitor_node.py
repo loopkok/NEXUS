@@ -30,6 +30,7 @@ from .config import (
     TOPICS,
     TOPIC_ARMED,
     TOPIC_DISARM,
+    TOPIC_START,
 )
 from .rate_counter import RateRegistry
 
@@ -72,6 +73,17 @@ class MonitorNode(Node):
         )
         self._pub_armed = self.create_publisher(Bool, TOPIC_ARMED, qos)
         self._pub_disarm = self.create_publisher(Bool, TOPIC_DISARM, qos)
+
+        # One-shot start trigger (volatile, not latched): publishing here is the
+        # only write path for /teleop/start. Used by require_start_signal to
+        # capture vr_init from the current pose and arm both arms at once.
+        start_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=rclpy.qos.DurabilityPolicy.VOLATILE,
+        )
+        self._pub_start = self.create_publisher(Bool, TOPIC_START, start_qos)
 
         # Read-only subscriptions.
         for entity, pair in TOPICS.items():
@@ -122,6 +134,10 @@ class MonitorNode(Node):
 
     def publish_arm(self) -> None:
         self._pub_armed.publish(Bool(data=True))
+
+    def publish_start(self) -> None:
+        """One-shot /teleop/start: arm teleop captures vr_init and arms."""
+        self._pub_start.publish(Bool(data=True))
 
 
 # --- module-level singleton helpers -----------------------------------------

@@ -5,7 +5,7 @@
 **不修改任何现有功能包**。只做三件事：
 
 1. **只读订阅**现有关节话题（`joint_states` / `joint_commands`）
-2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复）
+2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复）、`/teleop/start`（外部启动闸门）
 3. **subprocess 启停** `ros2 launch`（与命令行操作等价）
 
 ```text
@@ -65,15 +65,19 @@
 - QoS：**BEST_EFFORT**（SensorData）
 - 灵巧手话题名可配置（`ASTRAL_WEB_MONITOR_HAND_NAME`，默认 `right_hand`）
 
-### 发布（仅暂停/恢复，已有话题）
+### 发布（暂停/恢复/外部启动，已有话题）
 
 | 话题 | 类型 | 触发 |
 |------|------|------|
 | `/teleop/disarm` | Bool(True) | 点"暂停" |
 | `/teleop/armed` | Bool(True) | 点"恢复" |
+| `/teleop/start` | Bool(True) | 点"开始遥操"（一次性，记录 `vr_init` 并 arm） |
 
-- QoS：**RELIABLE + TRANSIENT_LOCAL**（latched，晚启动的臂节点也能收到）
+- QoS：`/teleop/armed`、`/teleop/disarm` 为 **RELIABLE + TRANSIENT_LOCAL**（latched，晚启动的臂节点也能收到）
+- `/teleop/start` 为 **RELIABLE + VOLATILE**（**非** latched 一次性触发，避免晚加入的臂节点收到旧 start 自动开始）
 - **暂停只影响臂**：`/teleop/disarm` 只作用于 `astral_arm_teleop_node`，夹爪和灵巧手节点无 disarm 接口，继续运行
+- **开始遥操**：配合 `astral_arm_teleop` 的 `require_start_signal:=true`——启动预设后臂节点只跟踪 `vr_current` 不记零点；手摆好初始位姿后点此按钮，臂节点用当前 pose 记 `vr_init` 并 arm。再点一次 = 重新记零点（re-center）
+- **无条件发送**：`/api/v1/teleop/start` 始终发布 `/teleop/start`，**不**检查 launch 是否经本监控启动。臂节点是唯一裁判：homing 中或无 VR pose 时会忽略并告警。因此无论遥操由本监控的预设启动还是从外部 CLI 启动，此按钮均可用
 
 ## REST API
 
@@ -88,6 +92,7 @@
 | POST | `/api/v1/stop` | SIGINT 停止 launch（30s 超时 SIGKILL） |
 | POST | `/api/v1/pause` | 发 `/teleop/disarm`（软暂停，节点保持运行） |
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
+| POST | `/api/v1/teleop/start` | 发 `/teleop/start`（一次性，记录 `vr_init` 并 arm；配合 `require_start_signal`；无条件发送，臂节点自行判断有效性） |
 
 ## WebSocket
 
@@ -207,6 +212,7 @@ npm run build    # → web/dist/
 | 停止 | SIGINT subprocess | 否 |
 | 暂停 | 发布 `/teleop/disarm`（已有话题） | 否 |
 | 恢复 | 发布 `/teleop/armed`（已有话题） | 否 |
+| 开始遥操 | 发布 `/teleop/start`（已有话题） | 否 |
 | 日志 | 采集 subprocess stdout | 否 |
 
 ## 包结构

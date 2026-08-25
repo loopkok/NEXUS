@@ -44,6 +44,7 @@ class PoseProcessor:
         rot_smoothing: float | None = None,
         motion_scale: float = 0.65,
         flip_pitch: bool = False,
+        auto_calibrate: bool = True,
     ):
         if vr_to_arm_rot is not None:
             R = np.asarray(vr_to_arm_rot, dtype=float).reshape(3, 3)
@@ -71,6 +72,12 @@ class PoseProcessor:
             self.rot_smoothing_tau = _tau_from_legacy_alpha(self.rot_smoothing)
         self.motion_scale = float(motion_scale)
         self.flip_pitch = bool(flip_pitch)
+        # When True (default, legacy behavior) the first received VR pose becomes
+        # the vr_init zero point automatically. When False the node only tracks
+        # vr_current and waits for an external calibrate_from_current() call —
+        # used by require_start_signal so the user can place their hand at the
+        # desired initial pose before the zero is captured.
+        self.auto_calibrate = bool(auto_calibrate)
 
         self.vr_init_pos = None
         self.vr_init_rot = None
@@ -90,6 +97,19 @@ class PoseProcessor:
         self.last_raw_delta_pos = np.zeros(3)
         self.last_raw_delta_rot = Rotation.identity()
 
+    def calibrate_from_current(self) -> bool:
+        """Capture vr_init from the latest received VR pose.
+
+        Returns False if no VR pose has been received yet. Used by the
+        require_start_signal flow: the node tracks poses without auto-zeroing,
+        then the user triggers this once their hand is at the desired initial
+        pose.
+        """
+        if self.vr_current_pos is None or self.vr_current_rot is None:
+            return False
+        self.set_vr_zero_point(self.vr_current_pos, self.vr_current_rot)
+        return True
+
     @property
     def is_calibrated(self) -> bool:
         return self.vr_init_pos is not None
@@ -105,7 +125,7 @@ class PoseProcessor:
         self.last_raw_delta_rot = Rotation.identity()
 
     def update_vr_pose(self, pos: np.ndarray, rot: Rotation) -> None:
-        if self.vr_init_pos is None:
+        if self.auto_calibrate and self.vr_init_pos is None:
             self.set_vr_zero_point(pos, rot)
         self.vr_current_pos = pos
         self.vr_current_rot = rot

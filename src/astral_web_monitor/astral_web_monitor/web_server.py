@@ -195,6 +195,27 @@ async def resume() -> ApiEnvelope:
     return ApiEnvelope(ok=True, message="已恢复 (arm)")
 
 
+@app.post("/api/v1/teleop/start")
+async def teleop_start() -> ApiEnvelope:
+    """One-shot /teleop/start: arm nodes capture vr_init from current pose + arm.
+
+    Use after the teleop nodes are running with require_start_signal:=true and
+    the user has placed their hands at the desired initial pose. Re-sending
+    re-captures the zero (re-center). The arm node is the authority: it ignores
+    the trigger while homing or before any VR pose arrives (logs a warning), so
+    this endpoint publishes unconditionally — it works whether the teleop launch
+    was started via this monitor or from a separate CLI.
+    """
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    node.publish_start()
+    return ApiEnvelope(
+        ok=True,
+        message="已发送 /teleop/start（臂节点记 vr_init 并 arm；homing 中或无 VR 时会忽略并告警）",
+    )
+
+
 # --- WebSocket -------------------------------------------------------------
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(websocket: WebSocket):

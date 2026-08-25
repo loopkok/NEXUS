@@ -42,6 +42,9 @@ def _launch_setup(context, *args, **kwargs):
     teleop_extra = {
         "dry_run": _opt(context, "dry_run").lower() in ("true", "1", "yes"),
     }
+    rsig = _opt(context, "require_start_signal")
+    if rsig:
+        teleop_extra["require_start_signal"] = rsig.lower() in ("true", "1", "yes")
     solver_type = _opt(context, "solver_type")
     if solver_type:
         teleop_extra["solver_type"] = solver_type
@@ -150,6 +153,15 @@ def generate_launch_description() -> LaunchDescription:
                 "urdf_path",
                 default_value="",
                 description="empty → yaml / astral_robot.pin.urdf",
+            ),
+            DeclareLaunchArgument(
+                "require_start_signal",
+                default_value="",
+                description=(
+                    "empty → yaml. true → do not auto-capture vr_init/arm on first "
+                    "VR pose; wait for /teleop/start (or ~/start) to capture the zero "
+                    "from the current pose and arm."
+                ),
             ),
             OpaqueFunction(function=_launch_setup),
         ]

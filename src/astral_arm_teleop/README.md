@@ -187,6 +187,42 @@ Quest3 有线：`adb reverse tcp:8000 tcp:8000`。
 
 左手夹爪（独立包 `astral_gripper_teleop`）：`hand_landmarks/left` 拇指–食指距离 → `/left_gripper/command`（0 开 1 合）。真机由驱动 `set_gripper_angle` 下发。本包不再 include 夹爪；整机编排见 `astral_teleop`，单独跑夹爪用 `ros2 launch astral_gripper_teleop gripper_teleop.launch.py`。
 
+## 外部启动闸门（`require_start_signal`）
+
+**问题**：Quest3 端点 "start stream" 时手得抬起来点按钮，推流一来第一帧腕姿就在按钮位置，旧逻辑把第一帧当 `vr_init`（零点），于是零点错位、机器人一上手就偏。
+
+**新流程**（`require_start_signal:=true`）：
+
+1. 节点启动后**不**自动记 `vr_init`、**不** arm，只跟踪 `vr_current`（PoseProcessor `auto_calibrate=false`）。
+2. homing 走完后机器人停在 `init_pose`；你把手摆到与机器人一致的初始位姿。
+3. **外部发一个 start 信号** → 节点用**当前** `vr_current` 记 `vr_init` 并 arm，遥操开始。
+
+信号入口（任选）：
+
+```bash
+# 全局，双臂同启（推荐）
+ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
+
+# 单臂 + 带反馈
+ros2 service call /astral_arm_teleop_left/start  std_srvs/srv/Trigger
+ros2 service call /astral_arm_teleop_right/start std_srvs/srv/Trigger
+```
+
+再发一次 `/teleop/start` = 用当前 pose **重新记零点**（re-center，不解除 arm）。`/teleop/disarm` 仍可暂停，`/teleop/armed` 只 arm 不重记零点（未标定时仍不发指令）。
+
+启动时若仍在 homing 或还没收到腕姿，start 会被拒并告警（等 homing 完成、Quest 推流后再发）。
+
+```bash
+# 真机整机：启用外部启动闸门
+ros2 launch astral_teleop full_teleop.launch.py \
+  with_arm_driver:=true with_hand_driver:=true \
+  right_hand_source:=quest3 require_start_signal:=true
+# 手摆好后：
+ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
+```
+
+默认 `false`（sim/旧流程不变）。yaml `require_start_signal` 或 launch arg 都可覆盖。
+
 ## 频率
 
 默认遥操 / 驱动均为 **50 Hz**。有效落板频率 ≈ `min(teleop, driver)`。
@@ -254,6 +290,6 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 
 单臂：`config/astral_arm_teleop_{left,right}.yaml`。
 
-常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）。
+常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
 
 `use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。
