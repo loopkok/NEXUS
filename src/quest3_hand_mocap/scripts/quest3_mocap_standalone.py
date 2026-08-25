@@ -413,6 +413,12 @@ class Quest3MocapStandalone:
         self.head_frame_id = self.world_frame_id
         self.wrist_frame_id = self.world_frame_id
         self._last_iobt_time = 0.0
+        # Sticky body-frame latch: once a body packet has been seen, head/wrist/
+        # controller stay in the hips (torso) frame for the rest of the run.
+        # This avoids frame_id flipping back to world on transient UDP packet
+        # loss (Quest keeps IOBT at High fidelity, but UDP broadcast drops body
+        # packets, which previously made the wrist jump between frames).
+        self._body_ever_seen = False
         self._wrist_src = {"left": "none", "right": "none"}
 
         self._latest: Dict[str, object] = {
@@ -581,7 +587,10 @@ class Quest3MocapStandalone:
     # ---- processing (same as ROS node) ------------------------------------
 
     def _iobt_active(self) -> bool:
-        return (time.time() - self._last_iobt_time) < _IOBT_TIMEOUT_S
+        # Sticky: once IOBT body data has been seen, treat IOBT as active for the
+        # rest of the run so transient UDP packet loss does not flip head/wrist/
+        # controller back to the world frame mid-stream.
+        return self._body_ever_seen or (time.time() - self._last_iobt_time) < _IOBT_TIMEOUT_S
 
     def _pose_frame_id(self) -> str:
         return self.body_frame_id if self._iobt_active() else self.world_frame_id
@@ -605,6 +614,7 @@ class Quest3MocapStandalone:
 
     def _process_body_line(self, line: str, arrival_time: float) -> None:
         self._last_iobt_time = time.time()
+        self._body_ever_seen = True
         _, _, rest = line.partition(":")
         names = []
         unity_poses = []

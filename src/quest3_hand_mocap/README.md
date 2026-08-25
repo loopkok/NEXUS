@@ -42,7 +42,12 @@ IOBT 开（Quest 已把头/手/手柄及 body 关节变到 hips 躯干系；hips
    └── landmarks            ← 仍是腕局部
 ```
 
-`frame_id` 随最近一次 IOBT 包切换（约 0.4 s 无身体包则回到世界系）。臂 IK 若仍把 `wrist_pose` 当世界目标：IOBT 开启后实际是相对躯干，走路不会把整条臂拖走。
+`frame_id` 由 IOBT 状态决定，且做了两道稳定性处理，避免下游（`astral_arm_teleop` 的 `PoseProcessor`）跨系做 delta 导致 IK 失败：
+
+- **sticky latch**：一旦收到过 body 包（`_body_ever_seen`），即使 body 包瞬时丢包（>0.4 s）也保持 `robot_body`，不再回退世界系——消除运行中 `frame_id` 抖动。
+- **hold gate**：启动后 head/wrist/controller 在"帧确定"前不发布——收到首个 body 包即定躯干系；1 s 内无 body 包即定世界系（`_WRIST_SETTLE_S`）。从源头消除启动期 world→body 翻转，下游第一帧 wrist 即在正确系，`vr_init` 不会被错系污染。landmarks 为腕局部系、与参考系无关，不受闸门影响。
+
+臂 IK 若仍把 `wrist_pose` 当世界目标：IOBT 开启后实际是相对躯干，走路不会把整条臂拖走。
 
 **Unity → 机器人轴（`convert_to_robot:=true` 时）：**
 
@@ -221,6 +226,7 @@ quest3_udp_mocap
 
 | 日期 | 项 | 说明 |
 |------|----|------|
+| 2026-08-25 | IOBT 帧稳定 | sticky latch（见过 body 包即不回退世界系）+ hold gate（启动后 head/wrist/controller 在帧确定前不发布，`_WRIST_SETTLE_S=1.0`），从源头消除 `frame_id` 在 `robot_world`↔`robot_body` 间切换，修复下游 `astral_arm_teleop` 跨系做 delta 导致的 IK 失败；独立脚本同步 sticky latch |
 | 2026-08-21 | body 关节不再二次转换 | Quest 端已把非 hips 关节转成 hips 相对；本节点 `_process_body_line` 移除 `pose_in_parent_frame`，hips 发世界、其余关节直接 `unity_pose_to_robot`，PoseArray 中 hips 为 identity 根。独立脚本同步 |
 | 2026-08-21 | hips 躯干系对齐 | Quest 端用 `_hipsBoneToTorsoFix` 把 FullBody_Hips 骨头系(+X下/+Y前/+Z左)重定向为躯干系(+X右/+Y上/+Z前)；本节点无需改，轴映射 `unity_pose_to_robot` 因此从"用错轴"变为正确 |
 | 2026-08-20 | Mixed + IOBT | 解析 `controller` / `body iobt`；IOBT 时 head/wrist 用 `robot_body`；手柄默认同写 wrist_pose |

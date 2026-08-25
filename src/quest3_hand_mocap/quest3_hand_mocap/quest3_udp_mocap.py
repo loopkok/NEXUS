@@ -23,6 +23,12 @@ from quest3_hand_mocap.latency_meter import LatencyMeter
 _TCP_LISTEN_BACKLOG = 8
 # No body packet for this long → head/wrist/controller are world again.
 _IOBT_TIMEOUT_S = 0.4
+# Hold head/wrist/controller publish until the frame is known: either a body
+# packet arrives (→ robot_body) or this many seconds pass with none (→ world).
+# Stops the startup world→body flip from reaching downstream (arm IK would
+# capture its zero point in world then receive body-frame poses → cross-frame
+# delta). Landmarks are wrist-local and not gated.
+_WRIST_SETTLE_S = 1.0
 
 
 class FPSCounter:
@@ -342,8 +348,16 @@ class Quest3UDPMocap(Node):
         self._body_frame_id = "robot_body" if self.convert_to_robot else "vr_body"
         self._iobt_lock = threading.Lock()
         self._last_iobt_time = 0.0
+        # Sticky body-frame latch: once a body packet has been seen, head/wrist/
+        # controller stay in the hips (torso) frame for the rest of the run, so
+        # transient UDP packet loss does not flip them back to the world frame.
+        self._body_ever_seen = False
         self._logged_iobt_fidelity = ""
         self._wrist_src = {"left": "none", "right": "none"}
+        # Hold gate: 0 until the first head/wrist/controller packet, then the
+        # wall-clock time of that first packet. Pose publish is suppressed until
+        # _pose_frame_settled() is True (body seen, or _WRIST_SETTLE_S elapsed).
+        self._first_pose_time = 0.0
 
         # 发布者：始终按左右分 topic
         # Frame tree (IOBT off):
@@ -550,11 +564,30 @@ class Quest3UDPMocap(Node):
 
     def _iobt_active(self) -> bool:
         with self._iobt_lock:
-            return (time.time() - self._last_iobt_time) < _IOBT_TIMEOUT_S
+            # Sticky: once IOBT body data has been seen, treat IOBT as active for
+            # the rest of the run so transient UDP packet loss does not flip
+            # head/wrist/controller back to the world frame mid-stream.
+            return self._body_ever_seen or (time.time() - self._last_iobt_time) < _IOBT_TIMEOUT_S
 
     def _mark_iobt(self) -> None:
         with self._iobt_lock:
             self._last_iobt_time = time.time()
+            self._body_ever_seen = True
+
+    def _pose_frame_settled(self) -> bool:
+        """True once the head/wrist/controller frame is known.
+
+        Suppresses pose publish until either a body packet has arrived (frame is
+        robot_body) or _WRIST_SETTLE_S has elapsed with no body packet (frame is
+        world). Prevents the startup world→body flip from reaching downstream.
+        """
+        with self._iobt_lock:
+            if self._body_ever_seen:
+                return True
+            if self._first_pose_time == 0.0:
+                self._first_pose_time = time.time()
+                return False
+            return (time.time() - self._first_pose_time) >= _WRIST_SETTLE_S
 
     def _pose_frame_id(self) -> str:
         """Parent of head / wrist / controller (and hips-relative body joints)."""
@@ -629,6 +662,8 @@ class Quest3UDPMocap(Node):
         arrival_time: float,
         src: str,
     ) -> None:
+        if not self._pose_frame_settled():
+            return  # hold until head/wrist/controller frame is known
         pose_msg = self._make_pose_stamped(
             pos, quat, arrival_time, self._pose_frame_id()
         )
@@ -760,7 +795,7 @@ class Quest3UDPMocap(Node):
         # Head / HMD. IOBT on: already hips-relative on the wire.
         if "head" in line_lower or "hmd" in line_lower:
             parsed = self._parse_pose7(line)
-            if parsed is not None:
+            if parsed is not None and self._pose_frame_settled():
                 try:
                     pos, quat = self._unity_to_out(*parsed)
                     self.head_pub.publish(
