@@ -21,8 +21,8 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 | `/right_arm/joint_commands` | sub | `JointState.position[7]` → `move_arm_js` |
 | `/astral/joint_commands` | sub | `JointState.position[18]` → `move_js`（有新数据时优先） |
 | `/head/joint_commands` | sub | `[head_yaw, head_pitch]` → `move_head_js` |
-| `/left_gripper/command` | sub | `Float64` 0=开 1=合 → `set_gripper_angle`（0x97） |
-| `/left_gripper/joint_commands` | sub | `JointState` 弧度 → `set_gripper_angle` |
+| `/left_gripper/command` | sub | `Float64` 0=开 1=合 → `set_gripper_angle`（0x97）。**遥操唯一发布流**，rad 经本节点 `left/right_gripper_open_rad` 映射 |
+| `/left_gripper/joint_commands` | sub | `JointState` 弧度 → `set_gripper_angle`（保留给直接发弧度的适配器；**勿与 /command 同时发**——两流覆盖同一目标会抽搐） |
 | `/left_arm/joint_states` | pub | 左臂 7 |
 | `/right_arm/joint_states` | pub | 右臂 7 |
 | `/astral/joint_states` | pub | 全身 18（含腰+头） |

@@ -23,7 +23,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float64
 
 from .config import (
     STALE_THRESHOLD_S,
@@ -109,8 +109,9 @@ class MonitorNode(Node):
                 _qos_best_effort(),
             )
             if pair.command:
+                cmd_type = Float64 if pair.cmd_kind == "float64" else JointState
                 self.create_subscription(
-                    JointState, pair.command,
+                    cmd_type, pair.command,
                     lambda msg, e=entity: self._rates.tick(f"{e}_cmd"),
                     _qos_best_effort(),
                 )

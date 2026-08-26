@@ -24,8 +24,8 @@ quest3 hand_landmarks/left
 ## 夹爪（sim 现状）
 
 MJCF `astral_dual.xml` **没有夹爪关节**，所以 sim 节点对夹爪只做「订阅 + echo」：
-- 订 `/left_gripper/command`（Float64 0=开 1=合）和 `/left_gripper/joint_commands`（JointState 弧度）
-- 映射 0–1 → `left_gripper_open_rad`…`left_gripper_closed_rad`（sim 默认 0.8…0.0；真机左/右夹爪安全开度 1.5，回退硬止点 2.0 避免堵转回弹，见 `astral_robot_control`/`astral_gripper_teleop` 配置）
+- 订 `/left_gripper/command`（Float64 0=开 1=合，pinch_gripper_node 唯一发布流）和 `/left_gripper/joint_commands`（JointState 弧度，保留给直接发弧度的适配器，当前无人发布）
+- 映射 0–1 → `left_gripper_open_rad`…`left_gripper_closed_rad`（sim 默认 0.8…0.0，仅用于 echo 显示；真机 rad 唯一权威在 driver `astral_robot.yaml`，当前 1.5 安全开度、硬止点 2.0）
 - 发 `/left_gripper/joint_states`，日志每秒打一次 `[Gripper][left] cmd rad=...`
 - **不**驱动 MJCF qpos/ctrl（viewer 里夹爪不会动）
 

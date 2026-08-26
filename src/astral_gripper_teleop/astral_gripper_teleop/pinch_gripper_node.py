@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Quest3 hand_landmarks → /{side}_gripper/command (0=open, 1=closed).
+"""Quest3 hand_landmarks → /{side}_gripper/command (Float64: 0=open, 1=closed).
 
-Also publishes JointState radians on /{side}_gripper/joint_commands so
-astral_robot_control can drive set_gripper_angle.
+Single command stream on purpose: the node publishes ONLY the unitless close
+ratio. The rad mapping (open_rad/closed_rad, CMD 0x97/0x98) lives solely in
+astral_robot_control's driver config — the hardware authority. Never publish
+JointState on /{side}_gripper/joint_commands as well: the driver subscribes to
+both, and two interleaved streams with different rad values make the gripper
+oscillate (抽搐) at control rate.
 
-Swap this node later for a hardware adapter that publishes the same topics.
+Swap this node later for a hardware adapter that publishes the same topic.
 """
 
 from __future__ import annotations
@@ -17,13 +21,11 @@ import rclpy
 from geometry_msgs.msg import PoseArray
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 
 from astral_gripper_teleop.pinch import (
     close_ratio_from_range,
     pinch_distance_m,
-    ratio_to_rad,
 )
 
 
@@ -42,15 +44,9 @@ class PinchGripperNode(Node):
         self.declare_parameter("hand_side", "left")
         self.declare_parameter("landmark_topic", "")
         self.declare_parameter("command_topic", "")
-        self.declare_parameter("joint_command_topic", "")
-        self.declare_parameter("joint_name", "")
         # Pinch distances in the same units as landmarks (Quest wrist-local meters).
         self.declare_parameter("open_dist_m", 0.08)
         self.declare_parameter("close_dist_m", 0.015)
-        # Actuator radians for mechanical gripper (CMD 0x97/0x98) — tune on hardware.
-        # 真机方向：0.8=张开, 0.0=合拢（与 driver/sim 一致）。
-        self.declare_parameter("open_rad", 0.8)
-        self.declare_parameter("closed_rad", 0.0)
         self.declare_parameter("ema_alpha", 0.4)
         self.declare_parameter("publish_rate", 50.0)
         self.declare_parameter("input_timeout_s", 0.4)
@@ -79,25 +75,15 @@ class PinchGripperNode(Node):
 
         landmark_topic = str(self.get_parameter("landmark_topic").value).strip()
         command_topic = str(self.get_parameter("command_topic").value).strip()
-        joint_topic = str(self.get_parameter("joint_command_topic").value).strip()
-        joint_name = str(self.get_parameter("joint_name").value).strip()
         if not landmark_topic:
             landmark_topic = f"hand_landmarks/{side}"
         if not command_topic:
             command_topic = f"/{side}_gripper/command"
-        if not joint_topic:
-            joint_topic = f"/{side}_gripper/joint_commands"
-        if not joint_name:
-            joint_name = f"{side}_gripper"
 
         self.landmark_topic = landmark_topic
         self.command_topic = command_topic
-        self.joint_topic = joint_topic
-        self.joint_name = joint_name
         self.open_dist = float(self.get_parameter("open_dist_m").value)
         self.close_dist = float(self.get_parameter("close_dist_m").value)
-        self.open_rad = float(self.get_parameter("open_rad").value)
-        self.closed_rad = float(self.get_parameter("closed_rad").value)
         self.ema_alpha = float(self.get_parameter("ema_alpha").value)
         self.input_timeout_s = float(self.get_parameter("input_timeout_s").value)
         self.on_timeout = str(self.get_parameter("on_timeout").value).strip().lower()
@@ -112,7 +98,6 @@ class PinchGripperNode(Node):
 
         qos = _sensor_qos()
         self._pub_cmd = self.create_publisher(Float64, self.command_topic, qos)
-        self._pub_js = self.create_publisher(JointState, self.joint_topic, qos)
         self.create_subscription(
             PoseArray, self.landmark_topic, self._on_landmarks, qos
         )
@@ -145,11 +130,11 @@ class PinchGripperNode(Node):
         self.create_timer(1.0 / max(1.0, rate), self._on_timer)
         self.get_logger().info(
             f"pinch→gripper[{side}] landmarks={self.landmark_topic} "
-            f"cmd={self.command_topic} js={self.joint_topic} "
+            f"cmd={self.command_topic} "
             f"pinch=[{self.close_dist:.3f},{self.open_dist:.3f}]m "
-            f"rad=[{self.open_rad:.3f},{self.closed_rad:.3f}] "
             f"auto_range={self.auto_range} forget={self._env_tau:.1f}s "
-            f"joy={self.controller_joy_topic or 'off'} axis={self.trigger_axis}"
+            f"joy={self.controller_joy_topic or 'off'} axis={self.trigger_axis} "
+            f"(ratio only; rad mapping in driver config)"
         )
 
     def _on_landmarks(self, msg: PoseArray) -> None:
@@ -263,17 +248,10 @@ class PinchGripperNode(Node):
             return  # no input yet
 
         ratio = max(0.0, min(1.0, ratio))
-        rad = ratio_to_rad(ratio, self.open_rad, self.closed_rad)
 
         cmd = Float64()
         cmd.data = float(ratio)
         self._pub_cmd.publish(cmd)
-
-        js = JointState()
-        js.header.stamp = self.get_clock().now().to_msg()
-        js.name = [self.joint_name]
-        js.position = [float(rad)]
-        self._pub_js.publish(js)
 
         if self.log_interval_s > 0 and (now - self._last_log) >= self.log_interval_s:
             self._last_log = now
@@ -281,7 +259,7 @@ class PinchGripperNode(Node):
             self.get_logger().info(
                 f"[gripper {self.side}] src={src} dist={self._last_dist*1000:.0f}mm "
                 f"range=[{(self._emin or 0.0)*1000:.0f},{(self._emax or 0.0)*1000:.0f}]mm "
-                f"close={ratio:.2f} rad={rad:.3f} pinch_stale={pinch_stale}"
+                f"close={ratio:.2f} pinch_stale={pinch_stale}"
             )
 
 

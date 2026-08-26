@@ -55,13 +55,13 @@
 |------|------|------|
 | `/left_arm/joint_states` | JointState | 左臂 7-DoF 显示 |
 | `/right_arm/joint_states` | JointState | 右臂 7-DoF 显示 |
-| `/left_gripper/joint_states` | JointState | 左夹爪状态 |
+| `/left_gripper/joint_states` | JointState | 左夹爪状态（driver 回显的指令角） |
 | `/right_hand/joint_states` | JointState | 右灵巧手 20-DoF |
 | `/head/joint_states` | JointState | 头部 yaw/pitch（摇杆遥操回显/真机 OBS） |
 | `/astral/joint_states` | JointState | 全身 18-DoF（含腰） |
 | `/left_arm/joint_commands` | JointState | 左臂指令 Hz |
 | `/right_arm/joint_commands` | JointState | 右臂指令 Hz |
-| `/left_gripper/joint_commands` | JointState | 左夹爪指令 Hz |
+| `/left_gripper/command` | Float64 | 左夹爪闭合比指令 Hz（rad 映射在 driver） |
 | `/right_hand/joint_commands` | JointState | 右手指令 Hz |
 | `/head/joint_commands` | JointState | 头部指令 Hz（head_teleop_node） |
 

@@ -60,18 +60,22 @@ def _parse_expected() -> dict[str, float]:
 EXPECTED_RATES_HZ: dict[str, float] = _parse_expected()
 
 # --- ROS topic names (read-only subscriptions) -----------------------------
-# Grouped by entity. Each entry: (state_topic, command_topic).
-# command_topic is "" when there is no command stream to monitor for that entity.
+# Grouped by entity. Each entry: (state_topic, command_topic, cmd_kind).
+# command_topic is "" when there is no command stream to monitor for that
+# entity. cmd_kind: "joint_state" (JointState) or "float64" (std_msgs/Float64)
+# — grippers stream a unitless close ratio on /{side}_gripper/command (the
+# driver owns the rad mapping), so their command topic is Float64.
 @dataclass(frozen=True)
 class TopicPair:
     state: str
     command: str = ""
+    cmd_kind: str = "joint_state"
 
 
 TOPICS: dict[str, TopicPair] = {
     "left_arm":      TopicPair("/left_arm/joint_states",      "/left_arm/joint_commands"),
     "right_arm":     TopicPair("/right_arm/joint_states",     "/right_arm/joint_commands"),
-    "left_gripper":  TopicPair("/left_gripper/joint_states", "/left_gripper/joint_commands"),
+    "left_gripper":  TopicPair("/left_gripper/joint_states", "/left_gripper/command", "float64"),
     "right_hand":    TopicPair("/right_hand/joint_states",    "/right_hand/joint_commands"),
     # Head (astral_teleop/head_teleop_node → driver). No cmd-rate floor on
     # purpose: head commands legitimately idle at 0 Hz before start / when the

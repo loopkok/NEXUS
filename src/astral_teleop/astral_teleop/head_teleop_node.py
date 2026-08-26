@@ -36,15 +36,6 @@ def _sensor_qos() -> QoSProfile:
     )
 
 
-def _state_qos() -> QoSProfile:
-    # joint_states: latched-ish reliable is fine; we just need the latest.
-    return QoSProfile(
-        reliability=ReliabilityPolicy.RELIABLE,
-        history=HistoryPolicy.KEEP_LAST,
-        depth=10,
-    )
-
-
 class HeadTeleopNode(Node):
     def __init__(self) -> None:
         super().__init__("head_teleop_node")
@@ -97,13 +88,11 @@ class HeadTeleopNode(Node):
 
         qos = _sensor_qos()
         self._pub_cmd = self.create_publisher(JointState, self.head_command_topic, qos)
-        # Dual-subscribe: BEST_EFFORT for the real Quest/driver stream, RELIABLE
-        # so a CLI `ros2 topic pub` (default RELIABLE) can inject test input.
+        # BEST_EFFORT matches the mocap/driver sensor streams. A RELIABLE
+        # publisher (mocap Joy, CLI `ros2 topic pub`) is compatible with a
+        # BEST_EFFORT subscription, so no dual-sub is needed; CLI echo of the
+        # BEST_EFFORT state stream needs `--qos-reliability best_effort`.
         self.create_subscription(Joy, self.joy_topic, self._on_joy, qos)
-        self.create_subscription(Joy, self.joy_topic, self._on_joy, _state_qos())
-        self.create_subscription(
-            JointState, self.head_state_topic, self._on_head_state, _state_qos()
-        )
         self.create_subscription(
             JointState, self.head_state_topic, self._on_head_state, qos
         )

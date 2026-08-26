@@ -55,7 +55,7 @@ ros2 launch astral_teleop full_teleop.launch.py \
 
 - **右手柄摇杆 → 头 yaw/pitch（绝对位置，非增量）**：`axes[2]`=stickX（左=-1 右=+1）→ yaw，`axes[3]`=stickY（前=+1 后=-1）→ pitch。摇杆弹簧回中 → 头回初始位。
 - **启动时记 `head_init`**：与臂遥操同一闸门 `/teleop/start`（`require_start_signal:=true`）。按下 start 时读 `/head/joint_states` 记当前头角为基准（无该话题时回退 `init_head_*`，默认 0,0），避免上电跳变；之后 `head_target = head_init + stick*scale`。
-- **非侵入**：只订阅已有 `quest3/right_controller_joy`、`/head/joint_states`、`/teleop/start|disarm`，只发到 `astral_robot_control` 已在订的 `/head/joint_commands`——driver 是唯一硬件权威。Joy/joint_states 双 QoS 订阅（真机 BEST_EFFORT + CLI RELIABLE），CLI 注入也能测。
+- **非侵入**：只订阅已有 `quest3/right_controller_joy`、`/head/joint_states`、`/teleop/start|disarm`，只发到 `astral_robot_control` 已在订的 `/head/joint_commands`——driver 是唯一硬件权威。全部 BEST_EFFORT（与 mocap/driver 传感流一致；CLI `ros2 topic pub` 默认 RELIABLE 发布与之兼容，可直接注入；但 `ros2 topic echo` 看 BEST_EFFORT 话题需加 `--qos-reliability best_effort`）。
 - 参数在 `config/head_teleop.yaml`：`yaw_scale`/`pitch_scale`（带符号，方向反了改符号）、`yaw/pitch_min/max`（限幅）、`stick_deadzone`、`publish_rate`、`input_timeout_s`。默认量程保守（yaw ±0.8rad、pitch ±0.4rad），**真机首测请确认"摇杆右推头右转"，反了把对应 scale 加负号**。
 
 关掉头部遥操：`with_head_teleop:=false`。

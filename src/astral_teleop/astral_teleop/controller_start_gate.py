@@ -27,14 +27,6 @@ def _sensor_qos() -> QoSProfile:
     )
 
 
-def _reliable_qos() -> QoSProfile:
-    return QoSProfile(
-        reliability=ReliabilityPolicy.RELIABLE,
-        history=HistoryPolicy.KEEP_LAST,
-        depth=10,
-    )
-
-
 class ControllerStartGate(Node):
     def __init__(self) -> None:
         super().__init__("controller_start_gate")
@@ -49,11 +41,9 @@ class ControllerStartGate(Node):
 
         # RELIABLE + VOLATILE: one-shot, not latched (match monitor_node).
         self._pub = self.create_publisher(Bool, start_topic, 10)
-        # Dual-subscribe: BEST_EFFORT for the real Quest stream, RELIABLE so a
-        # CLI `ros2 topic pub quest3/..._controller_joy` (default RELIABLE) can
-        # inject test input (the CLI can't pub BEST_EFFORT).
+        # BEST_EFFORT sub is compatible with the mocap Joy publisher (RELIABLE
+        # default) and CLI `ros2 topic pub` — no dual-sub needed.
         self.create_subscription(Joy, joy_topic, self._on_joy, _sensor_qos())
-        self.create_subscription(Joy, joy_topic, self._on_joy, _reliable_qos())
         self._prev_pressed = False
 
         self.get_logger().info(
