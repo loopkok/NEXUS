@@ -18,6 +18,7 @@ const ENTITY_LABEL: Record<string, string> = {
   right_arm: '右臂',
   left_gripper: '左夹爪',
   right_hand: '右灵巧手',
+  head: '头部',
   full_body: '全身',
 }
 

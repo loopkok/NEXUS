@@ -121,6 +121,21 @@ Mixed：左右可一边 `controller` 一边 `hand`。同侧 Quest 只发一种�
 | `quest3/input_mix` | String | latch | 如 `left=ctrl right=hand` |
 | `quest3/{side}_hand_markers` | MarkerArray | `world` | RViz（可选） |
 
+### 手柄 Joy 量程与符号约定（实测）
+
+`quest3/{side}_controller_joy`（`sensor_msgs/Joy`）的 axes/buttons：
+
+| 索引 | 字段 | 范围 | 符号约定 |
+|------|------|------|----------|
+| axes[0] | trigger | [0, 1] | 0=松开，1=按到底（模拟量） |
+| axes[1] | grip | [0, 1] | 0=松开，1=按到底（模拟量） |
+| axes[2] | stickX | [−1, 1] | **左 −1 / 右 +1**，回中 0 |
+| axes[3] | stickY | [−1, 1] | **后 −1 / 前 +1**，回中 0 |
+
+buttons（6 位 mask，0/1）：`[primary(X/A), secondary(Y/B), stickPress, menu, triggerClick, gripClick]`。
+
+实测（2026-08-26，UDP，双手柄）：左右手 stickX/stickY 均可达 ±1.0 满量程，回中为干净 0.000，无零点漂移。下游做差速/速度控制建议死区 0.05~0.1。
+
 ## 参数
 
 | 参数 | 默认 | 说明 |

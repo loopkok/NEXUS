@@ -73,6 +73,10 @@ TOPICS: dict[str, TopicPair] = {
     "right_arm":     TopicPair("/right_arm/joint_states",     "/right_arm/joint_commands"),
     "left_gripper":  TopicPair("/left_gripper/joint_states", "/left_gripper/joint_commands"),
     "right_hand":    TopicPair("/right_hand/joint_states",    "/right_hand/joint_commands"),
+    # Head (astral_teleop/head_teleop_node → driver). No cmd-rate floor on
+    # purpose: head commands legitimately idle at 0 Hz before start / when the
+    # right controller is not streaming, so a floor would flag false "slow".
+    "head":          TopicPair("/head/joint_states",          "/head/joint_commands"),
     "full_body":     TopicPair("/astral/joint_states",        ""),
 }
 

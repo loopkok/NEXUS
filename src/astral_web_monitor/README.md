@@ -57,11 +57,13 @@
 | `/right_arm/joint_states` | JointState | 右臂 7-DoF 显示 |
 | `/left_gripper/joint_states` | JointState | 左夹爪状态 |
 | `/right_hand/joint_states` | JointState | 右灵巧手 20-DoF |
+| `/head/joint_states` | JointState | 头部 yaw/pitch（摇杆遥操回显/真机 OBS） |
 | `/astral/joint_states` | JointState | 全身 18-DoF（含腰） |
 | `/left_arm/joint_commands` | JointState | 左臂指令 Hz |
 | `/right_arm/joint_commands` | JointState | 右臂指令 Hz |
 | `/left_gripper/joint_commands` | JointState | 左夹爪指令 Hz |
 | `/right_hand/joint_commands` | JointState | 右手指令 Hz |
+| `/head/joint_commands` | JointState | 头部指令 Hz（head_teleop_node） |
 
 - QoS：**BEST_EFFORT**（SensorData）
 - 灵巧手话题名可配置（`ASTRAL_WEB_MONITOR_HAND_NAME`，默认 `right_hand`）
@@ -119,15 +121,17 @@
     "left_arm":      {"values": [0.1, ...7], "ts": 1692878400.1, "stale": false},
     "right_arm":     {"values": [0.1, ...7], "ts": 1692878400.1, "stale": false},
     "left_gripper":  {"values": [0.35],     "ts": 1692878400.1, "stale": false},
-    "right_hand":    {"values": [...20],    "ts": 1692878400.0, "stale": true}
+    "right_hand":    {"values": [...20],    "ts": 1692878400.0, "stale": true},
+    "head":          {"values": [0.0, 0.0], "ts": 1692878400.1, "stale": false}
   },
   "rates_hz": {
     "left_arm_cmd": 149.8, "right_arm_cmd": 149.9,
-    "left_gripper_cmd": 50.0, "right_hand_cmd": 30.1
+    "left_gripper_cmd": 50.0, "right_hand_cmd": 30.1, "head_cmd": 50.0
   },
   "state_rates_hz": {
     "left_arm_state": 200.0, "right_arm_state": 200.0,
     "left_gripper_state": 100.0, "right_hand_state": 100.0,
+    "head_state": 100.0,
     "full_body_state": 100.0
   },
   "health": {
@@ -167,6 +171,7 @@ stopped ──start──► starting ──2s暖机──► running
 - **阻尼释放**：调 driver `~/damping` → `motion_mode=0`，电机仍上电、关节可手动拖拽。典型流程：遥操中 → 停止（臂保持末位姿）→ 阻尼释放（手动拖回 home）→ 位置保持/归零
 - **Toast 通知**：操作成功/失败以右上角浮窗提示（替代 alert），自动消失
 - **实时图表**：手写 SVG 折线（无第三方图表库），环形缓冲 200 样本（≈6.7s @ 30Hz）
+- **头部通道**：监视 tab 显示「头部 (yaw/pitch)」面板 + yaw/pitch 实时折线；健康巡检含头部（仅新鲜度判断——头部指令在启动前/手柄掉线时合法为 0Hz，故不设 cmd 频率下限）
 - **健康巡检**：`expected_hz` 阈值经 `ASTRAL_WEB_MONITOR_EXPECTED_HZ` 配置（默认 30Hz），只读估算
 
 ## 启动预设

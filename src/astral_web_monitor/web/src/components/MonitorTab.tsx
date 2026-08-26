@@ -19,11 +19,15 @@ export function MonitorTab({ state }: Props) {
     { label: '右臂', color: '#22c55e', values: samples.map((s) => s.ratesHz.right_arm_cmd ?? 0) },
     { label: '左夹爪', color: '#f59e0b', values: samples.map((s) => s.ratesHz.left_gripper_cmd ?? 0) },
     { label: '右灵巧手', color: '#a855f7', values: samples.map((s) => s.ratesHz.right_hand_cmd ?? 0) },
+    { label: '头部', color: '#14b8a6', values: samples.map((s) => s.ratesHz.head_cmd ?? 0) },
   ]
 
   // Left arm joint-0 angle over time (representative trace).
   const leftArmJ0 = samples.map((s) => s.joints.left_arm?.[0] ?? 0)
   const rightArmJ0 = samples.map((s) => s.joints.right_arm?.[0] ?? 0)
+  // Head yaw/pitch over time (right-controller thumbstick teleop).
+  const headYaw = samples.map((s) => s.joints.head?.[0] ?? 0)
+  const headPitch = samples.map((s) => s.joints.head?.[1] ?? 0)
 
   return (
     <div style={wrapStyle}>
@@ -32,6 +36,7 @@ export function MonitorTab({ state }: Props) {
         <JointPanel title="右臂 (7-DoF)" joint={j.right_arm} rateHz={rates.right_arm_cmd} />
         <JointPanel title="左夹爪" joint={j.left_gripper} rateHz={rates.left_gripper_cmd} />
         <JointPanel title="右灵巧手 (20-DoF)" joint={j.right_hand} rateHz={rates.right_hand_cmd} />
+        <JointPanel title="头部 (yaw/pitch)" joint={j.head} rateHz={rates.head_cmd} />
       </div>
 
       {state && (
@@ -58,6 +63,14 @@ export function MonitorTab({ state }: Props) {
           series={[
             { label: '左臂 j0', color: '#3b82f6', values: leftArmJ0 },
             { label: '右臂 j0', color: '#22c55e', values: rightArmJ0 },
+          ]}
+          unit="rad"
+        />
+        <ChartPanel
+          title="头部 yaw/pitch (rad)"
+          series={[
+            { label: 'yaw', color: '#14b8a6', values: headYaw },
+            { label: 'pitch', color: '#f97316', values: headPitch },
           ]}
           unit="rad"
         />
