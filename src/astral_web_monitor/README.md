@@ -2,12 +2,13 @@
 
 非侵入式 Web 监控面板：通过浏览器启动/暂停/停止遥操作栈，实时查看关节状态、指令频率、健康巡检与实时图表。
 
-**不修改任何现有功能包**。只做四件事：
+**不修改任何现有功能包的控制面**（只调用/订阅各包自己暴露的接口）。只做五件事：
 
 1. **只读订阅**现有关节话题（`joint_states` / `joint_commands`）
 2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复/急停）、`/teleop/start`（外部启动闸门）
 3. **subprocess 启停** `ros2 launch`（与命令行操作等价）
 4. **只读健康巡检**：估算各源状态流/指令流频率与新鲜度，不下发任何命令
+5. **视频回传门控**：调用 `quest3_video_streamer` 自己暴露的 `~/set_push_enabled` 服务 / `~/active_cameras` 话题（选路），并镜像其 `~/gate_state` 状态
 
 ```text
 ┌─────────────── astral_ws 现有功能包（不修改）──────────────┐
@@ -78,6 +79,7 @@
 
 - QoS：`/teleop/armed`、`/teleop/disarm` 为 **RELIABLE + TRANSIENT_LOCAL**（latched，晚启动的臂节点也能收到）
 - `/teleop/start` 为 **RELIABLE + VOLATILE**（**非** latched 一次性触发，避免晚加入的臂节点收到旧 start 自动开始）
+- 视频门控：`/quest3_video_streamer/active_cameras`（String，**latched**）发布选路；`/quest3_video_streamer/gate_state`（String JSON，latched）只读订阅镜像状态；`/quest3_video_streamer/set_push_enabled`（SetBool）服务调用总开关
 - **暂停只影响臂**：`/teleop/disarm` 只作用于 `astral_arm_teleop_node`，夹爪和灵巧手节点无 disarm 接口，继续运行
 - **开始遥操**：配合 `astral_arm_teleop` 的 `require_start_signal:=true`——启动预设后臂节点只跟踪 `vr_current` 不记零点；手摆好初始位姿后点此按钮，臂节点用当前 pose 记 `vr_init` 并 arm。再点一次 = 重新记零点（re-center）
 - **无条件发送**：`/api/v1/teleop/start` 始终发布 `/teleop/start`，**不**检查 launch 是否经本监控启动。臂节点是唯一裁判：homing 中或无 VR pose 时会忽略并告警。因此无论遥操由本监控的预设启动还是从外部 CLI 启动，此按钮均可用
@@ -102,6 +104,9 @@
 | POST | `/api/v1/robot/position` | 调 driver `~/position`（motion_mode=1，位置保持） |
 | POST | `/api/v1/robot/damping` | 调 driver `~/damping`（motion_mode=0，阻尼释放，可手动拖拽） |
 | POST | `/api/v1/robot/estop` | **真急停**：调 driver `~/estop` → SDK `e_stop()`/`disable()` 断电，臂失去保持力 |
+| GET | `/api/v1/video/status` | 视频回传状态：配置的相机列表（label/device/在线/sysfs 名）+ streamer 实时门控状态 |
+| POST | `/api/v1/video/push` | `{enabled: bool}` 调 streamer `~/set_push_enabled` 总开关（关 = 全轨 2fps 黑帧静音） |
+| POST | `/api/v1/video/cameras` | `{cameras: [...]}` 发 latched `~/active_cameras`（label 子集，空数组 = 全部配置相机） |
 
 ## WebSocket
 
@@ -140,9 +145,12 @@
       "left_arm": {"stale": false, "state_hz": 200.0, "cmd_hz": 149.8, "expected_hz": 30.0, "slow": false, "status": "ok"}
     }
   },
+  "video_gate": {"push_enabled": true, "configured": ["wrist_left", "wrist_right"], "active": ["wrist_left"]},
   "log_tail": ["[INFO] mocap connected ...", "..."]
 }
 ```
+
+- `video_gate`：quest3_video_streamer 的实时门控镜像（`~/gate_state` latched JSON）；streamer 未运行时为 `null`。
 
 ## 状态机
 
@@ -165,7 +173,9 @@ stopped ──start──► starting ──2s暖机──► running
 |-----|------|
 | 监控 | 4 个关节面板（左/右臂、左夹爪、右灵巧手）+ 指令频率 chips + 实时折线图（指令 Hz、臂关节0 角度） |
 | 健康 | 总体徽标 + 每实体卡片（状态流 Hz / 指令流 Hz / 期望 / 数据龄期 / ok·slow·stale） |
-| 系统 | 预设管理（启动/停止/重启）+ **机器人模式**（一键就绪/归零/位置保持/阻尼释放/急停断电）+ Launch 日志控制台 |
+| 系统 | 预设管理（启动/停止/重启）+ **机器人模式**（一键就绪/归零/位置保持/阻尼释放/急停断电）+ **视频回传**（总开关/路数下拉/逐路勾选/设备在线点）+ Launch 日志控制台 |
+
+- **视频回传卡片**：调 `quest3_video_streamer` 的运行时门控（`~/set_push_enabled` + latched `~/active_cameras`）。总开关关掉后所有轨发 2fps 黑帧（几乎不占带宽，Quest 面板变黑）；逐路勾选决定哪些相机推流；「路数」下拉是快捷选择（选 n = 勾前 n 路，逐路勾选后显示"自定义"）。每路显示 `/dev/videoN` 与 sysfs 设备名，未接的相机置灰。streamer 未运行（遥操停止或 `with_video:=false`）时卡片显示"离线"，控件禁用——与机器人模式按钮同理，**先启动栈再操作**
 
 - **急停（真断电）**：红色常驻按钮，确认后调 driver `~/estop` → SDK `e_stop()`/`disable()`，臂失去保持力；恢复需重新「一键就绪」。区别于「暂停」（软 disarm，臂仍上电保持位姿）
 - **阻尼释放**：调 driver `~/damping` → `motion_mode=0`，电机仍上电、关节可手动拖拽。典型流程：遥操中 → 停止（臂保持末位姿）→ 阻尼释放（手动拖回 home）→ 位置保持/归零
@@ -273,6 +283,7 @@ npm run build    # → web/dist/
 | 位置保持 | 调 driver 已有服务 `~/position`（`motion_mode=1`） | 否 |
 | 一键就绪 / 归零 | 调 driver 已有服务 `~/ready` / `~/home` | 否 |
 | 健康巡检 | 订阅现有 state/command 话题估算频率 | 否 |
+| 视频门控 | 调/发 streamer 已暴露的 `~/set_push_enabled` / `~/active_cameras` / `~/gate_state` | 否 |
 | 日志 | 采集 subprocess stdout | 否 |
 
 > 注：机器人模式按钮调用 `astral_robot_control` driver **已暴露**的 Trigger 服务（`~/ready`/`~/home`/`~/position`/`~/damping`/`~/estop`）。driver 是硬件权威，monitor 仅作为服务客户端调用——不新增硬件写入路径、不修改 driver 逻辑。若 driver 未启动，端点返回 503。
@@ -296,7 +307,7 @@ astral_web_monitor/
     │   ├── hooks/useToast.ts      # Toast 通知 store
     │   ├── hooks/historyStore.ts  # 图表环形缓冲
     │   ├── components/            # ControlBar, MonitorTab, HealthPanel,
-    │   │                          # SystemTab, ChartPanel, ToastHost,
+    │   │                          # SystemTab, VideoCard, ChartPanel, ToastHost,
     │   │                          # Tabs, JointPanel, LogConsole, StatusBadge
     │   └── lib/mapUiState.ts      # 数据归一化
     └── dist/                # 构建产物

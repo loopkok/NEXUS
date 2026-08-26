@@ -31,7 +31,13 @@ from .launch_manager import (
     load_presets,
 )
 from .monitor_node import get_node, init_node, shutdown_node
-from .schemas import ApiEnvelope, PresetInfo, StartRequest
+from .schemas import (
+    ApiEnvelope,
+    PresetInfo,
+    StartRequest,
+    VideoCamerasRequest,
+    VideoPushRequest,
+)
 
 
 # --- globals ---------------------------------------------------------------
@@ -57,6 +63,7 @@ def _build_ui_state() -> dict[str, Any]:
         "rates_hz": ros.get("rates_hz", {}),
         "state_rates_hz": ros.get("state_rates_hz", {}),
         "health": ros.get("health", {"overall": "ok", "entities": {}}),
+        "video_gate": ros.get("video_gate"),
         "log_tail": _launch_mgr.log_tail()[-50:],
     }
 
@@ -293,6 +300,88 @@ async def robot_position() -> ApiEnvelope:
     if not ok:
         raise HTTPException(status_code=503, detail=msg)
     return ApiEnvelope(ok=True, message=msg or "位置保持")
+
+
+# --- Video return gate (quest3_video_streamer) ------------------------------
+# Non-intrusive: the streamer owns the cameras; the monitor only reads its
+# config/params.yaml (to list configured cameras), calls its SetBool master
+# switch, and publishes the latched active-cameras subset.
+
+def _sysfs_video_name(device: str) -> str:
+    """Human-readable camera name for /dev/videoN from sysfs ('' if unknown)."""
+    if not device.startswith("/dev/video"):
+        return ""
+    try:
+        with open(f"/sys/class/video4linux/{device[5:]}/name", "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _video_configured() -> list[dict[str, Any]]:
+    """Configured camera blocks from quest3_video_streamer's params.yaml."""
+    path = config.video_params_path()
+    if not path or not os.path.isfile(path):
+        return []
+    try:
+        import yaml
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        return []
+    params = data.get("quest3_video_streamer", {}).get("ros__parameters", data)
+    names = params.get("cameras") or []
+    out: list[dict[str, Any]] = []
+    for name in names:
+        block = params.get(str(name), {})
+        if not isinstance(block, dict):
+            block = {}
+        device = str(block.get("device", ""))
+        source = str(block.get("source", ""))
+        exists = os.path.exists(device) if device.startswith("/dev/") else False
+        out.append({
+            "label": str(block.get("label", name)),
+            "device": device,
+            "source": source,
+            "preset": str(block.get("preset", "")),
+            "exists": exists,
+            "sysfs_name": _sysfs_video_name(device) if exists else "",
+        })
+    return out
+
+
+@app.get("/api/v1/video/status")
+async def video_status() -> ApiEnvelope:
+    node = get_node()
+    gate = None
+    if node is not None:
+        gate = node.snapshot().get("video_gate")
+    return ApiEnvelope(ok=True, data={
+        "configured": _video_configured(),
+        "gate": gate,  # {push_enabled, configured, active} or None when streamer offline
+        "online": gate is not None,
+    })
+
+
+@app.post("/api/v1/video/push")
+async def video_push(req: VideoPushRequest) -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    ok, msg = await asyncio.to_thread(node.set_video_push, req.enabled)
+    if not ok:
+        raise HTTPException(status_code=503, detail=msg)
+    return ApiEnvelope(ok=True, message=msg or ("视频推送已开启" if req.enabled else "视频推送已关闭"))
+
+
+@app.post("/api/v1/video/cameras")
+async def video_cameras(req: VideoCamerasRequest) -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    node.publish_video_cameras(req.cameras)
+    label = ", ".join(req.cameras) if req.cameras else "全部已配置相机"
+    return ApiEnvelope(ok=True, message=f"已下发推送相机: {label}")
 
 
 # --- WebSocket -------------------------------------------------------------

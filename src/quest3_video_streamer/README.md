@@ -12,6 +12,7 @@
 - [数据流与线程模型](#数据流与线程模型)
 - [模块说明](#模块说明)
 - [配置（params.yaml 驱动）](#配置paramsyaml-驱动)
+- [运行时推流门控（web 可控）](#运行时推流门控web-可控)
 - [Launch 文件](#launch-文件)
 - [信令协议](#信令协议)
 - [多路 WebRTC 与延迟设计](#多路-webrtc-与延迟设计)
@@ -64,6 +65,7 @@
 | `source_base.py` | `VideoSourceAdapter` 协议 + `VideoFormat`（含 `fov_h_deg`、`label`）。 |
 | `ros_source.py` | `RosImageSourceAdapter`：订阅 `sensor_msgs/Image` → `av.VideoFrame`，回调线程安全投递，队列 maxsize=1 丢旧留新。 |
 | `webcam_source.py` | `WebcamSourceAdapter`：cv2 V4L2 直读，后台 daemon 线程做 `cv2.read()`，`next_frame()` 用 asyncio.Event 节流到采集速率。 |
+| `gate.py` | `StreamGate`：运行时推流门控（总开关 + 按 label 子集），线程安全，见[门控](#运行时推流门控web-可控)。 |
 | `config/params.yaml` | 唯一可调来源：相机列表、每相机 source/device/preset/fov/label/force_mjpg/layout + 公共参数。 |
 | `launch/*.launch.py` | 只加载 yaml + 按 `d435i.source` 决定是否启动 `realsense2_camera_node`，不写死可调参数。 |
 
@@ -74,7 +76,9 @@
 ```yaml
 quest3_video_streamer:
   ros__parameters:
-    cameras: ["d435i", "wrist_left", "wrist_right"]   # 推哪些相机 + track 顺序
+    cameras: ["wrist_left", "wrist_right"]   # 推哪些相机 + track 顺序
+                                             # 默认两路 USB（当前硬件无 RealSense）；
+                                             # 接回 D435i 后把 "d435i" 加回列表
 
     d435i:
       source: "v4l2"            # v4l2=cv2直连(低延迟) / ros=realsense2_camera_node
@@ -95,10 +99,52 @@ quest3_video_streamer:
     signaling_host: "0.0.0.0"
     signaling_port: 8765
     enable_mocap_tcp: false    # 与 hand_mocap 同跑时保持 false
+    push_enabled: true         # 门控总开关初值
+    active_cameras: ""         # 门控初始子集（逗号分隔 label，空=全部）
     verbose: false
 ```
 
 **改任何参数只需编辑这个 yaml**，不用动 launch 和代码。加相机：新增一个同名块 + 加进 `cameras` 列表。
+
+> 注意：`cameras` 列表里的设备在 Quest 连上（收到 offer）时才真正打开；若某台
+> 没插，整个 sender 启动会失败——先从列表移除，或用下面的运行时门控关掉那路
+> 是做不到的（门控在 track 层，设备打开失败会先炸）。没接的相机请从 `cameras`
+> 移除。
+
+## 运行时推流门控（web 可控）
+
+相机集合（= WebRTC track 集合）在启动时固定，改它要 SDP 重协商。门控走的是
+另一条路：**track 不动，帧级开关**——被关的轨改发 2fps 黑帧（几乎不占带宽，
+Quest 面板变黑），重新打开即时恢复，**无需断线重连**。
+
+| 接口 | 类型 | 作用 |
+|---|---|---|
+| `~/set_push_enabled` | `std_srvs/SetBool` 服务 | 总开关（false = 全部轨静音黑帧） |
+| `~/active_cameras` | `std_msgs/String` 话题（latched） | 逗号分隔的 label 子集；空 = cameras 全部 |
+| `~/gate_state` | `std_msgs/String` 话题（latched JSON） | 当前状态 `{push_enabled, configured, active}`，每次变化重发 |
+
+CLI 示例：
+
+```bash
+# 总开关：关（所有轨黑帧静音）
+ros2 service call /quest3_video_streamer/set_push_enabled std_srvs/srv/SetBool "{data: false}"
+
+# 只推右手腕一路（latched，注意加 --qos-durability transient_local）
+ros2 topic pub --once --qos-durability transient_local \
+  /quest3_video_streamer/active_cameras std_msgs/msg/String "{data: 'wrist_right'}"
+
+# 恢复全部
+ros2 topic pub --once --qos-durability transient_local \
+  /quest3_video_streamer/active_cameras std_msgs/msg/String "{data: ''}"
+
+# 看当前门控状态
+ros2 topic echo --once /quest3_video_streamer/gate_state std_msgs/msg/String
+```
+
+`astral_web_monitor` 的"系统"页有对应的 **视频回传** 卡片：总开关 + 路数下拉 +
+逐路勾选（列出配置相机及 `/dev/videoN` 在线状态），走的就是这组接口。
+
+初值由 yaml 的 `push_enabled` / `active_cameras` 决定。
 
 ### 每相机字段含义
 
@@ -119,15 +165,32 @@ quest3_video_streamer:
 
 | Launch | 用途 | 默认相机 |
 |---|---|---|
-| `multi_camera.launch.py` | D435i + 2 腕部相机三路推流 | yaml 全部 3 个 |
+| `multi_camera.launch.py` | 多路推流（相机集合由 yaml `cameras` 决定） | yaml 列表（默认 wrist_left + wrist_right） |
 | `realsense.launch.py` | 单 D435i 推流（覆盖 `cameras: ["d435i"]`） | 仅 d435i |
 | `usb_camera.launch.py` | 单 USB 相机推流（legacy，参数式，未走 yaml） | 单 usb_cam |
 
-`multi_camera` / `realsense` 都从 yaml 读配置；`d435i_source` CLI 参数可临时覆盖 yaml 的 `d435i.source`：
+`multi_camera` / `realsense` 都从 yaml 读配置；`d435i_source` CLI 参数可临时覆盖 yaml 的 `d435i.source`，`cameras` CLI 参数可临时覆盖相机列表（逗号分隔）：
 
 ```bash
 ros2 launch quest3_video_streamer multi_camera.launch.py d435i_source:=ros   # 强制走 ROS 节点
+ros2 launch quest3_video_streamer multi_camera.launch.py cameras:=wrist_left # 只推一路
 ```
+
+`multi_camera` 只有同时满足"d435i 在 cameras 列表里 **且** `d435i.source != v4l2`"才会拉起 `realsense2_camera_node`（默认配置不含 d435i，故默认不拉）。
+
+### 并入完整遥操（full_teleop）
+
+`astral_teleop/full_teleop.launch.py` 默认带视频回传（`with_video:=true`）：
+
+```bash
+ros2 launch astral_teleop full_teleop.launch.py ... with_video:=true   # 默认
+ros2 launch astral_teleop full_teleop.launch.py ... with_video:=false  # 不带
+ros2 launch astral_teleop full_teleop.launch.py ... video_cameras:=wrist_left,wrist_right
+```
+
+启动时 full_teleop 会**自动执行** `adb reverse tcp:8000 tcp:8000`（mocap）和
+`adb reverse tcp:8765 tcp:8765`（视频信令）；adb 不存在或无设备只告警不阻塞。
+仍需在 Quest 端 app 开启 video feed，链路才通。
 
 ## 信令协议
 
@@ -215,18 +278,21 @@ USB 相机权限：把用户加进 `video` 组（`sudo usermod -aG video $USER`�
 ## 使用示例
 
 ```bash
-# 三路（D435i 1080p + 2×腕部 720p），默认 v4l2 直连
+# 默认两路 USB 腕部相机（720p30），cv2 直连
 ros2 launch quest3_video_streamer multi_camera.launch.py
+
+# 接回 RealSense 后推三路：先把 "d435i" 加回 yaml 的 cameras，或临时覆盖
+ros2 launch quest3_video_streamer multi_camera.launch.py cameras:=d435i,wrist_left,wrist_right
 
 # 单 D435i
 ros2 launch quest3_video_streamer realsense.launch.py
 
-# 单 D435i 走 ROS 节点（回退）
-ros2 launch quest3_video_streamer realsense.launch.py d435i_source:=ros
-
 # 与 hand_mocap 一起跑（典型 teleop）
 # 终端1：ros2 run quest3_hand_mocap quest3_udp_mocap --ros-args -p protocol:=tcp_wireless
 # 终端2：ros2 launch quest3_video_streamer multi_camera.launch.py
+
+# 完整遥操（推荐）：full_teleop 默认带视频回传并自动 adb reverse
+ros2 launch astral_teleop full_teleop.launch.py with_arm_driver:=true ...
 ```
 
 Quest 端：在 astral-tracking app 里填 PC 的信令地址（WiFi 或 `adb reverse tcp:8765 tcp:8765`），Start Stream。
@@ -240,6 +306,13 @@ Quest 端：在 astral-tracking app 里填 PC 的信令地址（WiFi 或 `adb re
 - **v4l2 模式 D435i 打不开**：确认 `/dev/video8` 存在且用户在 `video` 组；D435i 彩色是 YUYV，`force_mjpg` 必须为 `false`。
 
 ## 更新日志
+
+### v0.4 — 运行时门控 + 并入 full_teleop
+- **运行时推流门控**（`gate.py` `StreamGate`）：`~/set_push_enabled`（SetBool 总开关）+ `~/active_cameras`（latched String，label 子集，空=全部）+ `~/gate_state`（latched JSON 状态）。被关的轨改发 2fps 黑帧（Y=16/U=V=128），几乎不占带宽、面板变黑、恢复即时、无需重协商。
+- **默认相机改为两路 USB**：`cameras: ["wrist_left", "wrist_right"]`（当前硬件无 RealSense）；d435i 配置块保留，接回后加进列表即可。`multi_camera.launch.py` 新增 `cameras` CLI 覆盖；仅当 d435i 在 cameras 列表且 source≠v4l2 时才拉起 `realsense2_camera_node`。
+- **并入 `astral_teleop/full_teleop.launch.py`**：`with_video:=true` 默认启动本包；launch 自动 `adb reverse tcp:8000/8765`（失败仅告警）；`video_cameras:=` 透传相机列表。
+- **web 可控**：`astral_web_monitor` 系统页"视频回传"卡片（总开关 + 路数下拉 + 逐路勾选 + 设备在线点）走上述接口。
+- 修复：`StreamGate.set_active` 嵌套取锁死锁（改为锁内联计算，spin 线程不再卡死）。
 
 ### v0.3 — yaml 驱动 + 统计完善
 - **配置集中化**：所有可调项（相机列表、source/device/preset/fov/label/force_mjpg/layout）移入 `config/params.yaml`，结构为 `quest3_video_streamer.ros__parameters` 嵌套块。

@@ -16,6 +16,7 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>quest3_hand_mocap</exec_depend>
+  <exec_depend>quest3_video_streamer</exec_depend>
   <exec_depend>astral_arm_teleop</exec_depend>
   <exec_depend>astral_gripper_teleop</exec_depend>
   <exec_depend>astral_robot_control</exec_depend>

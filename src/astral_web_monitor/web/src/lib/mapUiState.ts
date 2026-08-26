@@ -27,6 +27,7 @@ export interface NormalisedState {
       status: string
     }>
   }
+  videoGate: { pushEnabled: boolean; configured: string[]; active: string[] } | null
   logTail: string[]
 }
 
@@ -61,6 +62,13 @@ export function mapUiState(msg: UiState, now: number = Date.now() / 1000): Norma
     ratesHz: msg.rates_hz,
     stateRatesHz: msg.state_rates_hz ?? {},
     health: { overall: rawHealth.overall, entities },
+    videoGate: msg.video_gate
+      ? {
+          pushEnabled: msg.video_gate.push_enabled,
+          configured: msg.video_gate.configured ?? [],
+          active: msg.video_gate.active ?? [],
+        }
+      : null,
     logTail: msg.log_tail,
   }
 }

@@ -4,6 +4,7 @@ import type { Preset } from '../types'
 import { api } from '../api/client'
 import { pushToast } from '../hooks/useToast'
 import { LogConsole } from './LogConsole'
+import { VideoCard } from './VideoCard'
 
 interface Props {
   state: NormalisedState | null
@@ -91,6 +92,8 @@ export function SystemTab({ state, presets, onAction }: Props) {
           急停=真断电（disable），臂失去保持力；恢复需重新<b>一键就绪</b>。
         </div>
       </div>
+
+      <VideoCard state={state} />
 
       <LogConsole state={state} />
     </div>

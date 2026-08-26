@@ -26,7 +26,11 @@ from typing import Any
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import String
+from std_srvs.srv import SetBool
 
+from quest3_video_streamer.gate import StreamGate
 from quest3_video_streamer.service import (
     Quest3VideoService,
     VideoServiceConfig,
@@ -211,6 +215,9 @@ def _declare_params(node: Node) -> None:
     _safe_declare(node, "mocap_tcp_port", 8000)
     _safe_declare(node, "enable_mocap_tcp", False)
     _safe_declare(node, "verbose", False)
+    # Runtime push gate (see gate.py): master switch + initial active subset.
+    _safe_declare(node, "push_enabled", True)
+    _safe_declare(node, "active_cameras", "")  # comma labels; "" = all
     # Legacy single-source params (kept for backward compatibility).
     _safe_declare(node, "source_type", "ros")
     _safe_declare(node, "image_topic", "/camera/camera/color/image_raw")
@@ -241,7 +248,7 @@ def main() -> None:
         "sources_json", "cameras",
         "signaling_host", "signaling_port", "mocap_tcp_host",
         "mocap_tcp_port", "enable_mocap_tcp", "verbose",
-        "preset",
+        "preset", "push_enabled", "active_cameras",
     ]}
 
     verbose = bool(params["verbose"])
@@ -254,6 +261,7 @@ def main() -> None:
     spin_thread.start()
 
     sources, layouts = _build_sources(node, params)
+    gate = _setup_gate(node, sources, params)
 
     config = VideoServiceConfig(
         signaling_host=str(params["signaling_host"]),
@@ -264,12 +272,74 @@ def main() -> None:
     )
 
     try:
-        asyncio.run(_async_main(node, sources, layouts, config, params, verbose))
+        asyncio.run(_async_main(node, sources, layouts, config, params, verbose, gate))
     except KeyboardInterrupt:
         _LOG.info("interrupted")
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
+
+_LATCHED_QOS = QoSProfile(
+    depth=1,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+)
+
+
+def _setup_gate(
+    node: Node, sources: list[VideoSourceAdapter], params: dict[str, Any]
+) -> StreamGate:
+    """Create the runtime gate + its ROS control surface.
+
+      * service ``~/set_push_enabled`` (std_srvs/SetBool): master switch.
+      * subscription ``~/active_cameras`` (std_msgs/String, latched):
+        comma-separated camera labels; empty = all configured cameras.
+      * publisher ``~/gate_state`` (std_msgs/String, latched): JSON snapshot,
+        republished on every change so the web monitor can show live state.
+    """
+    labels = [str(src.get_format().label) for src in sources]
+    initial_active = [
+        x.strip() for x in str(params.get("active_cameras") or "").split(",")
+        if x.strip()
+    ]
+    gate = StreamGate(
+        all_labels=labels,
+        push_enabled=bool(params.get("push_enabled", True)),
+        active=initial_active,
+    )
+    state_pub = node.create_publisher(String, "~/gate_state", _LATCHED_QOS)
+
+    def _publish_state() -> None:
+        msg = String()
+        msg.data = gate.snapshot_json()
+        state_pub.publish(msg)
+
+    def _on_set_push(req: SetBool.Request, resp: SetBool.Response) -> SetBool.Response:
+        gate.set_push(req.data)
+        resp.success = True
+        resp.message = f"push_enabled={gate.snapshot()['push_enabled']}"
+        _LOG.info(f"[gate] set_push_enabled -> {req.data}")
+        _publish_state()
+        return resp
+
+    def _on_active_cameras(msg: String) -> None:
+        labels_in = [x.strip() for x in msg.data.split(",") if x.strip()]
+        effective = gate.set_active(labels_in)
+        _LOG.info(
+            f"[gate] active_cameras <- {labels_in or 'ALL'} effective={effective}"
+        )
+        _publish_state()
+
+    node.create_service(SetBool, "~/set_push_enabled", _on_set_push)
+    node.create_subscription(String, "~/active_cameras", _on_active_cameras, _LATCHED_QOS)
+    _publish_state()
+    _LOG.info(
+        f"[gate] push_enabled={gate.snapshot()['push_enabled']} "
+        f"active={gate.snapshot()['active']} "
+        f"(srv=~/set_push_enabled, topic=~/active_cameras, state=~/gate_state)"
+    )
+    return gate
 
 
 async def _async_main(
@@ -279,6 +349,7 @@ async def _async_main(
     config: VideoServiceConfig,
     params: dict[str, Any],
     verbose: bool,
+    gate: StreamGate | None = None,
 ) -> None:
     install_bitrate_diagnostics(verbose=verbose)
 
@@ -288,7 +359,7 @@ async def _async_main(
             str(params["mocap_tcp_host"]), int(params["mocap_tcp_port"]), verbose
         )
 
-    service = Quest3VideoService(sources=sources, layouts=layouts, config=config)
+    service = Quest3VideoService(sources=sources, layouts=layouts, config=config, gate=gate)
     await service.start()
     _LOG.info(
         f"video service started host={config.signaling_host} port={config.signaling_port} "

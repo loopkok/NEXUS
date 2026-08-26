@@ -26,3 +26,12 @@ class PresetInfo(BaseModel):
     launch: str
     args: dict[str, str] = {}
     description: str = ""
+
+
+class VideoPushRequest(BaseModel):
+    enabled: bool
+
+
+class VideoCamerasRequest(BaseModel):
+    # Active camera label subset; empty list = all configured cameras.
+    cameras: list[str] = []

@@ -9,9 +9,17 @@
 #
 # cameras: 要推流的相机名列表（顺序 = WebRTC track 顺序）。想只推 D435i 就改成
 #          ["d435i"]；想加相机就在下面新增一个同名块并加进列表。
+#          默认只推两路 USB 腕部相机（当前硬件没接 RealSense）；接回 D435i 后
+#          把 "d435i" 加回列表即可。
+#          注意：列表里的相机在 Quest 连上（offer）时才会真正打开；若某台设备
+#          没插，整个 sender 启动会失败，请先从列表移除。
+#          运行时想临时关掉某一路不必改这里——用门控接口：
+#            ros2 service call /quest3_video_streamer/set_push_enabled std_srvs/srv/SetBool "{data: false}"
+#            ros2 topic pub --once --qos-durability transient_local \
+#              /quest3_video_streamer/active_cameras std_msgs/msg/String "{data: 'wrist_left'}"
 quest3_video_streamer:
   ros__parameters:
-    cameras: ["d435i", "wrist_left", "wrist_right"]
+    cameras: ["wrist_left", "wrist_right"]
 
     # 每个相机块的字段：
     #   source      : "v4l2"（cv2 直连，低延迟）/ "ros"（订阅 sensor_msgs/Image）
@@ -76,5 +84,13 @@ quest3_video_streamer:
     mocap_tcp_host: "0.0.0.0"
     mocap_tcp_port: 8000
     enable_mocap_tcp: false
+
+    # --- 运行时推流门控（gate）---
+    # push_enabled: 总开关（false = 所有轨发 2fps 黑帧，几乎不占带宽）。
+    # active_cameras: 初始生效的子集（逗号分隔 label，空 = cameras 全部）。
+    # 两者运行时可改：~/set_push_enabled 服务、~/active_cameras latched 话题，
+    # 当前状态见 ~/gate_state（latched JSON）。
+    push_enabled: true
+    active_cameras: ""
 
     verbose: false

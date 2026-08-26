@@ -10,6 +10,7 @@
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
 
   <!-- Camera drivers used by the launch files (optional at runtime). -->
   <exec_depend>realsense2_camera</exec_depend>

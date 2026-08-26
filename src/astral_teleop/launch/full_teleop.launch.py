@@ -6,6 +6,14 @@ One Quest3 mocap. Right hand input is selectable:
   gripper — right pinch → right gripper (no dexterous hand)
   none    — no right-hand device
 
+Video return (quest3_video_streamer) is launched by default (with_video:=true):
+robot USB cameras → Quest 3 panels over WebRTC. The launch auto-runs
+``adb reverse tcp:8000 tcp:8000`` (mocap) and ``adb reverse tcp:8765 tcp:8765``
+(video signaling) when adb is available; you still need to enable the video
+feed in the Quest app. Which cameras stream is configured in
+quest3_video_streamer/config/params.yaml (default: wrist_left + wrist_right,
+no RealSense) and can be gated at runtime (see that package's README).
+
 Usage:
   # Quest3 wrists + left pinch + Quest3 right dexterous hand
   ros2 launch astral_teleop full_teleop.launch.py \\
@@ -21,6 +29,9 @@ Usage:
   ros2 launch astral_teleop full_teleop.launch.py \\
     with_arm_driver:=true with_hand_driver:=false \\
     right_hand_source:=gripper with_gripper:=true
+
+  # Without video return
+  ros2 launch astral_teleop full_teleop.launch.py ... with_video:=false
 """
 
 from __future__ import annotations
@@ -38,6 +49,38 @@ from launch_ros.actions import Node
 
 def _opt(context, name: str) -> str:
     return LaunchConfiguration(name).perform(context).strip()
+
+
+def _adb_reverse(ports: list[int]) -> None:
+    """Best-effort `adb reverse` for the wired Quest link.
+
+    The Quest app reaches host services through these reversals:
+      tcp:8000 — mocap telemetry (quest3_hand_mocap TCP server)
+      tcp:8765 — video signaling (quest3_video_streamer WebSocket)
+    Non-fatal: missing adb / no device just logs a warning (wireless mode or
+    reversal already done manually both keep working).
+    """
+    import shutil
+    import subprocess
+
+    if shutil.which("adb") is None:
+        print("[full_teleop] video/mocap: adb not found; skipping adb reverse "
+              "(wireless mode or run it manually: adb reverse tcp:8000 tcp:8000; "
+              "adb reverse tcp:8765 tcp:8765)")
+        return
+    for port in ports:
+        try:
+            res = subprocess.run(
+                ["adb", "reverse", f"tcp:{port}", f"tcp:{port}"],
+                capture_output=True, text=True, timeout=5.0,
+            )
+            if res.returncode == 0:
+                print(f"[full_teleop] adb reverse tcp:{port} OK")
+            else:
+                err = (res.stderr or res.stdout or "").strip()
+                print(f"[full_teleop] WARN adb reverse tcp:{port} failed: {err}")
+        except Exception as exc:  # timeout etc.
+            print(f"[full_teleop] WARN adb reverse tcp:{port} error: {exc}")
 
 
 def _setup(context, *args, **kwargs):
@@ -183,6 +226,28 @@ def _setup(context, *args, **kwargs):
         }.items(),
     )
 
+    # Video return: robot cameras → Quest panels (WebRTC signaling :8765).
+    # The 8000 reverse covers mocap (tcp_wired); 8765 covers video signaling.
+    with_video = _opt(context, "with_video").lower() in ("true", "1", "yes")
+    _adb_reverse([8000, 8765] if with_video else [8000])
+    video = []
+    if with_video:
+        video_args = {}
+        if _opt(context, "video_cameras"):
+            video_args["cameras"] = _opt(context, "video_cameras")
+        video.append(
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(
+                        get_package_share_directory("quest3_video_streamer"),
+                        "launch",
+                        "multi_camera.launch.py",
+                    )
+                ),
+                launch_arguments=video_args.items(),
+            )
+        )
+
     use_wuji = right_src in ("quest3", "glove")
     wuji = []
     if use_wuji:
@@ -217,7 +282,7 @@ def _setup(context, *args, **kwargs):
             )
         )
 
-    return [mocap, start_gate, head_teleop, arms, gripper, right_gripper, glove, *wuji]
+    return [mocap, start_gate, head_teleop, arms, gripper, right_gripper, glove, *video, *wuji]
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -286,6 +351,22 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     "launch head_teleop_node: right thumbstick → head yaw/pitch "
                     "(absolute, spring-return; gated by /teleop/start)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "with_video",
+                default_value="true",
+                description=(
+                    "launch quest3_video_streamer (robot cameras → Quest panels). "
+                    "Auto adb reverse 8000+8765; enable video feed on the Quest app."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "video_cameras",
+                default_value="",
+                description=(
+                    "comma-separated camera labels to stream (empty → "
+                    "quest3_video_streamer/config/params.yaml default list)."
                 ),
             ),
             OpaqueFunction(function=_setup),

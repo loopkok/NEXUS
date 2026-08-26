@@ -7,13 +7,16 @@ This node is the only ROS surface of the monitor. It:
     /teleop/disarm and /teleop/armed topics — no new control topics are created
   * runs rclpy.spin in a background thread so the FastAPI/uvicorn event loop
     can run on the main thread
+  * optionally drives the quest3_video_streamer runtime gate (SetBool master
+    switch + latched active-camera subset) and mirrors its latched gate_state
 
-It deliberately does NOT subscribe to any hardware command topics and does
-NOT call any driver services. Start/stop of the teleop stack is handled by
-LaunchManager via subprocess, not by this node.
+It deliberately does NOT subscribe to any hardware command topics. Hardware
+mode changes go through the driver's already-exposed services. Start/stop of
+the teleop stack is handled by LaunchManager via subprocess, not by this node.
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import dataclass, field
@@ -23,7 +26,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, Float64
+from std_msgs.msg import Bool, Float64, String
 
 from .config import (
     STALE_THRESHOLD_S,
@@ -37,6 +40,9 @@ from .config import (
     DRIVER_SRV_ESTOP,
     DRIVER_SRV_DAMPING,
     DRIVER_SRV_POSITION,
+    VIDEO_SRV_PUSH,
+    VIDEO_TOPIC_CAMERAS,
+    VIDEO_TOPIC_GATE_STATE,
 )
 from .rate_counter import RateRegistry
 
@@ -95,6 +101,14 @@ class MonitorNode(Node):
         )
         self._pub_start = self.create_publisher(Bool, TOPIC_START, start_qos)
 
+        # Video gate: latched active-cameras publisher + gate_state mirror.
+        self._pub_video_cameras = self.create_publisher(String, VIDEO_TOPIC_CAMERAS, qos)
+        self._video_gate_state: dict[str, Any] | None = None
+        self.create_subscription(
+            String, VIDEO_TOPIC_GATE_STATE, self._on_video_gate_state, qos,
+        )
+        self._video_push_client: Any = None  # SetBool client, created lazily
+
         # Read-only subscriptions.
         for entity, pair in TOPICS.items():
             self.create_subscription(
@@ -128,6 +142,15 @@ class MonitorNode(Node):
             slot.values = list(msg.position)
             slot.ts = now
 
+    def _on_video_gate_state(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if isinstance(data, dict):
+            with self._lock:
+                self._video_gate_state = data
+
     # --- snapshot read (web thread) ---------------------------------------
     def snapshot(self) -> dict[str, Any]:
         now = time.time()
@@ -142,11 +165,14 @@ class MonitorNode(Node):
             }
         cmd_rates = self._rates.snapshot()
         state_rates = self._state_rates.snapshot()
+        with self._lock:
+            video_gate = dict(self._video_gate_state) if self._video_gate_state else None
         return {
             "joints": joints,
             "rates_hz": cmd_rates,
             "state_rates_hz": state_rates,
             "health": self._health_summary(joints, cmd_rates, state_rates, now),
+            "video_gate": video_gate,
         }
 
     @staticmethod
@@ -236,6 +262,35 @@ class MonitorNode(Node):
             return False, f"driver service 超时: {srv_name}"
         res = future.result()
         return bool(res.success), str(res.message)
+
+    # --- video return gate (quest3_video_streamer) --------------------------
+    # Non-intrusive: the streamer exposes ~/set_push_enabled (SetBool) and
+    # ~/active_cameras (latched String); the monitor only calls/publishes them.
+    def set_video_push(self, enabled: bool, timeout_s: float = 4.0) -> tuple[bool, str]:
+        """Master push switch on the video streamer. Returns (success, message)."""
+        from std_srvs.srv import SetBool
+        if self._video_push_client is None:
+            self._video_push_client = self.create_client(SetBool, VIDEO_SRV_PUSH)
+        cli = self._video_push_client
+        if not cli.service_is_ready():
+            if not cli.wait_for_service(timeout_sec=2.0):
+                return False, f"video service 未就绪: {VIDEO_SRV_PUSH}（streamer 未启动？）"
+        req = SetBool.Request()
+        req.data = bool(enabled)
+        future = cli.call_async(req)
+        deadline = time.time() + timeout_s
+        while time.time() < deadline and not future.done():
+            time.sleep(0.02)
+        if not future.done():
+            return False, f"video service 超时: {VIDEO_SRV_PUSH}"
+        res = future.result()
+        return bool(res.success), str(res.message)
+
+    def publish_video_cameras(self, cameras: list[str]) -> None:
+        """Latched active-camera subset (empty list = all configured cameras)."""
+        msg = String()
+        msg.data = ",".join(c.strip() for c in cameras if c.strip())
+        self._pub_video_cameras.publish(msg)
 
 
 # --- module-level singleton helpers -----------------------------------------

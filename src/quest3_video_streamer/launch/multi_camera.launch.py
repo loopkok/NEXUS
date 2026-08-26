@@ -55,6 +55,7 @@ def generate_launch_description():
     enable_mocap_tcp = LaunchConfiguration("enable_mocap_tcp")
     verbose = LaunchConfiguration("verbose")
     d435i_source_arg = LaunchConfiguration("d435i_source")  # optional CLI override
+    cameras_arg = LaunchConfiguration("cameras")  # optional CLI override
 
     params_file = os.path.join(
         get_package_share_directory("quest3_video_streamer"), "config", "params.yaml"
@@ -70,6 +71,11 @@ def generate_launch_description():
         overrides["enable_mocap_tcp"] = em.lower() == "true"
         overrides["verbose"] = vb.lower() == "true"
 
+        # cameras CLI override (comma-separated labels; empty -> use yaml list).
+        cams = cameras_arg.perform(context).strip()
+        if cams:
+            overrides["cameras"] = [c.strip() for c in cams.split(",") if c.strip()]
+
         # d435i_source CLI override (empty -> use yaml value).
         cli_src = d435i_source_arg.perform(context)
         yaml_params = _load_params()
@@ -80,8 +86,10 @@ def generate_launch_description():
             d435i_src = str(_camera_field(yaml_params, "d435i", "source", "v4l2"))
 
         nodes = []
-        # Only launch realsense2_camera_node when the D435i runs via ROS.
-        if d435i_src != "v4l2":
+        # Only launch realsense2_camera_node when the D435i runs via ROS *and*
+        # is actually in the cameras list.
+        active_cams = overrides.get("cameras") or yaml_params.get("cameras") or []
+        if d435i_src != "v4l2" and "d435i" in active_cams:
             preset = str(_camera_field(yaml_params, "d435i", "preset", "1080p30"))
             w, h, fps = _PRESET_MAP.get(preset, (1920, 1080, 30))
             nodes.append(Node(
@@ -116,5 +124,7 @@ def generate_launch_description():
         DeclareLaunchArgument("verbose", default_value="false"),
         DeclareLaunchArgument("d435i_source", default_value="",
                               description="Override d435i source: v4l2 | ros (empty = use yaml)"),
+        DeclareLaunchArgument("cameras", default_value="",
+                              description="Override cameras list: comma-separated labels (empty = use yaml)"),
         GroupAction([OpaqueFunction(function=_build)]),
     ])

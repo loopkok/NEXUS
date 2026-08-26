@@ -22,6 +22,12 @@ export interface HealthSummary {
   entities: Record<string, EntityHealth>
 }
 
+export interface VideoGateState {
+  push_enabled: boolean
+  configured: string[]
+  active: string[]
+}
+
 export interface UiState {
   type: 'ui_state'
   ts: number
@@ -35,6 +41,7 @@ export interface UiState {
   rates_hz: Record<string, number>
   state_rates_hz?: Record<string, number>
   health?: HealthSummary
+  video_gate?: VideoGateState | null
   log_tail: string[]
 }
 
@@ -67,4 +74,19 @@ export interface HealthData {
   uptime_s: number
   ws_clients: number
   health: HealthSummary
+}
+
+export interface VideoCameraInfo {
+  label: string
+  device: string
+  source: string
+  preset: string
+  exists: boolean
+  sysfs_name: string
+}
+
+export interface VideoStatusData {
+  configured: VideoCameraInfo[]
+  gate: VideoGateState | null
+  online: boolean
 }

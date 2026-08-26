@@ -10,6 +10,7 @@ Quest3 mocap（仅一份）
 手套            → 同一 hand_landmarks/right         （right_hand_source:=glove）
   landmarks/R  → astral_gripper_teleop → 右夹爪     （right_hand_source:=gripper）
 右手柄摇杆      → head_teleop_node → /head/joint_commands → 头(yaw/pitch)
+机器人相机      → quest3_video_streamer → WebRTC → Quest 面板  （with_video:=true 默认）
 ```
 
 `right_hand_source` 四选一：
@@ -59,3 +60,12 @@ ros2 launch astral_teleop full_teleop.launch.py \
 - 参数在 `config/head_teleop.yaml`：`yaw_scale`/`pitch_scale`（带符号，方向反了改符号）、`yaw/pitch_min/max`（限幅）、`stick_deadzone`、`publish_rate`、`input_timeout_s`。默认量程保守（yaw ±0.8rad、pitch ±0.4rad），**真机首测请确认"摇杆右推头右转"，反了把对应 scale 加负号**。
 
 关掉头部遥操：`with_head_teleop:=false`。
+
+## 视频回传（`with_video:=true`，默认开启）
+
+`full_teleop.launch.py` 默认拉起 `quest3_video_streamer`（机器人相机 → Quest 3D 面板）：
+
+- **链路前提**：USB 线连 Quest + `adb reverse tcp:8000 tcp:8000`（mocap）+ `adb reverse tcp:8765 tcp:8765`（视频信令）——launch 启动时会**自动执行**这两条 reverse（adb 不存在/无设备只打 WARN，不阻塞启动）；然后**在 Quest 端 app 开启 video feed**，链路才通。
+- **推哪些相机**：`quest3_video_streamer/config/params.yaml` 的 `cameras` 列表（默认 `wrist_left + wrist_right` 两路 USB，无 RealSense；接回 D435i 把 `"d435i"` 加回）；临时覆盖用 `video_cameras:=wrist_left,wrist_right`。
+- **运行时开关/选路**：不用重启——streamer 暴露 `~/set_push_enabled` 服务与 latched `~/active_cameras` 话题（被关的轨发 2fps 黑帧静音），web 监控"系统"页有对应卡片；详见 `quest3_video_streamer/README.md`「运行时推流门控」。
+- 关掉视频：`with_video:=false`。

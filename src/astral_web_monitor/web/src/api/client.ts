@@ -1,5 +1,5 @@
 // REST client mirroring rob_station's api/client.js convention.
-import type { ApiEnvelope, HealthData, Preset } from '../types'
+import type { ApiEnvelope, HealthData, Preset, VideoStatusData } from '../types'
 
 const base = import.meta.env.VITE_API_BASE ?? ''
 
@@ -45,4 +45,8 @@ export const api = {
   robotEstop: () => post<unknown>('/api/v1/robot/estop'),
   robotDamping: () => post<unknown>('/api/v1/robot/damping'),
   robotPosition: () => post<unknown>('/api/v1/robot/position'),
+  // Video return gate (quest3_video_streamer — streamer owns the cameras)
+  videoStatus: () => get<VideoStatusData>('/api/v1/video/status'),
+  videoPush: (enabled: boolean) => post<unknown>('/api/v1/video/push', { enabled }),
+  videoCameras: (cameras: string[]) => post<unknown>('/api/v1/video/cameras', { cameras }),
 }

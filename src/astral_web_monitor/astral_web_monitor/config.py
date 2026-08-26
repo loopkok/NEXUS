@@ -113,6 +113,16 @@ DRIVER_SRV_ESTOP = f"/{DRIVER_NODE}/estop"
 DRIVER_SRV_DAMPING = f"/{DRIVER_NODE}/damping"
 DRIVER_SRV_POSITION = f"/{DRIVER_NODE}/position"
 
+# --- Video return (quest3_video_streamer) runtime gate ----------------------
+# The streamer exposes a SetBool master switch and a latched String topic with
+# the active camera subset (empty = all). It also publishes a latched JSON
+# gate_state snapshot. The monitor only calls/publishes/subscribes these —
+# the streamer owns the cameras. Override the node name via env if remapped.
+VIDEO_NODE = os.environ.get("ASTRAL_WEB_MONITOR_VIDEO_NODE", "quest3_video_streamer")
+VIDEO_SRV_PUSH = f"/{VIDEO_NODE}/set_push_enabled"
+VIDEO_TOPIC_CAMERAS = f"/{VIDEO_NODE}/active_cameras"
+VIDEO_TOPIC_GATE_STATE = f"/{VIDEO_NODE}/gate_state"
+
 # --- Orphan process detection ----------------------------------------------
 # Regex fragment matched against the full command line of running processes
 # to detect a leftover teleop launch before starting a new one.
@@ -131,3 +141,26 @@ def _presets_path() -> str:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "config", "presets.yaml",
         )
+
+
+def video_params_path() -> str | None:
+    """Resolve quest3_video_streamer/config/params.yaml (share, else source tree).
+
+    Used to show the *configured* camera list in the web UI. Returns None when
+    the package is not installed (e.g. monitor running outside the workspace).
+    """
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        share = get_package_share_directory("quest3_video_streamer")
+        return os.path.join(share, "config", "params.yaml")
+    except Exception:
+        pass
+    # Source-tree fallback: walk up from this file looking for a sibling
+    # quest3_video_streamer package (workspace src/ layout).
+    here = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(6):
+        candidate = os.path.join(here, "quest3_video_streamer", "config", "params.yaml")
+        if os.path.isfile(candidate):
+            return candidate
+        here = os.path.dirname(here)
+    return None

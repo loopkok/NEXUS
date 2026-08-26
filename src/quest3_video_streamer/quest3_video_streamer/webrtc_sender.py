@@ -118,21 +118,58 @@ class VideoSenderStats:
 
 
 class _AdapterVideoTrack:
-    """Bridges a source adapter into the aiortc track API."""
+    """Bridges a source adapter into the aiortc track API.
+
+    Optional runtime gate: while ``gate.is_enabled(label)`` is false the track
+    sends 2 fps black frames instead of camera frames.  This keeps the RTP
+    stream (and the Quest panel) alive at negligible bandwidth without SDP
+    renegotiation, and un-muting resumes the live feed instantly.
+    """
 
     kind = "video"
 
-    def __init__(self, source: "VideoSourceAdapter", fps: int) -> None:
+    _MUTED_FPS = 2.0
+
+    def __init__(
+        self,
+        source: "VideoSourceAdapter",
+        fps: int,
+        gate: Any = None,
+        label: str = "",
+    ) -> None:
         self._source = source
         self._fps = max(1, fps)
+        self._gate = gate
+        self._label = label
         self._pts = 0
         self._time_base = fractions.Fraction(1, self._fps)
+        self._black_frame: Any = None
+        self._muted = False
 
     async def recv(self) -> Any:
-        frame = await self._source.next_frame()
+        if self._gate is not None and not self._gate.is_enabled(self._label):
+            await asyncio.sleep(1.0 / self._MUTED_FPS)
+            frame = self._new_black_frame()
+            self._muted = True
+        else:
+            self._muted = False
+            frame = await self._source.next_frame()
         frame.pts = self._pts
         frame.time_base = self._time_base
         self._pts += 1
+        return frame
+
+    def _new_black_frame(self) -> Any:
+        """Fresh black frame at the source resolution (2 fps → cheap)."""
+        import av  # lazy: only needed once a track is actually muted
+
+        fmt = self._source.get_format()
+        frame = av.VideoFrame(fmt.width, fmt.height, "yuv420p")
+        # Limited-range black: Y=16, U=V=128.
+        frame.planes[0].update(bytes([16]) * (fmt.width * fmt.height))
+        cw, ch = fmt.width // 2, fmt.height // 2
+        frame.planes[1].update(bytes([128]) * (cw * ch))
+        frame.planes[2].update(bytes([128]) * (cw * ch))
         return frame
 
 
@@ -151,12 +188,15 @@ class VideoWebRTCSender:
         sources: "list[VideoSourceAdapter]",
         on_local_ice_candidate: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         log_hook: Callable[[str], None] | None = None,
+        gate: Any = None,
     ) -> None:
         if not sources:
             raise ValueError("At least one video source is required.")
         self._sources = list(sources)
         self._on_local_ice_candidate = on_local_ice_candidate
         self._log_hook = log_hook
+        # Optional runtime gate (StreamGate): muted tracks send 2 fps black.
+        self._gate = gate
         self._pc: Any = None
         self._created_at = monotonic()
         self._frames_sent = 0
@@ -358,7 +398,13 @@ class VideoWebRTCSender:
         self._track_frame_counts = [0] * len(self._sources)
         for idx, source in enumerate(self._sources):
             video_format = source.get_format()
-            track = AdapterTrack(_AdapterVideoTrack(source, fps=video_format.fps), self, idx)
+            track = AdapterTrack(
+                _AdapterVideoTrack(
+                    source, fps=video_format.fps,
+                    gate=self._gate, label=video_format.label,
+                ),
+                self, idx,
+            )
             self._pc.addTrack(track)
             self._track_info.append({"index": idx, "label": video_format.label, "id": getattr(track, "id", str(idx))})
             self._log(

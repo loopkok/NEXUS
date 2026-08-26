@@ -64,10 +64,13 @@ class Quest3VideoService:
         sources: list[VideoSourceAdapter],
         layouts: list[dict[str, Any]] | None = None,
         config: VideoServiceConfig,
+        gate: Any = None,
     ) -> None:
         if not sources:
             raise ValueError("At least one video source is required.")
         self._sources = list(sources)
+        # Optional runtime gate (StreamGate) forwarded to every sender's tracks.
+        self._gate = gate
         # Optional per-source display layout (parallel list to sources).
         # Each entry may contain: position [x,y,z], distance, size_multiplier.
         self._layouts = layouts if layouts is not None else [{} for _ in sources]
@@ -210,6 +213,7 @@ class Quest3VideoService:
                     sources=self._sources,
                     on_local_ice_candidate=self._make_ice_callback(session_id),
                     log_hook=lambda msg: self._log(f"[sender] {msg}"),
+                    gate=self._gate,
                 )
                 await self._sender.start()
                 self._log(f"sender started sources={len(self._sources)} preset={self._config.preset}")
