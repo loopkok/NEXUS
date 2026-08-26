@@ -103,6 +103,19 @@ def _launch_setup(context, *args, **kwargs):
         parameters=[quest_cfg, mocap_extra],
     )
 
+    # Left Touch controller grip button (mask bit 5) → /teleop/start external
+    # start gate — same as full_teleop. Lets you test the external start switch
+    # in sim by pressing the left controller grip.
+    start_gate = Node(
+        package="astral_teleop",
+        executable="controller_start_gate",
+        name="controller_start_gate",
+        output="screen",
+        emulate_tty=True,
+        parameters=[{"joy_topic": "quest3/left_controller_joy", "button_index": 5}],
+        condition=IfCondition(LaunchConfiguration("with_start_gate")),
+    )
+
     sim_extra = {}
     viewer = _opt(context, "enable_viewer")
     if viewer:
@@ -121,11 +134,15 @@ def _launch_setup(context, *args, **kwargs):
             )
         ),
         condition=IfCondition(LaunchConfiguration("with_gripper")),
-        launch_arguments={"hand_side": "left"}.items(),
+        launch_arguments={
+            "hand_side": "left",
+            "controller_joy_topic": "quest3/left_controller_joy",
+        }.items(),
     )
 
     return [
         mocap,
+        start_gate,
         gripper,
         Node(
             package="astral_arm_teleop",
@@ -182,7 +199,12 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "with_gripper",
                 default_value="true",
-                description="Quest3 left pinch → /left_gripper/command (sim echoes, no MJCF gripper joint yet)",
+                description="Quest3 left pinch/trigger → /left_gripper/command (sim echoes, no MJCF gripper joint yet)",
+            ),
+            DeclareLaunchArgument(
+                "with_start_gate",
+                default_value="true",
+                description="Left controller grip button → /teleop/start external start gate",
             ),
             DeclareLaunchArgument(
                 "require_start_signal",
