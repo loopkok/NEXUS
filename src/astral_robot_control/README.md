@@ -91,7 +91,7 @@ ros2 topic echo /left_arm/joint_states --once
 
 ## 参数
 
-见 `config/astral_robot.yaml`。常用：`control_board_ip`、`local_port`、`dry_run`、`auto_ready`、`control_rate` / `state_publish_rate`。
+见 `config/astral_robot.yaml`。常用：`control_board_ip`、`local_port`、`dry_run`、`auto_ready`、`control_rate` / `state_publish_rate`。夹爪开合角度在此配置：`left/right_gripper_open_rad`（当前 **2.5** 实测全开 / `closed_rad` 0.0 合拢；若开到最大又弹回说明超机械行程，回调 ~2.0）——遥操侧（pinch/trigger）只发 0..1 闭合比，rad 以此处为唯一权威。上电瞬态说明：`one_click_ready` 会把夹爪归零(0)，遥操第一条指令随即开到 open_rad，看起来像"启动抽一下"，属正常。
 
 ## 与遥操
 

@@ -9,7 +9,9 @@ hand_landmarks/{side}
                     → astral_robot_control → set_gripper_angle（CMD 0x97/0x98）
 ```
 
-**只发闭合比，不发弧度**。`open_rad`/`closed_rad` 的唯一权威在 driver 的 `astral_robot_control/config/astral_robot.yaml`（`left/right_gripper_open_rad`，当前 1.5，硬止点 2.0）。**切勿**同时往 `/{side}_gripper/joint_commands` 发 JointState——driver 两个话题都订，两路流若映射出不同 rad 会按控制频率互相覆盖，夹爪来回抽搐（2026-08-26 真机实测踩过）。该话题保留给以后需要直接发弧度的硬件适配器。
+**只发闭合比，不发弧度**。`open_rad`/`closed_rad` 的唯一权威在 driver 的 `astral_robot_control/config/astral_robot.yaml`（`left/right_gripper_open_rad`，当前 **2.5** 实测全开、0.0 合拢；若开到最大又弹回说明超过机械行程，回调 ~2.0）。**切勿**同时往 `/{side}_gripper/joint_commands` 发 JointState——driver 两个话题都订，两路流若映射出不同 rad 会按控制频率互相覆盖，夹爪来回抽搐（2026-08-26 真机实测踩过）。该话题保留给以后需要直接发弧度的硬件适配器。
+
+**上电瞬态（正常现象）**：启动时 driver `one_click_ready` 会把夹爪归零（0=合拢），遥操节点第一条指令随即把它开到 `open_rad`——看起来像"启动时抽一下"，随后稳定。无需处理。
 
 以后换硬件：新节点发同一个 `/{side}_gripper/command`（0..1 闭合比），关掉本节点即可。臂仍走 `quest3/{side}_wrist_pose`。
 
@@ -22,7 +24,7 @@ ros2 launch astral_gripper_teleop gripper_teleop.launch.py hand_side:=right
 #   左夹爪 with_gripper:=true；右夹爪 right_hand_source:=gripper
 ```
 
-调参：本包 `config/gripper_teleop.yaml` 只管**手部距离**（`open_dist_m`/`close_dist_m`，米）与滤波/超时；夹爪**电机角度**只改 driver 的 `astral_robot.yaml`。真机方向 `open_rad=1.5`（全张开，回退硬止点 2.0 后的安全开度）、`closed_rad=0.0`（合拢），故捏合→合、张开→开。
+调参：本包 `config/gripper_teleop.yaml` 只管**手部距离**（`open_dist_m`/`close_dist_m`，米）与滤波/超时；夹爪**电机角度**只改 driver 的 `astral_robot.yaml`（当前 2.5 全开 / 0.0 合拢）。真机方向：捏合→合、张开→开。
 
 **自适应量程**（`auto_range:=true`，默认开）：跟踪你实际捏合距离的 min/max（带 `auto_range_forget_s` 遗忘，双向适应），把当前距离映射到这个真实范围，用满夹爪行程——避免 `open_dist_m/close_dist_m` 与你实际手部范围不符时夹爪只动一小段。`open_dist_m/close_dist_m` 退化为先验/回退；关掉则用固定 open/close 映射。日志会打印 `dist=Xmm range=[lo,hi]mm close=ratio`，可直接观察你的真实范围。
 

@@ -169,6 +169,17 @@ stopped ──start──► starting ──2s暖机──► running
 
 - **急停（真断电）**：红色常驻按钮，确认后调 driver `~/estop` → SDK `e_stop()`/`disable()`，臂失去保持力；恢复需重新「一键就绪」。区别于「暂停」（软 disarm，臂仍上电保持位姿）
 - **阻尼释放**：调 driver `~/damping` → `motion_mode=0`，电机仍上电、关节可手动拖拽。典型流程：遥操中 → 停止（臂保持末位姿）→ 阻尼释放（手动拖回 home）→ 位置保持/归零
+
+> **机器人模式按钮的可用时机（重要）**：急停/阻尼释放/位置保持/一键就绪/归零 这五个按钮调的都是 **driver 节点（astral_robot_driver）的 ROS 服务**，driver 随遥操栈启停：
+>
+> | 遥操栈状态 | 按钮表现 |
+> |-----------|---------|
+> | 运行中（启动后） | ✅ 可用 |
+> | 已暂停（软 disarm） | ✅ 可用（driver 还活着，只是不收遥操指令） |
+> | 已停止 | ❌ 503「driver service 未就绪」——driver 进程已随栈退出，属**预期行为**，先点「启动」再操作 |
+>
+> 即：**先启动栈，再点机器人模式按钮**；停止栈之后任何机器人按钮都不会生效。若运行中仍 503，说明 driver 没起来（`with_arm_driver:=false` 的预设/sim）或 Jetson 端 driver 是旧代码——在 Jetson 上 `ros2 service list \| grep astral_robot_driver` 应列出 5 个 Trigger 服务。
+
 - **Toast 通知**：操作成功/失败以右上角浮窗提示（替代 alert），自动消失
 - **实时图表**：手写 SVG 折线（无第三方图表库），环形缓冲 200 样本（≈6.7s @ 30Hz）
 - **头部通道**：监视 tab 显示「头部 (yaw/pitch)」面板 + yaw/pitch 实时折线；健康巡检含头部（仅新鲜度判断——头部指令在启动前/手柄掉线时合法为 0Hz，故不设 cmd 频率下限）
