@@ -213,15 +213,15 @@ ros2 service call /astral_arm_teleop_right/start std_srvs/srv/Trigger
 启动时若仍在 homing 或还没收到腕姿，start 会被拒并告警（等 homing 完成、Quest 推流后再发）。
 
 ```bash
-# 真机整机：启用外部启动闸门
+# 真机整机：外部启动闸门（yaml 已默认 true，此处 require_start_signal:=true 可省略）
 ros2 launch astral_teleop full_teleop.launch.py \
   with_arm_driver:=true with_hand_driver:=true \
-  right_hand_source:=quest3 require_start_signal:=true
+  right_hand_source:=quest3
 # 手摆好后：
 ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
 ```
 
-默认 `false`（sim/旧流程不变）。yaml `require_start_signal` 或 launch arg 都可覆盖。
+默认值：**真机 yaml `require_start_signal: true`**（启动推流后手摆好再发 start）；**sim 同样默认 true**（launch arg 默认 `""` 透传 yaml）。yaml `require_start_signal` 或 launch arg 都可覆盖（launch arg 非空时覆盖 yaml）。
 
 ## 频率
 
@@ -290,6 +290,6 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 
 单臂：`config/astral_arm_teleop_{left,right}.yaml`。
 
-常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
+常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（真机 yaml 默认 true、sim launch 默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
 
 `use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。

@@ -188,8 +188,8 @@ def generate_launch_description() -> LaunchDescription:
                 "require_start_signal",
                 default_value="",
                 description=(
-                    "empty → yaml. true → wait for /teleop/start to capture vr_init "
-                    "and arm (test the external start gate in sim)."
+                    "empty → yaml (默认 true). true → wait for /teleop/start to "
+                    "capture vr_init and arm (test the external start gate in sim)."
                 ),
             ),
             OpaqueFunction(function=_launch_setup),
