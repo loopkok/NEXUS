@@ -4,6 +4,7 @@ from __future__ import annotations
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Pose, Point, Quaternion, PoseStamped, PoseArray
+from sensor_msgs.msg import Joy
 from visualization_msgs.msg import Marker, MarkerArray
 from builtin_interfaces.msg import Time as RosTime
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
@@ -388,6 +389,11 @@ class Quest3UDPMocap(Node):
         )
         self.hips_pub = self.create_publisher(PoseStamped, "quest3/hips_pose", 10)
         self.mix_pub = self.create_publisher(String, "quest3/input_mix", latch_qos)
+        # Touch controller button/thumbstick state (sensor_msgs/Joy).
+        # axes = [trigger, grip, stickX, stickY]; buttons = [primary, secondary,
+        # stickPress, menu, triggerClick, gripClick].
+        self.joy_pub_right = self.create_publisher(Joy, "quest3/right_controller_joy", 10)
+        self.joy_pub_left = self.create_publisher(Joy, "quest3/left_controller_joy", 10)
         
         # 新增：RViz 可视化发布者
         if self.viz:
@@ -682,6 +688,37 @@ class Quest3UDPMocap(Node):
         self._note_mix(side, src)
         self._note_wrist_gap(side, arrival_time)
 
+    def _process_buttons_line(self, line: str, arrival_time: float) -> None:
+        """Parse ``Left buttons:, trigger, grip, stickX, stickY, mask`` → Joy.
+
+        mask bits: 0=primary(X/A) 1=secondary(Y/B) 2=thumbstick press
+                    3=menu 4=trigger click 5=grip click
+        axes=[trigger, grip, stickX, stickY], buttons=[each mask bit 0/1].
+        """
+        try:
+            _, _, payload = line.partition(":")
+            parts = [p.strip() for p in payload.split(",") if p.strip()]
+            if len(parts) < 5:
+                return
+            trigger = float(parts[0])
+            grip = float(parts[1])
+            stick_x = float(parts[2])
+            stick_y = float(parts[3])
+            # parts = [trigger, grip, stickX, stickY, mask] (5 fields after the
+            # "buttons:" tag). mask is parts[4]; the earlier `len < 5` guard
+            # already ensured at least 5 fields, so read it unconditionally.
+            mask = int(float(parts[4])) if len(parts) >= 5 else 0
+        except (ValueError, IndexError):
+            return
+
+        side = "right" if "right" in line.lower() else "left"
+        msg = Joy()
+        msg.header.stamp = self._float_to_ros_time(arrival_time)
+        msg.header.frame_id = self._pose_frame_id()
+        msg.axes = [trigger, grip, stick_x, stick_y]
+        msg.buttons = [(mask >> i) & 1 for i in range(6)]
+        (self.joy_pub_right if side == "right" else self.joy_pub_left).publish(msg)
+
     def _process_body_line(self, line: str, arrival_time: float) -> None:
         """Parse ``body iobt | fid=High: hips,x,y,z,qx,qy,qz,qw spine-lower,...``.
 
@@ -790,6 +827,13 @@ class Quest3UDPMocap(Node):
         # IOBT body packet contains a "head" joint — must run before head match.
         if line_lower.startswith("body"):
             self._process_body_line(line, arrival_time)
+            return
+
+        # Touch controller buttons/thumbstick: "Left buttons:, trigger, grip,
+        # stickX, stickY, mask". Published as sensor_msgs/Joy. Handled before
+        # the side-filter so both controllers are always forwarded.
+        if "buttons" in line_lower:
+            self._process_buttons_line(line, arrival_time)
             return
 
         # Head / HMD. IOBT on: already hips-relative on the wire.

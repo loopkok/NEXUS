@@ -112,6 +112,8 @@ Mixed：左右可一边 `controller` 一边 `hand`。同侧 Quest 只发一种�
 | `quest3/right_wrist_pose` | PoseStamped | 世界或身体 | 右手腕 |
 | `quest3/left_controller_pose` | PoseStamped | 世界或身体 | 左手柄（仅手柄行） |
 | `quest3/right_controller_pose` | PoseStamped | 世界或身体 | 右手柄 |
+| `quest3/left_controller_joy` | Joy | 世界或身体 | 左手柄按键/摇杆：axes=[trigger,grip,stickX,stickY]，buttons=[primary,secondary,stickPress,menu,triggerClick,gripClick] |
+| `quest3/right_controller_joy` | Joy | 世界或身体 | 右手柄按键/摇杆（同上） |
 | `quest3/head_pose` | PoseStamped | 世界或身体 | HMD |
 | `quest3/hips_pose` | PoseStamped | `robot_world`/`vr_world` | IOBT hips，房间系 |
 | `quest3/body_joints` | PoseArray | `robot_body`/`vr_body` | IOBT 关节，hips 系，顺序见 names |
