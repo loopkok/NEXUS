@@ -1,10 +1,13 @@
-"""Whole-robot teleop: dual arms + left gripper + right Wuji hand.
+"""Whole-robot teleop: dual arms + left gripper + right (Wuji hand or gripper).
 
-One Quest3 mocap. Right Wuji input is quest3 or glove (not both on
-hand_landmarks/right).
+One Quest3 mocap. Right hand input is selectable:
+  quest3  — Wuji dexterous hand from Quest3 landmarks
+  glove   — Wuji dexterous hand from Wuji Glove
+  gripper — right pinch → right gripper (no dexterous hand)
+  none    — no right-hand device
 
 Usage:
-  # Quest3 wrists + left pinch + Quest3 right hand
+  # Quest3 wrists + left pinch + Quest3 right dexterous hand
   ros2 launch astral_teleop full_teleop.launch.py \\
     with_arm_driver:=true with_hand_driver:=true \\
     right_hand_source:=quest3 retarget_backend:=wuji_retargeting
@@ -13,6 +16,11 @@ Usage:
   ros2 launch astral_teleop full_teleop.launch.py \\
     with_arm_driver:=true with_hand_driver:=true \\
     right_hand_source:=glove
+
+  # Dual grippers: left pinch → left gripper, right pinch → right gripper
+  ros2 launch astral_teleop full_teleop.launch.py \\
+    with_arm_driver:=true with_hand_driver:=false \\
+    right_hand_source:=gripper with_gripper:=true
 """
 
 from __future__ import annotations
@@ -41,8 +49,8 @@ def _setup(context, *args, **kwargs):
 
     quest_cfg = os.path.join(quest_pkg, "config", "quest3_mocap.yaml")
     right_src = _opt(context, "right_hand_source").lower()
-    if right_src not in ("quest3", "glove", "none"):
-        raise RuntimeError("right_hand_source must be quest3|glove|none")
+    if right_src not in ("quest3", "glove", "gripper", "none"):
+        raise RuntimeError("right_hand_source must be quest3|glove|gripper|none")
 
     backend = _opt(context, "retarget_backend")
     if not backend:
@@ -107,6 +115,23 @@ def _setup(context, *args, **kwargs):
         launch_arguments={"hand_side": "left"}.items(),
     )
 
+    # Right gripper: only when right_hand_source==gripper (right pinch → right gripper).
+    right_gripper = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("astral_gripper_teleop"),
+                "launch",
+                "gripper_teleop.launch.py",
+            )
+        ),
+        condition=IfCondition(
+            PythonExpression(
+                ["'", LaunchConfiguration("right_hand_source"), "' == 'gripper'"]
+            )
+        ),
+        launch_arguments={"hand_side": "right"}.items(),
+    )
+
     glove = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(glove_pkg, "launch", "wuji_glove_mocap.launch.py")
@@ -122,7 +147,7 @@ def _setup(context, *args, **kwargs):
         }.items(),
     )
 
-    use_wuji = right_src != "none"
+    use_wuji = right_src in ("quest3", "glove")
     wuji = []
     if use_wuji:
         wuji.append(
@@ -156,7 +181,7 @@ def _setup(context, *args, **kwargs):
             )
         )
 
-    return [mocap, arms, gripper, glove, *wuji]
+    return [mocap, arms, gripper, right_gripper, glove, *wuji]
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -165,7 +190,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "right_hand_source",
                 default_value="quest3",
-                description="quest3 | glove | none — right Wuji input",
+                description="quest3 | glove | gripper | none — right hand: dexterous (quest3/glove) or right pinch gripper (gripper) or none",
             ),
             DeclareLaunchArgument(
                 "retarget_backend",
