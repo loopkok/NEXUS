@@ -52,6 +52,10 @@ def _sensor_qos() -> QoSProfile:
 # teleop chain is observable before a gripper joint is added to the MJCF).
 LEFT_GRIPPER_NAME = "left_gripper"
 RIGHT_GRIPPER_NAME = "right_gripper"
+# Head (mirror astral_robot_control HEAD_JOINT_NAMES = [head_yaw, head_pitch]).
+# No MJCF head joint exists yet, so the sim only echoes /head/joint_commands →
+# /head/joint_states so the thumbstick head-teleop chain is observable.
+HEAD_NAMES = ["head_yaw", "head_pitch"]
 
 
 def _spin_drain(node: Node, max_callbacks: int = 24) -> None:
@@ -108,6 +112,10 @@ class AstralMujocoSimNode(Node):
         self.declare_parameter("left_gripper_closed_rad", 0.0)
         self.declare_parameter("right_gripper_open_rad", 0.8)
         self.declare_parameter("right_gripper_closed_rad", 0.0)
+        # Head echo (no MJCF head joint): subscribe /head/joint_commands,
+        # echo to /head/joint_states + log. Mirrors astral_robot_control head.
+        self.declare_parameter("head_ns", "head")
+        self.declare_parameter("enable_head_cmd", True)
 
         mjcf_path = str(self.get_parameter("mjcf_path").value).strip()
         if not mjcf_path:
@@ -216,6 +224,20 @@ class AstralMujocoSimNode(Node):
                         JointState, f"/{g_ns}/joint_states", qos
                     )
 
+        # Head echo (no MJCF head joint): subscribe + echo + log.
+        self._head_rad = [0.0, 0.0]  # [head_yaw, head_pitch]
+        self._head_pub = None
+        self._head_log_t = 0.0
+        if bool(self.get_parameter("enable_head_cmd").value):
+            h_ns = str(self.get_parameter("head_ns").value).strip("/")
+            self.create_subscription(
+                JointState, f"/{h_ns}/joint_commands", self._on_head_js, qos
+            )
+            if self._pub_state:
+                self._head_pub = self.create_publisher(
+                    JointState, f"/{h_ns}/joint_states", qos
+                )
+
         self.enable_viewer = bool(self.get_parameter("enable_viewer").value)
         self.realtime = bool(self.get_parameter("realtime").value)
         grip_topics = (
@@ -223,9 +245,15 @@ class AstralMujocoSimNode(Node):
             if self._grip_pubs or bool(self.get_parameter("enable_gripper_cmd").value)
             else "gripper disabled"
         )
+        head_topic = (
+            "/head/joint_commands"
+            if bool(self.get_parameter("enable_head_cmd").value)
+            else "head disabled"
+        )
         self.get_logger().info(
             f"Astral MuJoCo sim ready: nq={self.model.nq} viewer={self.enable_viewer} "
-            f"arms=/left_arm|/right_arm/joint_commands gripper={grip_topics}"
+            f"arms=/left_arm|/right_arm/joint_commands gripper={grip_topics} "
+            f"head={head_topic}"
         )
 
     def _addrs(self, joint_names: List[str]) -> np.ndarray:
@@ -267,6 +295,21 @@ class AstralMujocoSimNode(Node):
                 f"(open={self._grip_open_rad[side]:.3f} "
                 f"closed={self._grip_closed_rad[side]:.3f})"
             )
+
+    def _on_head_js(self, msg: JointState) -> None:
+        if not msg.position:
+            return
+        d = dict(zip(msg.name, msg.position)) if msg.name else {}
+        with self._lock:
+            yaw = float(d.get("head_yaw", msg.position[0]))
+            pitch = float(
+                d.get("head_pitch", msg.position[1] if len(msg.position) > 1 else 0.0)
+            )
+            self._head_rad = [yaw, pitch]
+        now = time.monotonic()
+        if now - self._head_log_t > 1.0:
+            self._head_log_t = now
+            self.get_logger().info(f"[Head] cmd yaw={yaw:.3f} pitch={pitch:.3f}")
 
     def _on_cmd(self, side: str, msg: JointState) -> None:
         q = _pack_arm(msg, self._cmd_names[side])
@@ -329,6 +372,14 @@ class AstralMujocoSimNode(Node):
             gmsg.name = [self._grip_name[side]]
             gmsg.position = [rad]
             pub.publish(gmsg)
+        if self._head_pub is not None:
+            with self._lock:
+                head = list(self._head_rad)
+            hmsg = JointState()
+            hmsg.header.stamp = now
+            hmsg.name = list(HEAD_NAMES)
+            hmsg.position = [float(head[0]), float(head[1])]
+            self._head_pub.publish(hmsg)
 
     def run(self) -> None:
         viewer = None

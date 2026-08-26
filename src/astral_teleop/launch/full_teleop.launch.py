@@ -97,6 +97,25 @@ def _setup(context, *args, **kwargs):
         parameters=[{"joy_topic": "quest3/left_controller_joy", "button_index": 5}],
     )
 
+    # Right Touch thumbstick → head yaw/pitch (absolute, spring-return).
+    # Reads /head/joint_states for head_init at start; publishes to the
+    # existing /head/joint_commands that astral_robot_control consumes.
+    astral_teleop_pkg = get_package_share_directory("astral_teleop")
+    head_cfg = os.path.join(astral_teleop_pkg, "config", "head_teleop.yaml")
+    head_extra = {}
+    req_start = _opt(context, "require_start_signal")
+    if req_start:
+        head_extra["require_start_signal"] = req_start.lower() in ("true", "1", "yes")
+    head_teleop = Node(
+        package="astral_teleop",
+        executable="head_teleop_node",
+        name="head_teleop_node",
+        output="screen",
+        emulate_tty=True,
+        parameters=[head_cfg, head_extra],
+        condition=IfCondition(LaunchConfiguration("with_head_teleop")),
+    )
+
     arms = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(teleop_pkg, "launch", "astral_dual_arm_teleop.launch.py")
@@ -198,7 +217,7 @@ def _setup(context, *args, **kwargs):
             )
         )
 
-    return [mocap, start_gate, arms, gripper, right_gripper, glove, *wuji]
+    return [mocap, start_gate, head_teleop, arms, gripper, right_gripper, glove, *wuji]
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -259,6 +278,14 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     "empty → yaml. true → wait for /teleop/start to capture vr_init "
                     "and arm (use after placing hand at initial pose)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "with_head_teleop",
+                default_value="true",
+                description=(
+                    "launch head_teleop_node: right thumbstick → head yaw/pitch "
+                    "(absolute, spring-return; gated by /teleop/start)."
                 ),
             ),
             OpaqueFunction(function=_setup),

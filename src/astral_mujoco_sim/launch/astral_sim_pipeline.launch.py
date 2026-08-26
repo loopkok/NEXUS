@@ -116,6 +116,24 @@ def _launch_setup(context, *args, **kwargs):
         condition=IfCondition(LaunchConfiguration("with_start_gate")),
     )
 
+    # Right Touch thumbstick → head yaw/pitch (absolute, spring-return). Sim has
+    # no head MJCF joint, but mujoco_sim_node echoes /head/joint_commands →
+    # /head/joint_states + logs so the stick mapping can be verified.
+    astral_teleop_pkg = get_package_share_directory("astral_teleop")
+    head_cfg = os.path.join(astral_teleop_pkg, "config", "head_teleop.yaml")
+    head_extra = {}
+    if require_start:
+        head_extra["require_start_signal"] = require_start.lower() in ("true", "1", "yes")
+    head_teleop = Node(
+        package="astral_teleop",
+        executable="head_teleop_node",
+        name="head_teleop_node",
+        output="screen",
+        emulate_tty=True,
+        parameters=[head_cfg, head_extra],
+        condition=IfCondition(LaunchConfiguration("with_head_teleop")),
+    )
+
     sim_extra = {}
     viewer = _opt(context, "enable_viewer")
     if viewer:
@@ -143,6 +161,7 @@ def _launch_setup(context, *args, **kwargs):
     return [
         mocap,
         start_gate,
+        head_teleop,
         gripper,
         Node(
             package="astral_arm_teleop",
@@ -205,6 +224,14 @@ def generate_launch_description() -> LaunchDescription:
                 "with_start_gate",
                 default_value="true",
                 description="Left controller grip button → /teleop/start external start gate",
+            ),
+            DeclareLaunchArgument(
+                "with_head_teleop",
+                default_value="true",
+                description=(
+                    "Right thumbstick → head yaw/pitch (absolute, spring-return; "
+                    "gated by /teleop/start). Sim echoes via mujoco_sim_node."
+                ),
             ),
             DeclareLaunchArgument(
                 "require_start_signal",

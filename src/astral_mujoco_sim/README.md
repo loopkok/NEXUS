@@ -37,6 +37,7 @@ sim 管线默认也起 `controller_start_gate` 与带 trigger 合并的 gripper�
 
 - **左手柄 grip 键（中指，bit 5）→ `/teleop/start`**：`with_start_gate:=true`（默认）。臂节点 `require_start_signal:=true`（yaml 默认）时，启动后等外部信号——手摆好初始位姿，按左 grip 即记 `vr_init` 并 arm。
 - **左 trigger 模拟量 → 左夹爪**：gripper 订 `quest3/left_controller_joy`，trigger（`axes[0]`，0=开 1=合）在手柄 Joy 新鲜时驱动夹爪，否则回退 pinch。sim 把 `/left_gripper/command` echo 到 joint_states（日志 `[gripper left] src=trigger|pinch`）。
+- **右手柄摇杆 → 头 yaw/pitch**：`with_head_teleop:=true`（默认）起 `head_teleop_node`，受 `/teleop/start` 闸门。MJCF 无头关节，sim 节点只做「订阅 + echo」：订 `/head/joint_commands`，回显 `/head/joint_states` 并每秒打 `[Head] cmd yaw=.. pitch=..`（viewer 不动头）。便于在 sim 里验证摇杆→yaw/pitch 映射。
 
 仿真验证外部开关（无真机）：`ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py`（viewer 关掉加 `enable_viewer:=false`）→ 手摆好 → 按左手柄 grip（或 web「开始遥操」/CLI `/teleop/start`）。
 
