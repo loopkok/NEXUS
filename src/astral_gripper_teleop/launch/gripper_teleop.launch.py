@@ -28,6 +28,15 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="left",
                 description="left | right",
             ),
+            DeclareLaunchArgument(
+                "controller_joy_topic",
+                default_value="",
+                description=(
+                    "Touch controller Joy topic for trigger→gripper. Empty = "
+                    "off (pinch only). Caller resolves the side, e.g. "
+                    "quest3/left_controller_joy."
+                ),
+            ),
             Node(
                 package="astral_gripper_teleop",
                 executable="pinch_gripper_node",
@@ -36,7 +45,12 @@ def generate_launch_description() -> LaunchDescription:
                 emulate_tty=True,
                 parameters=[
                     LaunchConfiguration("config"),
-                    {"hand_side": LaunchConfiguration("hand_side")},
+                    {
+                        "hand_side": LaunchConfiguration("hand_side"),
+                        "controller_joy_topic": LaunchConfiguration(
+                            "controller_joy_topic"
+                        ),
+                    },
                 ],
             ),
         ]

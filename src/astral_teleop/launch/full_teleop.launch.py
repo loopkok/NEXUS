@@ -86,6 +86,17 @@ def _setup(context, *args, **kwargs):
         parameters=[quest_cfg, mocap_extra],
     )
 
+    # Left Touch controller grip button (mask bit 5) → /teleop/start external
+    # start gate. Rising-edge only; re-press re-captures vr_init (re-center).
+    start_gate = Node(
+        package="astral_teleop",
+        executable="controller_start_gate",
+        name="controller_start_gate",
+        output="screen",
+        emulate_tty=True,
+        parameters=[{"joy_topic": "quest3/left_controller_joy", "button_index": 5}],
+    )
+
     arms = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(teleop_pkg, "launch", "astral_dual_arm_teleop.launch.py")
@@ -112,7 +123,10 @@ def _setup(context, *args, **kwargs):
             )
         ),
         condition=IfCondition(LaunchConfiguration("with_gripper")),
-        launch_arguments={"hand_side": "left"}.items(),
+        launch_arguments={
+            "hand_side": "left",
+            "controller_joy_topic": "quest3/left_controller_joy",
+        }.items(),
     )
 
     # Right gripper: only when right_hand_source==gripper (right pinch → right gripper).
@@ -129,7 +143,10 @@ def _setup(context, *args, **kwargs):
                 ["'", LaunchConfiguration("right_hand_source"), "' == 'gripper'"]
             )
         ),
-        launch_arguments={"hand_side": "right"}.items(),
+        launch_arguments={
+            "hand_side": "right",
+            "controller_joy_topic": "quest3/right_controller_joy",
+        }.items(),
     )
 
     glove = IncludeLaunchDescription(
@@ -181,7 +198,7 @@ def _setup(context, *args, **kwargs):
             )
         )
 
-    return [mocap, arms, gripper, right_gripper, glove, *wuji]
+    return [mocap, start_gate, arms, gripper, right_gripper, glove, *wuji]
 
 
 def generate_launch_description() -> LaunchDescription:

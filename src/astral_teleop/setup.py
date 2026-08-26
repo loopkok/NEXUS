@@ -20,5 +20,9 @@ setup(
     maintainer_email="loopkok@todo.todo",
     description="Whole-robot teleop bringup: compose existing skill/driver launches",
     license="MIT",
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "controller_start_gate = astral_teleop.controller_start_gate:main",
+        ]
+    },
 )

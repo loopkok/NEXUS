@@ -63,6 +63,14 @@ class PinchGripperNode(Node):
         self.declare_parameter("auto_range", True)
         self.declare_parameter("auto_range_forget_s", 8.0)
         self.declare_parameter("auto_range_min_span_m", 0.01)
+        # Touch controller trigger (analog) as an alternative gripper source.
+        # When the controller Joy is fresh, trigger (axes[trigger_axis], 0=open
+        # .. 1=pressed) drives the gripper; otherwise falls back to pinch. Same
+        # Quest side only sends controller OR hand, so the two are complementary.
+        self.declare_parameter("controller_joy_topic", "")
+        self.declare_parameter("trigger_axis", 0)
+        self.declare_parameter("trigger_deadzone", 0.05)
+        self.declare_parameter("trigger_invert", False)
 
         side = str(self.get_parameter("hand_side").value).strip().lower()
         if side not in ("left", "right"):
@@ -109,6 +117,21 @@ class PinchGripperNode(Node):
             PoseArray, self.landmark_topic, self._on_landmarks, qos
         )
 
+        # Optional Touch controller trigger → gripper (merged with pinch).
+        self.controller_joy_topic = str(
+            self.get_parameter("controller_joy_topic").value
+        ).strip()
+        self.trigger_axis = int(self.get_parameter("trigger_axis").value)
+        self.trigger_deadzone = float(self.get_parameter("trigger_deadzone").value)
+        self.trigger_invert = bool(self.get_parameter("trigger_invert").value)
+        self._trigger_ratio = 0.0
+        self._last_joy_t = 0.0
+        if self.controller_joy_topic:
+            from sensor_msgs.msg import Joy
+            self.create_subscription(
+                Joy, self.controller_joy_topic, self._on_joy, qos
+            )
+
         self._ratio: float = 0.0
         self._ema_ready = False
         self._last_lm_t = 0.0
@@ -125,7 +148,8 @@ class PinchGripperNode(Node):
             f"cmd={self.command_topic} js={self.joint_topic} "
             f"pinch=[{self.close_dist:.3f},{self.open_dist:.3f}]m "
             f"rad=[{self.open_rad:.3f},{self.closed_rad:.3f}] "
-            f"auto_range={self.auto_range} forget={self._env_tau:.1f}s"
+            f"auto_range={self.auto_range} forget={self._env_tau:.1f}s "
+            f"joy={self.controller_joy_topic or 'off'} axis={self.trigger_axis}"
         )
 
     def _on_landmarks(self, msg: PoseArray) -> None:
@@ -153,6 +177,23 @@ class PinchGripperNode(Node):
             self._ratio = a * raw + (1.0 - a) * self._ratio
         self._last_dist = dist
         self._last_lm_t = now
+
+    def _on_joy(self, msg) -> None:
+        """Touch controller trigger (analog) → close ratio in [0,1].
+
+        axes[trigger_axis]: 0 = released (open), 1 = fully pressed (closed).
+        A deadzone removes jitter near 0; ``trigger_invert`` flips polarity.
+        """
+        ax = list(msg.axes) if msg.axes else []
+        if self.trigger_axis < 0 or self.trigger_axis >= len(ax):
+            return
+        t = float(ax[self.trigger_axis])
+        if self.trigger_invert:
+            t = 1.0 - t
+        if t < self.trigger_deadzone:
+            t = 0.0
+        self._trigger_ratio = max(0.0, min(1.0, t))
+        self._last_joy_t = time.monotonic()
 
     def _update_envelope(self, dist: float, now: float) -> None:
         """Track observed min/max pinch distance with exponential forget.
@@ -192,19 +233,36 @@ class PinchGripperNode(Node):
 
     def _on_timer(self) -> None:
         now = time.monotonic()
-        stale = (
+        pinch_stale = (
             self._last_lm_t <= 0.0
             or (now - self._last_lm_t) > self.input_timeout_s
         )
-        if stale:
-            if self._last_lm_t <= 0.0:
-                return
+        # Pinch contribution per on_timeout policy.
+        if pinch_stale:
             if self.on_timeout == "open":
-                self._ratio = 0.0
-            elif self.on_timeout != "hold":
-                return
+                pinch_ratio: float | None = 0.0
+            elif self.on_timeout == "hold":
+                pinch_ratio = self._ratio
+            else:
+                pinch_ratio = None
+        else:
+            pinch_ratio = self._ratio
 
-        ratio = max(0.0, min(1.0, self._ratio))
+        # Controller trigger takes priority when its Joy is fresh; falls back
+        # to pinch when the controller is absent/stale (bare-hand mode).
+        joy_fresh = (
+            self.controller_joy_topic != ""
+            and self._last_joy_t > 0.0
+            and (now - self._last_joy_t) <= self.input_timeout_s
+        )
+        if joy_fresh:
+            ratio = self._trigger_ratio
+        elif pinch_ratio is not None:
+            ratio = pinch_ratio
+        else:
+            return  # no input yet
+
+        ratio = max(0.0, min(1.0, ratio))
         rad = ratio_to_rad(ratio, self.open_rad, self.closed_rad)
 
         cmd = Float64()
@@ -219,10 +277,11 @@ class PinchGripperNode(Node):
 
         if self.log_interval_s > 0 and (now - self._last_log) >= self.log_interval_s:
             self._last_log = now
+            src = "trigger" if joy_fresh else "pinch"
             self.get_logger().info(
-                f"[gripper {self.side}] dist={self._last_dist*1000:.0f}mm "
+                f"[gripper {self.side}] src={src} dist={self._last_dist*1000:.0f}mm "
                 f"range=[{(self._emin or 0.0)*1000:.0f},{(self._emax or 0.0)*1000:.0f}]mm "
-                f"close={ratio:.2f} rad={rad:.3f} stale={stale}"
+                f"close={ratio:.2f} rad={rad:.3f} pinch_stale={pinch_stale}"
             )
 
 

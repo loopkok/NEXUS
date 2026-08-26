@@ -228,6 +228,7 @@ quest3_udp_mocap
 
 | 日期 | 项 | 说明 |
 |------|----|------|
+| 2026-08-26 | 手柄按键流 | 解析 Quest 端新增 `{side} buttons:` 行 → `sensor_msgs/Joy`，发布 `quest3/{side}_controller_joy`（axes=[trigger,grip,stickX,stickY]，buttons=[primary,secondary,stickPress,menu,triggerClick,gripClick]），`package.xml` 增 `sensor_msgs` 依赖 |
 | 2026-08-25 | IOBT 帧稳定 | sticky latch（见过 body 包即不回退世界系）+ hold gate（启动后 head/wrist/controller 在帧确定前不发布，`_WRIST_SETTLE_S=1.0`），从源头消除 `frame_id` 在 `robot_world`↔`robot_body` 间切换，修复下游 `astral_arm_teleop` 跨系做 delta 导致的 IK 失败；独立脚本同步 sticky latch |
 | 2026-08-21 | body 关节不再二次转换 | Quest 端已把非 hips 关节转成 hips 相对；本节点 `_process_body_line` 移除 `pose_in_parent_frame`，hips 发世界、其余关节直接 `unity_pose_to_robot`，PoseArray 中 hips 为 identity 根。独立脚本同步 |
 | 2026-08-21 | hips 躯干系对齐 | Quest 端用 `_hipsBoneToTorsoFix` 把 FullBody_Hips 骨头系(+X下/+Y前/+Z左)重定向为躯干系(+X右/+Y上/+Z前)；本节点无需改，轴映射 `unity_pose_to_robot` 因此从"用错轴"变为正确 |
