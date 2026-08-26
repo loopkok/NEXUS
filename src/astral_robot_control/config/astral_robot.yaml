@@ -40,9 +40,9 @@ astral_robot_driver:
     left_gripper_ns: "left_gripper"
     right_gripper_ns: "right_gripper"
     enable_gripper_cmd: true
-    # 真机夹爪方向：2.0=全张开, 0.0=合拢（与 pinch_gripper_node / sim 一致）。
-    # 2.0 经 CLI 递增 rad 实测为真机左夹爪全开角度。
-    left_gripper_open_rad: 2.0
+    # 真机夹爪方向：1.5=全张开, 0.0=合拢（与 pinch_gripper_node / sim 一致）。
+    # 1.5 为回退硬止点后的安全开度，避免持续顶死硬止点触发过流保护导致回弹。
+    left_gripper_open_rad: 1.5
     left_gripper_closed_rad: 0.0
-    right_gripper_open_rad: 0.8
+    right_gripper_open_rad: 1.5
     right_gripper_closed_rad: 0.0

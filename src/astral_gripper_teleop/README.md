@@ -17,6 +17,6 @@ ros2 launch astral_gripper_teleop gripper_teleop.launch.py
 # 已包含在 astral_teleop/full_teleop.launch.py（with_gripper:=true）
 ```
 
-调参：`config/gripper_teleop.yaml` 里 `open_dist_m` / `close_dist_m`（米）和 `open_rad` / `closed_rad`（夹爪电机）。真机方向 `open_rad=2.0`（全张开，CLI 递增 rad 实测）、`closed_rad=0.0`（合拢），故捏合→合、张开→开。
+调参：`config/gripper_teleop.yaml` 里 `open_dist_m` / `close_dist_m`（米）和 `open_rad` / `closed_rad`（夹爪电机）。真机方向 `open_rad=1.5`（全张开，回退硬止点 2.0 后的安全开度）、`closed_rad=0.0`（合拢），故捏合→合、张开→开。
 
 **自适应量程**（`auto_range:=true`，默认开）：跟踪你实际捏合距离的 min/max（带 `auto_range_forget_s` 遗忘，双向适应），把当前距离映射到这个真实范围，用满夹爪行程——避免 `open_dist_m/close_dist_m` 与你实际手部范围不符时夹爪只动一小段。`open_dist_m/close_dist_m` 退化为先验/回退；关掉则用固定 open/close 映射。日志会打印 `dist=Xmm range=[lo,hi]mm close=ratio`，可直接观察你的真实范围。
