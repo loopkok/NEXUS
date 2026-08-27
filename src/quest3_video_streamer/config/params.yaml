@@ -76,6 +76,28 @@ quest3_video_streamer:
         distance: 1.8
         size_multiplier: 0.38
 
+    # --- auto_scan 覆盖块：扫描 label = 设备节点名（video0/video2/...）---
+    # 这两块把扫描到的两路恢复成之前的"左侧上下"布局（与 wrist 块一致）。
+    # 若 Jetson 上扫描出的 label 不是 video0/video2（看 ~/gate_state 里的
+    # cameras 列表），把块名改成对应 label 即可。
+    video0:
+      preset: "720p30"
+      fov_h_deg: 60.0
+      force_mjpg: true
+      layout:
+        position: [-0.6, 0.32, 1.8]
+        distance: 1.8
+        size_multiplier: 0.38
+
+    video2:
+      preset: "720p30"
+      fov_h_deg: 60.0
+      force_mjpg: true
+      layout:
+        position: [-0.6, -0.42, 1.8]
+        distance: 1.8
+        size_multiplier: 0.38
+
     # --- 公共参数 ---
     # WebSocket 信令服务器（Quest 连这里）。
     signaling_host: "0.0.0.0"
