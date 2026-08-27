@@ -125,6 +125,10 @@ class PoseProcessor:
         self.last_raw_delta_rot = Rotation.identity()
 
     def update_vr_pose(self, pos: np.ndarray, rot: Rotation) -> None:
+        # A single non-finite pose would permanently poison the EMA state
+        # (a*NaN + (1-a)*x = NaN forever); drop it at the entry point.
+        if not np.isfinite(pos).all() or not np.isfinite(rot.as_quat()).all():
+            return
         if self.auto_calibrate and self.vr_init_pos is None:
             self.set_vr_zero_point(pos, rot)
         self.vr_current_pos = pos

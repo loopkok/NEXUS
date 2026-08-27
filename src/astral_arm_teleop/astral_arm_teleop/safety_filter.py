@@ -48,8 +48,20 @@ class SafetyFilter:
             "clamped": False,
             "velocity_limited": False,
             "collision": False,
+            "invalid": False,
         }
-        q = np.asarray(q_target, dtype=float).copy()
+        q = np.asarray(q_target, dtype=float)
+        # NaN/Inf barrier: np.clip and the velocity gate below both pass NaN
+        # through (NaN comparisons are False), and storing NaN into prev_q
+        # would additionally disable the velocity limit on the *next* valid
+        # tick (delta = valid - NaN = NaN → never "exceeded"). Hold the last
+        # valid command and leave prev_q untouched instead.
+        if not np.isfinite(q).all():
+            info["invalid"] = True
+            if self.prev_q is not None:
+                return self.prev_q.copy(), info
+            return np.zeros_like(q), info
+        q = q.copy()
         clipped = np.clip(q, self.joint_lower, self.joint_upper)
         if not np.allclose(clipped, q):
             info["clamped"] = True

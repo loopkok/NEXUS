@@ -25,7 +25,9 @@ astral_arm_teleop_right:
 
     max_joint_vel: 4.0  # rad/s  (0.08 rad/tick @ 50 Hz)
     workspace_radius: 0.0
-    data_timeout: 1.5
+    # VR 看门狗：超时即 disarm（需重新 /teleop/start 恢复）。保持 ≤ 驱动
+    # command_timeout_s(0.5)，让 teleop 先于驱动停手；<=0 关闭（不推荐）。
+    data_timeout: 0.5
     dry_run: false
     require_clench_to_start: false
     auto_arm_on_start: true

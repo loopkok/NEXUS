@@ -74,7 +74,7 @@
 | 话题 | 类型 | 触发 |
 |------|------|------|
 | `/teleop/disarm` | Bool(True) | 点"暂停" |
-| `/teleop/armed` | Bool(True) | 点"恢复" |
+| `/teleop/armed` | Bool(True) | 点"恢复"（仅"暂停"后可恢复；VR 看门狗 disarm 后会被臂节点拒绝，需点"开始遥操"重标定） |
 | `/teleop/start` | Bool(True) | 点"开始遥操"（一次性，记录 `vr_init` 并 arm） |
 
 - QoS：`/teleop/armed`、`/teleop/disarm` 为 **RELIABLE + TRANSIENT_LOCAL**（latched，晚启动的臂节点也能收到）

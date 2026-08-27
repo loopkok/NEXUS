@@ -108,7 +108,10 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("tcp_offset", [0.0] * 6)
         self.declare_parameter("max_joint_vel", 4.0)
         self.declare_parameter("workspace_radius", 0.0)
-        self.declare_parameter("data_timeout", 1.5)
+        # Watchdog: disarm when VR data is older than this. Keep <= the
+        # driver's command_timeout_s (0.5) so teleop stops before the driver
+        # starts holding; <= 0 disables the watchdog.
+        self.declare_parameter("data_timeout", 0.5)
         self.declare_parameter("dry_run", False)
         self.declare_parameter("require_clench_to_start", False)
         self.declare_parameter("auto_arm_on_start", True)
@@ -259,6 +262,10 @@ class AstralTeleopArmNode(Node):
             self._armed = False
         else:
             self._armed = (not require) or auto
+        # Why teleop was last disarmed: None = never/freshly started,
+        # "operator" = web/CLI pause (resume via /teleop/armed allowed),
+        # "fault" = VR watchdog (must re-start to re-capture vr_init).
+        self._disarm_reason: Optional[str] = None
         self.create_subscription(Bool, "/teleop/armed", self._on_armed, 10)
         self.create_subscription(Bool, "/teleop/disarm", self._on_disarm, 10)
         self.create_subscription(Bool, "/teleop/start", self._on_start, 10)
@@ -423,11 +430,34 @@ class AstralTeleopArmNode(Node):
                 out[i] = -out[i]
         return out
 
-    def _on_armed(self, _msg: Bool) -> None:
+    def _on_armed(self, msg: Bool) -> None:
+        # Only Bool(true) arms; a stray/default Bool(false) must not arm.
+        if not msg.data:
+            return
+        if not self.pose.is_calibrated:
+            # Also covers the web monitor's latched /teleop/armed residue
+            # reaching a freshly started (uncalibrated) node.
+            self.get_logger().warn(
+                f"[{self.side}] armed ignored: not calibrated — "
+                "send /teleop/start to capture vr_init first"
+            )
+            return
+        if self._disarm_reason == "fault":
+            self.get_logger().warn(
+                f"[{self.side}] armed ignored: disarmed by VR watchdog — "
+                "re-send /teleop/start to re-calibrate and resume"
+            )
+            return
         self._armed = True
+        self._disarm_reason = None
+        self.get_logger().info(f"[{self.side}] armed via /teleop/armed")
 
     def _on_disarm(self, _msg: Bool) -> None:
         self._armed = False
+        # A fault reason sticks until a proper /teleop/start; an operator
+        # pause must not downgrade it (pause→resume would bypass re-centering).
+        if self._disarm_reason != "fault":
+            self._disarm_reason = "operator"
 
     def _on_start(self, msg: Bool) -> None:
         if msg.data:
@@ -458,6 +488,7 @@ class AstralTeleopArmNode(Node):
             self.get_logger().warn(f"[{self.side}] start: {msg}")
             return False, msg
         self._armed = True
+        self._disarm_reason = None
         self.get_logger().warn(
             f"[{self.side}] START: vr_init captured from current pose, teleop armed"
         )
@@ -480,6 +511,11 @@ class AstralTeleopArmNode(Node):
             msg.pose.orientation.z,
             msg.pose.orientation.w,
         ]
+        # Reject non-finite input first: NaN passes the norm check below
+        # (NaN > 0.1 is False) and would permanently poison the EMA in
+        # PoseProcessor and the SafetyFilter state downstream.
+        if not np.isfinite(pos).all() or not np.isfinite(q).all():
+            return
         if abs(np.linalg.norm(q) - 1.0) > 0.1:
             return
         self.pose.update_vr_pose(pos, Rotation.from_quat(q))
@@ -500,7 +536,20 @@ class AstralTeleopArmNode(Node):
         if not self._armed or not self.pose.is_calibrated:
             self._maybe_log_latency()
             return
-        if self._last_vr_t > 0 and (now - self._last_vr_t) > self.data_timeout:
+        # VR stream stale: disarm instead of silently holding the last pose.
+        # Resuming requires a fresh /teleop/start, which also re-captures
+        # vr_init and resets the EMA (avoids a stale-state jump on reconnect).
+        # data_timeout <= 0 disables the watchdog. Logs once per event: after
+        # disarm the loop exits at the not-armed check above.
+        if self.data_timeout > 0 and (
+            self._last_vr_t <= 0.0 or (now - self._last_vr_t) > self.data_timeout
+        ):
+            self._armed = False
+            self._disarm_reason = "fault"
+            self.get_logger().error(
+                f"[{self.side}] VR data timeout (>{self.data_timeout:.2f}s) — "
+                "disarmed; re-send /teleop/start to resume"
+            )
             self._maybe_log_latency()
             return
 
