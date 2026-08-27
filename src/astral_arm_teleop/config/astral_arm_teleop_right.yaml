@@ -17,9 +17,9 @@ astral_arm_teleop_right:
     vr_to_arm_rot: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
-    pos_smoothing: 0.8   # 0=无滤波 1=几乎不跟；可热改（tune 滑动条）
-    rot_smoothing: 0.8
-    motion_scale: 0.65
+    pos_smoothing: 0.5 #0.8   # 0=无滤波 1=几乎不跟；可热改（tune 滑动条）
+    rot_smoothing: 0.6 #0.8
+    motion_scale: 0.85 #0.65
     flip_pitch: false
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 

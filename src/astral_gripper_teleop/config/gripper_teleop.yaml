@@ -13,7 +13,7 @@ pinch_gripper_node:
     hand_side: "left"
     open_dist_m: 0.08
     close_dist_m: 0.015
-    ema_alpha: 0.4
+    ema_alpha: 0.2
     publish_rate: 50.0
     input_timeout_s: 0.4
     on_timeout: "hold"
