@@ -108,10 +108,12 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("tcp_offset", [0.0] * 6)
         self.declare_parameter("max_joint_vel", 4.0)
         self.declare_parameter("workspace_radius", 0.0)
-        # Watchdog: disarm when VR data is older than this. Keep <= the
-        # driver's command_timeout_s (0.5) so teleop stops before the driver
-        # starts holding; <= 0 disables the watchdog.
-        self.declare_parameter("data_timeout", 0.5)
+        # Watchdog: disarm when VR data is older than this. 1.0s tolerates
+        # brief VR link jitter; while teleop keeps publishing the frozen
+        # target the driver keeps tracking it, and only after teleop stops
+        # does the driver's own command_timeout_s (0.5) engage the hold.
+        # <= 0 disables the watchdog (not recommended).
+        self.declare_parameter("data_timeout", 1.0)
         self.declare_parameter("dry_run", False)
         self.declare_parameter("require_clench_to_start", False)
         self.declare_parameter("auto_arm_on_start", True)

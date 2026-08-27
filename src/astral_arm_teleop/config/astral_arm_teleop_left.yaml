@@ -25,9 +25,10 @@ astral_arm_teleop_left:
 
     max_joint_vel: 4.0  # rad/s  (0.08 rad/tick @ 50 Hz)
     workspace_radius: 0.0
-    # VR 看门狗：超时即 disarm（需重新 /teleop/start 恢复）。保持 ≤ 驱动
-    # command_timeout_s(0.5)，让 teleop 先于驱动停手；<=0 关闭（不推荐）。
-    data_timeout: 0.5
+    # VR 看门狗：超时即 disarm（需重新 /teleop/start 恢复）。1.0s 容忍 VR
+    # 链路短暂抖动；超时前 teleop 持续发冻结目标（driver 跟随），teleop 停发
+    # 后 driver 自身的 command_timeout_s(0.5) 才接管保持。<=0 关闭（不推荐）。
+    data_timeout: 1.0
     dry_run: false
     require_clench_to_start: false
     auto_arm_on_start: true
