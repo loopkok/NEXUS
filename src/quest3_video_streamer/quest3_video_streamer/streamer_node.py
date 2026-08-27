@@ -504,6 +504,7 @@ async def _async_main(
 
     service = Quest3VideoService(sources=sources, layouts=layouts, config=config, gate=gate)
     await service.start()
+    service.hook_gate_visibility()
     _LOG.info(
         f"video service started host={config.signaling_host} port={config.signaling_port} "
         f"sources={len(sources)} preset={config.preset}"

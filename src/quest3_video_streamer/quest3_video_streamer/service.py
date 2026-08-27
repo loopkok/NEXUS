@@ -237,6 +237,7 @@ class Quest3VideoService:
         )
         self._log(f"answer sent session={session_id} sdp_len={len(answer_sdp)}")
         await self._send_video_state(connection, session_id=session_id, state="playing")
+        await self.send_track_visibility()
         self._start_stats_loop_if_needed()
 
     async def _handle_remote_ice_candidate(self, connection: SignalingConnection, message: SignalingMessage) -> None:
@@ -339,6 +340,55 @@ class Quest3VideoService:
             ),
         )
         self._log(f"error session={session_id} code={code} message={message}")
+
+    def hook_gate_visibility(self) -> None:
+        """Register a thread-safe gate-change hook that re-sends visibility.
+
+        Called by the node from the asyncio thread once the service exists;
+        gate changes arrive from the rclpy spin thread, so schedule onto the
+        running loop.
+        """
+        if self._gate is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        def _schedule() -> None:
+            loop.call_soon_threadsafe(
+                lambda: asyncio.ensure_future(self.send_track_visibility())
+            )
+
+        self._gate.on_change = _schedule
+
+    async def send_track_visibility(self) -> None:
+        """Tell the Quest app which track labels are currently un-muted.
+
+        The app hides panels whose label is absent (muted panels otherwise
+        render as black panels). Backward compatible: older app builds log
+        and ignore the unknown message type.
+        """
+        if (
+            self._gate is None
+            or self._active_connection is None
+            or self._active_session_id is None
+        ):
+            return
+        try:
+            snap = self._gate.snapshot()
+            enabled = list(snap["active"]) if snap["push_enabled"] else []
+            await self._signaling.send(
+                self._active_connection,
+                make_signaling_message(
+                    type="track_visibility",
+                    session_id=self._active_session_id,
+                    payload={"enabled": enabled},
+                ),
+            )
+            self._log(f"track_visibility sent enabled={enabled}")
+        except Exception as exc:
+            self._log(f"track_visibility send failed: {exc}")
 
     async def _send_video_state(self, connection: SignalingConnection, *, session_id: str, state: str, reason: str | None = None) -> None:
         payload: dict[str, Any] = {"state": state}

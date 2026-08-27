@@ -6,6 +6,14 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-08-27
 
+**静音轨 Quest 面板隐藏（track_visibility）**——`quest3_video_streamer` / `astral-tracking`。
+
+- 需求：web 取消勾选后 Quest 面板显示黑色，希望"什么都不显示"。视频帧本身无 alpha，改为 PC 经信令通道发 `track_visibility {enabled: [...]}` 消息、Quest 端按 label `SetVisible(false)` 隐藏整个面板。
+- `quest3_video_streamer`：`StreamGate` 新增 `on_change` 钩子；service 新增 `send_track_visibility()`——门控每次变化即推（经 `loop.call_soon_threadsafe` 跨线程调度），进入 playing 时也同步一次初值；总开关关闭 = enabled 空表（全部隐藏）。黑帧仍照常发（2fps 保活，恢复无重连）。
+- `astral-tracking`（Quest app）：`VideoStreamManager.HandleTrackVisibility` 按 label 隐藏/显示面板。旧版 app 忽略该未知消息（行为不变=黑面板）；**新行为需在 Unity 重新构建 APK 并安装到头显后生效**。
+
+## 2026-08-27（前条）
+
 **安全修复：`/teleop/armed` 闸门收紧（审查 C2）**——`astral_arm_teleop` / `astral_web_monitor`。
 
 - `_on_armed` 不再无视消息内容任意武装：仅 `Bool(true)` 生效；未标定（无 vr_init）拒绝并告警——顺带堵住 web「恢复」latched 残留让新启动节点自动武装的旁路。

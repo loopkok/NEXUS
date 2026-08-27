@@ -23,7 +23,12 @@ from typing import Any
 
 
 class StreamGate:
-    """Thread-safe runtime gate: master push switch + per-label active set."""
+    """Thread-safe runtime gate: master push switch + per-label active set.
+
+    ``on_change``: optional zero-arg callback invoked (outside the lock) after
+    any state change. Used to push track visibility to the Quest app. Set by
+    the service once the asyncio loop exists; may be None at startup.
+    """
 
     def __init__(
         self,
@@ -37,6 +42,15 @@ class StreamGate:
         self._push = bool(push_enabled)
         # None = all configured cameras; otherwise only these labels stream.
         self._active: set[str] | None = set(active) if active else None
+        self.on_change: Any = None
+
+    def _notify(self) -> None:
+        cb = self.on_change
+        if cb is not None:
+            try:
+                cb()
+            except Exception:
+                pass
 
     def is_enabled(self, label: str) -> bool:
         with self._lock:
@@ -45,6 +59,7 @@ class StreamGate:
     def set_push(self, enabled: bool) -> None:
         with self._lock:
             self._push = bool(enabled)
+        self._notify()
 
     def set_active(self, labels: list[str] | None) -> list[str]:
         """Restrict streaming to ``labels`` (unknown labels ignored).
@@ -59,7 +74,9 @@ class StreamGate:
                 wanted = {str(x).strip() for x in labels if str(x).strip()}
                 self._active = {x for x in wanted if x in self._all}
             # Compute inline: active_labels() would re-acquire the (non-reentrant) lock.
-            return [x for x in self._all if self._active is None or x in self._active]
+            effective = [x for x in self._all if self._active is None or x in self._active]
+        self._notify()
+        return effective
 
     def active_labels(self) -> list[str]:
         with self._lock:

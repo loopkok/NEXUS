@@ -129,6 +129,10 @@ Quest 面板变黑），重新打开即时恢复，**无需断线重连**。
 | `~/active_cameras` | `std_msgs/String` 话题（latched） | 逗号分隔的 label 子集；空 = 全部；未知 label 被忽略并告警 |
 | `~/gate_state` | `std_msgs/String` 话题（latched JSON） | 当前状态 `{push_enabled, configured, active, cameras:[{label,device,source,preset,sysfs_name}]}`，每次变化重发 |
 
+被静音的轨仍发 2fps 黑帧保活（带宽≈0，恢复无重连），同时 streamer 会经信令
+通道发 `track_visibility` 消息，**Quest 端把对应面板整个隐藏**（而不是显示黑面板，
+需配套版 astral-tracking app；旧版 app 忽略该消息、仍显示黑面板）。
+
 CLI 示例：
 
 ```bash
