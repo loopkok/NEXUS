@@ -3,8 +3,9 @@
 The configured camera set (and therefore the negotiated WebRTC track set) is
 fixed at startup — changing it would require SDP renegotiation.  The gate
 instead decides, per track and at frame granularity, whether a track sends
-camera frames or 2 fps black frames ("muted": near-zero bandwidth, the Quest
-panel goes black, and un-muting resumes instantly with no reconnect).
+camera frames or 2 fps black frames ("muted": near-zero bandwidth; the Quest
+app shrinks the panel to an edge chip — or hides it — on `track_visibility`,
+and un-muting resumes instantly with no reconnect).
 
 Control surface (handled by the ROS node, see streamer_node.py):
   * ``push_enabled`` master switch — false mutes every track.
