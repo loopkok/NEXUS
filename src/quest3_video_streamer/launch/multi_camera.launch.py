@@ -71,10 +71,12 @@ def generate_launch_description():
         overrides["enable_mocap_tcp"] = em.lower() == "true"
         overrides["verbose"] = vb.lower() == "true"
 
-        # cameras CLI override (comma-separated labels; empty -> use yaml list).
+        # cameras CLI override (comma-separated labels; empty -> yaml/auto_scan).
+        # An explicit list implies fixed-config mode (auto_scan off).
         cams = cameras_arg.perform(context).strip()
         if cams:
             overrides["cameras"] = [c.strip() for c in cams.split(",") if c.strip()]
+            overrides["auto_scan"] = False
 
         # d435i_source CLI override (empty -> use yaml value).
         cli_src = d435i_source_arg.perform(context)

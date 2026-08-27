@@ -104,7 +104,7 @@
 | POST | `/api/v1/robot/position` | 调 driver `~/position`（motion_mode=1，位置保持） |
 | POST | `/api/v1/robot/damping` | 调 driver `~/damping`（motion_mode=0，阻尼释放，可手动拖拽） |
 | POST | `/api/v1/robot/estop` | **真急停**：调 driver `~/estop` → SDK `e_stop()`/`disable()` 断电，臂失去保持力 |
-| GET | `/api/v1/video/status` | 视频回传状态：配置的相机列表（label/device/在线/sysfs 名）+ streamer 实时门控状态 |
+| GET | `/api/v1/video/status` | 视频回传状态：在线时 = streamer 自动扫描的相机列表（label/device/实时在线/sysfs 名）+ 门控状态；离线时 = monitor 自行扫描主机设备（供预选） |
 | POST | `/api/v1/video/push` | `{enabled: bool}` 调 streamer `~/set_push_enabled` 总开关（关 = 全轨 2fps 黑帧静音） |
 | POST | `/api/v1/video/cameras` | `{cameras: [...]}` 发 latched `~/active_cameras`（label 子集，空数组 = 全部配置相机） |
 
@@ -175,7 +175,7 @@ stopped ──start──► starting ──2s暖机──► running
 | 健康 | 总体徽标 + 每实体卡片（状态流 Hz / 指令流 Hz / 期望 / 数据龄期 / ok·slow·stale） |
 | 系统 | 预设管理（启动/停止/重启）+ **机器人模式**（一键就绪/归零/位置保持/阻尼释放/急停断电）+ **视频回传**（总开关/路数下拉/逐路勾选/设备在线点）+ Launch 日志控制台 |
 
-- **视频回传卡片**：调 `quest3_video_streamer` 的运行时门控（`~/set_push_enabled` + latched `~/active_cameras`）。总开关关掉后所有轨发 2fps 黑帧（几乎不占带宽，Quest 面板变黑）；逐路勾选决定哪些相机推流；「路数」下拉是快捷选择（选 n = 勾前 n 路，逐路勾选后显示"自定义"）。每路显示 `/dev/videoN` 与 sysfs 设备名，未接的相机置灰。streamer 未运行（遥操停止或 `with_video:=false`）时卡片显示"离线"，控件禁用——与机器人模式按钮同理，**先启动栈再操作**
+- **视频回传卡片**：调 `quest3_video_streamer` 的运行时门控（`~/set_push_enabled` + latched `~/active_cameras`）。总开关关掉后所有轨发 2fps 黑帧（几乎不占带宽，Quest 面板变黑）；逐路勾选决定哪些相机推流；「路数」下拉是快捷选择（选 n = 勾前 n 路，逐路勾选后显示"自定义"）。**相机列表不写死**：streamer 默认 `auto_scan` 自动扫描主机采集设备（label = `videoN`），卡片在线时显示其扫描结果（含 `/dev/videoN` 与 sysfs 设备名，未接置灰）；**离线时卡片自行扫描主机设备，可预选**——latched 话题会在 streamer 启动后生效（总开关服务需在线）。在线判定看 `~/gate_state` 是否还有活发布者，streamer 死掉会正确显示"离线"。启动后才插入的相机需重启栈进入 track 集合
 
 - **急停（真断电）**：红色常驻按钮，确认后调 driver `~/estop` → SDK `e_stop()`/`disable()`，臂失去保持力；恢复需重新「一键就绪」。区别于「暂停」（软 disarm，臂仍上电保持位姿）
 - **阻尼释放**：调 driver `~/damping` → `motion_mode=0`，电机仍上电、关节可手动拖拽。典型流程：遥操中 → 停止（臂保持末位姿）→ 阻尼释放（手动拖回 home）→ 位置保持/归零

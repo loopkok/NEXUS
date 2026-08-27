@@ -7,18 +7,21 @@
 # 所有相机可调项都在这里。launch 文件不再写死 preset/fov/layout/device，
 # 只负责加载本 yaml 并按需覆盖个别参数。
 #
-# cameras: 要推流的相机名列表（顺序 = WebRTC track 顺序）。想只推 D435i 就改成
-#          ["d435i"]；想加相机就在下面新增一个同名块并加进列表。
-#          默认只推两路 USB 腕部相机（当前硬件没接 RealSense）；接回 D435i 后
-#          把 "d435i" 加回列表即可。
-#          注意：列表里的相机在 Quest 连上（offer）时才会真正打开；若某台设备
-#          没插，整个 sender 启动会失败，请先从列表移除。
-#          运行时想临时关掉某一路不必改这里——用门控接口：
-#            ros2 service call /quest3_video_streamer/set_push_enabled std_srvs/srv/SetBool "{data: false}"
-#            ros2 topic pub --once --qos-durability transient_local \
-#              /quest3_video_streamer/active_cameras std_msgs/msg/String "{data: 'wrist_left'}"
+# auto_scan: true（默认）= 启动时自动扫描主机所有可采集的 /dev/video* 设备
+#            （按物理设备去重，label = video0/video2/...），不写死设备节点。
+#            扫描到的相机用下面的 scan_defaults 参数；想覆盖某一路的字段，
+#            新增一个以 label 命名的块（如 video0: {preset: "1080p30"}）。
+#            false = 用下面 cameras 列表 + 每相机块（固定配置，老方式）。
+# 运行时想临时关掉某一路不必改这里——用门控接口（web 或 CLI）：
+#   ros2 service call /quest3_video_streamer/set_push_enabled std_srvs/srv/SetBool "{data: false}"
+#   ros2 topic pub --once --qos-durability transient_local \
+#     /quest3_video_streamer/active_cameras std_msgs/msg/String "{data: 'video0'}"
 quest3_video_streamer:
   ros__parameters:
+    auto_scan: true
+
+    # cameras: auto_scan=false 时的固定相机名列表（顺序 = WebRTC track 顺序）。
+    #          也是 auto_scan 一台设备都没扫到时的回退。
     cameras: ["wrist_left", "wrist_right"]
 
     # 每个相机块的字段：
@@ -87,9 +90,9 @@ quest3_video_streamer:
 
     # --- 运行时推流门控（gate）---
     # push_enabled: 总开关（false = 所有轨发 2fps 黑帧，几乎不占带宽）。
-    # active_cameras: 初始生效的子集（逗号分隔 label，空 = cameras 全部）。
+    # active_cameras: 初始生效的子集（逗号分隔 label，空 = 全部）。
     # 两者运行时可改：~/set_push_enabled 服务、~/active_cameras latched 话题，
-    # 当前状态见 ~/gate_state（latched JSON）。
+    # 当前状态见 ~/gate_state（latched JSON，含每路 label/device/preset）。
     push_enabled: true
     active_cameras: ""
 

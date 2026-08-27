@@ -86,12 +86,15 @@ def _device_to_index(device: Any) -> int:
 
 def _build_sources(
     node: Node, params: dict[str, Any]
-) -> tuple[list[VideoSourceAdapter], list[dict[str, Any]]]:
-    """Build the list of video sources + parallel display layouts.
+) -> tuple[list[VideoSourceAdapter], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build the list of video sources + parallel display layouts + cam info.
 
     Priority:
       1. ``sources_json`` (advanced override) — one source per JSON entry.
-      2. ``cameras`` list from yaml — build one source per named camera block.
+      2. ``auto_scan: true`` — enumerate host capture devices (see scan.py);
+         a yaml block matching the scanned label overrides individual fields.
+         Falls back to the ``cameras`` list when no device is found.
+      3. ``cameras`` list from yaml — build one source per named camera block.
     """
     sources_json = str(params.get("sources_json", "") or "").strip()
     if sources_json:
@@ -103,25 +106,102 @@ def _build_sources(
             raise RuntimeError("sources_json must be a non-empty JSON array.")
         sources: list[VideoSourceAdapter] = []
         layouts: list[dict[str, Any]] = []
+        infos: list[dict[str, Any]] = []
         for spec in specs:
             sources.append(_build_one_source(node, spec))
             layouts.append(dict(spec.get("layout", {})))
+            infos.append({
+                "label": str(spec.get("label", "camera")),
+                "device": str(spec.get("device", spec.get("webcam_index", ""))),
+                "source": str(spec.get("type", "ros")),
+                "preset": str(spec.get("preset", "")),
+                "sysfs_name": "",
+            })
         _LOG.info(f"built {len(sources)} sources from sources_json")
-        return sources, layouts
+        return sources, layouts, infos
+
+    if bool(params.get("auto_scan", False)):
+        from quest3_video_streamer.scan import enumerate_capture_devices
+
+        found = enumerate_capture_devices()
+        if found:
+            n = len(found)
+            sources = []
+            layouts = []
+            infos = []
+            for i, dev in enumerate(found):
+                spec, layout = _scan_spec(node, dev, i, n)
+                sources.append(_build_one_source(node, spec))
+                layouts.append(layout)
+                infos.append({
+                    "label": dev["label"],
+                    "device": dev["device"],
+                    "source": "webcam",
+                    "preset": spec["preset"],
+                    "sysfs_name": dev.get("sysfs_name", ""),
+                })
+            _LOG.info(
+                f"auto_scan built {len(sources)} sources: "
+                f"{[(d['label'], d['device'], d.get('sysfs_name', '')) for d in found]}"
+            )
+            return sources, layouts, infos
+        _LOG.warning("auto_scan found no capture device; falling back to cameras list")
 
     cameras = params.get("cameras") or []
     if not cameras:
         raise RuntimeError(
-            "No cameras configured. Set 'cameras' in params.yaml or pass sources_json."
+            "No cameras configured. Enable auto_scan, set 'cameras' in params.yaml, "
+            "or pass sources_json."
         )
     sources = []
     layouts = []
+    infos = []
     for name in cameras:
         spec = _spec_from_camera_block(node, str(name))
         sources.append(_build_one_source(node, spec))
         layouts.append(spec["layout"])
+        infos.append({
+            "label": spec["label"],
+            "device": str(_get_param(node, f"{name}.device", "")),
+            "source": str(_get_param(node, f"{name}.source", "ros")),
+            "preset": spec["preset"],
+            "sysfs_name": "",
+        })
     _LOG.info(f"built {len(sources)} sources from cameras={list(cameras)}")
-    return sources, layouts
+    return sources, layouts, infos
+
+
+def _scan_spec(
+    node: Node, dev: dict[str, Any], index: int, count: int
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Spec for an auto-scanned device; a yaml block named after the label
+    (e.g. ``video0.preset``) overrides individual fields."""
+    label = dev["label"]
+    preset = str(_get_param(node, f"{label}.preset", "720p30"))
+    fov_h = float(_get_param(node, f"{label}.fov_h_deg", 60.0))
+    force_mjpg = bool(_get_param(node, f"{label}.force_mjpg", True))
+    pos = _get_param(node, f"{label}.layout.position", None)
+    distance = float(_get_param(node, f"{label}.layout.distance", 1.8))
+    size_mult = float(_get_param(node, f"{label}.layout.size_multiplier", 0.38))
+    if pos is None:
+        # Auto grid: spread panels in a single row in front of the eyes.
+        x = (index - (count - 1) / 2.0) * 0.75
+        pos = [x, 0.0, 1.8]
+    layout = {
+        "position": [float(p) for p in pos],
+        "distance": distance,
+        "size_multiplier": size_mult,
+    }
+    spec: dict[str, Any] = {
+        "type": "webcam",
+        "webcam_index": _device_to_index(dev["device"]),
+        "preset": preset,
+        "fov_h_deg": fov_h,
+        "label": label,
+        "force_mjpg": force_mjpg,
+        "layout": layout,
+    }
+    return spec, layout
 
 
 def _spec_from_camera_block(node: Node, name: str) -> dict[str, Any]:
@@ -218,6 +298,8 @@ def _declare_params(node: Node) -> None:
     # Runtime push gate (see gate.py): master switch + initial active subset.
     _safe_declare(node, "push_enabled", True)
     _safe_declare(node, "active_cameras", "")  # comma labels; "" = all
+    # Auto-scan host capture devices instead of the fixed `cameras` list.
+    _safe_declare(node, "auto_scan", False)
     # Legacy single-source params (kept for backward compatibility).
     _safe_declare(node, "source_type", "ros")
     _safe_declare(node, "image_topic", "/camera/camera/color/image_raw")
@@ -245,7 +327,7 @@ def main() -> None:
     _declare_params(node)
 
     params = {name: _get_param(node, name, None) for name in [
-        "sources_json", "cameras",
+        "sources_json", "cameras", "auto_scan",
         "signaling_host", "signaling_port", "mocap_tcp_host",
         "mocap_tcp_port", "enable_mocap_tcp", "verbose",
         "preset", "push_enabled", "active_cameras",
@@ -260,8 +342,8 @@ def main() -> None:
     spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
     spin_thread.start()
 
-    sources, layouts = _build_sources(node, params)
-    gate = _setup_gate(node, sources, params)
+    sources, layouts, cameras_info = _build_sources(node, params)
+    gate = _setup_gate(node, sources, params, cameras_info)
 
     config = VideoServiceConfig(
         signaling_host=str(params["signaling_host"]),
@@ -288,15 +370,19 @@ _LATCHED_QOS = QoSProfile(
 
 
 def _setup_gate(
-    node: Node, sources: list[VideoSourceAdapter], params: dict[str, Any]
+    node: Node,
+    sources: list[VideoSourceAdapter],
+    params: dict[str, Any],
+    cameras_info: list[dict[str, Any]] | None = None,
 ) -> StreamGate:
     """Create the runtime gate + its ROS control surface.
 
       * service ``~/set_push_enabled`` (std_srvs/SetBool): master switch.
       * subscription ``~/active_cameras`` (std_msgs/String, latched):
         comma-separated camera labels; empty = all configured cameras.
-      * publisher ``~/gate_state`` (std_msgs/String, latched): JSON snapshot,
-        republished on every change so the web monitor can show live state.
+      * publisher ``~/gate_state`` (std_msgs/String, latched): JSON snapshot
+        (gate state + per-camera device info), republished on every change so
+        the web monitor can show live state.
     """
     labels = [str(src.get_format().label) for src in sources]
     initial_active = [
@@ -311,8 +397,10 @@ def _setup_gate(
     state_pub = node.create_publisher(String, "~/gate_state", _LATCHED_QOS)
 
     def _publish_state() -> None:
+        snap = gate.snapshot()
+        snap["cameras"] = cameras_info or []
         msg = String()
-        msg.data = gate.snapshot_json()
+        msg.data = json.dumps(snap, ensure_ascii=False)
         state_pub.publish(msg)
 
     def _on_set_push(req: SetBool.Request, resp: SetBool.Response) -> SetBool.Response:
@@ -326,6 +414,12 @@ def _setup_gate(
     def _on_active_cameras(msg: String) -> None:
         labels_in = [x.strip() for x in msg.data.split(",") if x.strip()]
         effective = gate.set_active(labels_in)
+        unknown = [x for x in labels_in if x not in labels]
+        if unknown:
+            _LOG.warning(
+                f"[gate] active_cameras: unknown labels {unknown} ignored "
+                f"(known: {labels}) — stale latched selection?"
+            )
         _LOG.info(
             f"[gate] active_cameras <- {labels_in or 'ALL'} effective={effective}"
         )

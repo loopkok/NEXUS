@@ -146,8 +146,8 @@ def _presets_path() -> str:
 def video_params_path() -> str | None:
     """Resolve quest3_video_streamer/config/params.yaml (share, else source tree).
 
-    Used to show the *configured* camera list in the web UI. Returns None when
-    the package is not installed (e.g. monitor running outside the workspace).
+    Deprecated for the video card (the streamer's gate_state is now the
+    authoritative camera list); kept for external tooling.
     """
     try:
         from ament_index_python.packages import get_package_share_directory

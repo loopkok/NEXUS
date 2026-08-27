@@ -105,7 +105,7 @@ export function VideoCard({ state }: Props) {
           路数
           <select
             value={countValue}
-            disabled={!online}
+            disabled={cams.length === 0}
             onChange={(e) => onCountSelect(e.target.value)}
             style={selectStyle}
           >
@@ -121,7 +121,7 @@ export function VideoCard({ state }: Props) {
             <input
               type="checkbox"
               checked={checked.includes(c.label)}
-              disabled={!online || !c.exists}
+              disabled={!c.exists}
               onChange={(e) => onToggle(c.label, e.target.checked)}
             />
             {c.label}
@@ -130,14 +130,16 @@ export function VideoCard({ state }: Props) {
             </span>
           </label>
         ))}
-        {cams.length === 0 && <span style={hintStyle}>未找到 quest3_video_streamer 配置（params.yaml）</span>}
+        {cams.length === 0 && <span style={hintStyle}>主机未扫描到可采集的视频设备（/dev/video*）</span>}
       </div>
 
       <div style={hintStyle}>
-        非侵入：仅调 streamer 的 <code>~/set_push_enabled</code> 与 latched <code>~/active_cameras</code>。
-        取消勾选的轨停止发相机帧（2fps 黑帧静音，几乎不占带宽，Quest 面板变黑），重新勾选即时恢复，无需重连。
+        设备列表来自自动扫描（按物理设备去重的 /dev/video* 采集节点），不写死配置。
+        勾选通过 latched <code>~/active_cameras</code> 下发：<b>离线时也可预选</b>，streamer 启动后即生效；
+        在线时取消勾选 = 该轨改发 2fps 黑帧（几乎不占带宽，Quest 面板变黑），重新勾选即时恢复，无需重连。
+        总开关（<code>~/set_push_enabled</code> 服务）需 streamer 在线。
         推流前提：<code>adb reverse tcp:8765 tcp:8765</code>（full_teleop 已自动执行）+ Quest 端开启 video feed。
-        离线 = streamer 未运行（遥操未启动或 <code>with_video:=false</code>）。
+        启动后才插入的相机需重启栈才会进入 track 集合。
       </div>
     </div>
   )

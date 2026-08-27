@@ -303,9 +303,11 @@ async def robot_position() -> ApiEnvelope:
 
 
 # --- Video return gate (quest3_video_streamer) ------------------------------
-# Non-intrusive: the streamer owns the cameras; the monitor only reads its
-# config/params.yaml (to list configured cameras), calls its SetBool master
-# switch, and publishes the latched active-cameras subset.
+# Non-intrusive: the streamer owns the cameras; the monitor only mirrors its
+# latched gate_state (which carries the auto-scanned camera list), calls its
+# SetBool master switch, and publishes the latched active-cameras subset.
+# When the streamer is offline the monitor scans the host itself so the user
+# can pre-select cameras (latched topic is delivered once the streamer boots).
 
 def _sysfs_video_name(device: str) -> str:
     """Human-readable camera name for /dev/videoN from sysfs ('' if unknown)."""
@@ -318,34 +320,39 @@ def _sysfs_video_name(device: str) -> str:
         return ""
 
 
-def _video_configured() -> list[dict[str, Any]]:
-    """Configured camera blocks from quest3_video_streamer's params.yaml."""
-    path = config.video_params_path()
-    if not path or not os.path.isfile(path):
-        return []
+def _host_scan() -> list[dict[str, Any]]:
+    """Auto-scan host capture devices (same heuristic as the streamer)."""
     try:
-        import yaml
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+        from quest3_video_streamer.scan import enumerate_capture_devices
+        found = enumerate_capture_devices()
+        return [
+            {
+                "label": d["label"],
+                "device": d["device"],
+                "source": "webcam",
+                "preset": "",
+                "exists": True,
+                "sysfs_name": d.get("sysfs_name", ""),
+            }
+            for d in found
+        ]
     except Exception:
         return []
-    params = data.get("quest3_video_streamer", {}).get("ros__parameters", data)
-    names = params.get("cameras") or []
-    out: list[dict[str, Any]] = []
-    for name in names:
-        block = params.get(str(name), {})
-        if not isinstance(block, dict):
-            block = {}
-        device = str(block.get("device", ""))
-        source = str(block.get("source", ""))
-        exists = os.path.exists(device) if device.startswith("/dev/") else False
+
+
+def _with_live_info(cameras: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Refresh exists/sysfs_name per poll (devices may be (un)plugged live)."""
+    out = []
+    for cam in cameras:
+        device = str(cam.get("device", ""))
+        exists = bool(device.startswith("/dev/")) and os.path.exists(device)
         out.append({
-            "label": str(block.get("label", name)),
+            "label": str(cam.get("label", "")),
             "device": device,
-            "source": source,
-            "preset": str(block.get("preset", "")),
+            "source": str(cam.get("source", "")),
+            "preset": str(cam.get("preset", "")),
             "exists": exists,
-            "sysfs_name": _sysfs_video_name(device) if exists else "",
+            "sysfs_name": _sysfs_video_name(device) if exists else str(cam.get("sysfs_name", "")),
         })
     return out
 
@@ -354,12 +361,27 @@ def _video_configured() -> list[dict[str, Any]]:
 async def video_status() -> ApiEnvelope:
     node = get_node()
     gate = None
+    alive = False
     if node is not None:
         gate = node.snapshot().get("video_gate")
+        try:
+            # gate_state is latched: a stale copy survives the streamer's death,
+            # so also require a live publisher before calling it "online".
+            # (count_publishers needs the fully-resolved name, not "~".)
+            alive = node.count_publishers(
+                f"{config.VIDEO_NODE}/gate_state"
+            ) > 0
+        except Exception:
+            alive = gate is not None
+    online = gate is not None and alive
+    if online:
+        cameras = _with_live_info(list(gate.get("cameras") or []))
+    else:
+        cameras = _host_scan()
     return ApiEnvelope(ok=True, data={
-        "configured": _video_configured(),
-        "gate": gate,  # {push_enabled, configured, active} or None when streamer offline
-        "online": gate is not None,
+        "configured": cameras,
+        "gate": gate,  # {push_enabled, configured, active, cameras} or None when offline
+        "online": online,
     })
 
 

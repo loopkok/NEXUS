@@ -76,9 +76,13 @@
 ```yaml
 quest3_video_streamer:
   ros__parameters:
-    cameras: ["wrist_left", "wrist_right"]   # 推哪些相机 + track 顺序
-                                             # 默认两路 USB（当前硬件无 RealSense）；
-                                             # 接回 D435i 后把 "d435i" 加回列表
+    auto_scan: true   # 默认：自动扫描主机可采集的 /dev/video*（按物理设备去重，
+                      # label = video0/video2/...，面板一行网格自动排布）。
+                      # 覆盖某一路：加同名块，如 video0: {preset: "1080p30"}
+                      # false = 用下面 cameras 列表 + 每相机块（固定配置）
+
+    cameras: ["wrist_left", "wrist_right"]   # auto_scan=false 的固定列表；
+                                             # 也是 auto_scan 一台都没扫到时的回退
 
     d435i:
       source: "v4l2"            # v4l2=cv2直连(低延迟) / ros=realsense2_camera_node
@@ -104,12 +108,14 @@ quest3_video_streamer:
     verbose: false
 ```
 
-**改任何参数只需编辑这个 yaml**，不用动 launch 和代码。加相机：新增一个同名块 + 加进 `cameras` 列表。
+**改任何参数只需编辑这个 yaml**，不用动 launch 和代码。
 
-> 注意：`cameras` 列表里的设备在 Quest 连上（收到 offer）时才真正打开；若某台
-> 没插，整个 sender 启动会失败——先从列表移除，或用下面的运行时门控关掉那路
-> 是做不到的（门控在 track 层，设备打开失败会先炸）。没接的相机请从 `cameras`
-> 移除。
+> **D435i 注意**：它在一个 USB 设备上暴露多个可采集节点（深度/红外/彩色），
+> auto_scan 按物理设备去重取的第一个节点不一定是彩色。用 D435i 请
+> `auto_scan: false` + 上面的显式 `d435i` 块（或加 `videoN` 覆盖块指定正确节点）。
+
+> **懒打开**：相机在 Quest 连上且该路未被门控静音时才真正打开设备；打开失败
+> （没插/被占用）不会拖垮整个 sender——该轨退化为黑帧并每秒重试，插上即恢复。
 
 ## 运行时推流门控（web 可控）
 
@@ -120,8 +126,8 @@ Quest 面板变黑），重新打开即时恢复，**无需断线重连**。
 | 接口 | 类型 | 作用 |
 |---|---|---|
 | `~/set_push_enabled` | `std_srvs/SetBool` 服务 | 总开关（false = 全部轨静音黑帧） |
-| `~/active_cameras` | `std_msgs/String` 话题（latched） | 逗号分隔的 label 子集；空 = cameras 全部 |
-| `~/gate_state` | `std_msgs/String` 话题（latched JSON） | 当前状态 `{push_enabled, configured, active}`，每次变化重发 |
+| `~/active_cameras` | `std_msgs/String` 话题（latched） | 逗号分隔的 label 子集；空 = 全部；未知 label 被忽略并告警 |
+| `~/gate_state` | `std_msgs/String` 话题（latched JSON） | 当前状态 `{push_enabled, configured, active, cameras:[{label,device,source,preset,sysfs_name}]}`，每次变化重发 |
 
 CLI 示例：
 
@@ -142,7 +148,9 @@ ros2 topic echo --once /quest3_video_streamer/gate_state std_msgs/msg/String
 ```
 
 `astral_web_monitor` 的"系统"页有对应的 **视频回传** 卡片：总开关 + 路数下拉 +
-逐路勾选（列出配置相机及 `/dev/videoN` 在线状态），走的就是这组接口。
+逐路勾选（在线时列出 streamer 扫描到的相机及 `/dev/videoN` 实时在线状态；
+离线时卡片自己扫描主机设备，可**预选**——latched 话题会在 streamer 启动后生效），
+走的就是这组接口。
 
 初值由 yaml 的 `push_enabled` / `active_cameras` 决定。
 
@@ -165,11 +173,11 @@ ros2 topic echo --once /quest3_video_streamer/gate_state std_msgs/msg/String
 
 | Launch | 用途 | 默认相机 |
 |---|---|---|
-| `multi_camera.launch.py` | 多路推流（相机集合由 yaml `cameras` 决定） | yaml 列表（默认 wrist_left + wrist_right） |
+| `multi_camera.launch.py` | 多路推流（默认 `auto_scan` 自动扫描；`cameras` CLI 覆盖即转固定列表模式） | 自动扫描全部采集设备 |
 | `realsense.launch.py` | 单 D435i 推流（覆盖 `cameras: ["d435i"]`） | 仅 d435i |
 | `usb_camera.launch.py` | 单 USB 相机推流（legacy，参数式，未走 yaml） | 单 usb_cam |
 
-`multi_camera` / `realsense` 都从 yaml 读配置；`d435i_source` CLI 参数可临时覆盖 yaml 的 `d435i.source`，`cameras` CLI 参数可临时覆盖相机列表（逗号分隔）：
+`multi_camera` / `realsense` 都从 yaml 读配置；`d435i_source` CLI 参数可临时覆盖 yaml 的 `d435i.source`，`cameras` CLI 参数可临时覆盖相机列表（逗号分隔，同时把 `auto_scan` 置 false）：
 
 ```bash
 ros2 launch quest3_video_streamer multi_camera.launch.py d435i_source:=ros   # 强制走 ROS 节点
@@ -306,6 +314,12 @@ Quest 端：在 astral-tracking app 里填 PC 的信令地址（WiFi 或 `adb re
 - **v4l2 模式 D435i 打不开**：确认 `/dev/video8` 存在且用户在 `video` 组；D435i 彩色是 YUYV，`force_mjpg` 必须为 `false`。
 
 ## 更新日志
+
+### v0.5 — 自动扫描 + 懒打开（web 免配置可选）
+- **`auto_scan`（默认 true）**：新增 `scan.py`，启动时枚举 `/dev/video*`（ioctl `VIDIOC_QUERYCAP` 查 `V4L2_CAP_VIDEO_CAPTURE`，按物理设备 sysfs 父级去重，跳过 metadata 节点），label = 节点名（`video0`…），面板一行网格自动排布；同名 yaml 块（如 `video0.preset`）可覆盖单路字段；一台都没扫到时回退 `cameras` 列表。D435i 多节点取第一个不一定是彩色——用显式块。
+- **懒打开 + 失败黑帧**：sender 不再启动时打开全部相机；每轨在首个未静音帧才 `source.start()`，打开/读帧失败退化为黑帧 + 1s 退避重试，不再拖垮整个 sender。
+- **`~/gate_state` 携带相机信息**：JSON 增加 `cameras: [{label, device, source, preset, sysfs_name}]`，web 端不再需要解析本包 yaml。
+- **`cameras` CLI 覆盖联动**：`multi_camera.launch.py cameras:=...` 同时把 `auto_scan` 置 false。
 
 ### v0.4 — 运行时门控 + 并入 full_teleop
 - **运行时推流门控**（`gate.py` `StreamGate`）：`~/set_push_enabled`（SetBool 总开关）+ `~/active_cameras`（latched String，label 子集，空=全部）+ `~/gate_state`（latched JSON 状态）。被关的轨改发 2fps 黑帧（Y=16/U=V=128），几乎不占带宽、面板变黑、恢复即时、无需重协商。

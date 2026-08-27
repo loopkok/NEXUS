@@ -124,11 +124,17 @@ class _AdapterVideoTrack:
     sends 2 fps black frames instead of camera frames.  This keeps the RTP
     stream (and the Quest panel) alive at negligible bandwidth without SDP
     renegotiation, and un-muting resumes the live feed instantly.
+
+    Sources are opened lazily: a track only calls ``source.start()`` on its
+    first un-muted frame, so cameras that are gated off (or whose device is
+    missing) are never opened.  Open/read failures degrade to black frames
+    with a 1 s retry backoff instead of killing the whole sender.
     """
 
     kind = "video"
 
     _MUTED_FPS = 2.0
+    _RETRY_BACKOFF_S = 1.0
 
     def __init__(
         self,
@@ -136,14 +142,16 @@ class _AdapterVideoTrack:
         fps: int,
         gate: Any = None,
         label: str = "",
+        log: Callable[[str], None] | None = None,
     ) -> None:
         self._source = source
         self._fps = max(1, fps)
         self._gate = gate
         self._label = label
+        self._log = log or (lambda _msg: None)
         self._pts = 0
         self._time_base = fractions.Fraction(1, self._fps)
-        self._black_frame: Any = None
+        self._started = False
         self._muted = False
 
     async def recv(self) -> Any:
@@ -153,11 +161,33 @@ class _AdapterVideoTrack:
             self._muted = True
         else:
             self._muted = False
-            frame = await self._source.next_frame()
+            frame = await self._live_frame()
         frame.pts = self._pts
         frame.time_base = self._time_base
         self._pts += 1
         return frame
+
+    async def _live_frame(self) -> Any:
+        if not self._started:
+            try:
+                await self._source.start()
+                self._started = True
+                self._log(f"[track {self._label}] source started (lazy open)")
+            except Exception as exc:
+                self._log(f"[track {self._label}] source open failed: {exc}; sending black")
+                await asyncio.sleep(self._RETRY_BACKOFF_S)
+                return self._new_black_frame()
+        try:
+            return await self._source.next_frame()
+        except Exception as exc:
+            self._log(f"[track {self._label}] next_frame failed: {exc}; sending black")
+            try:
+                await self._source.stop()
+            except Exception:
+                pass
+            self._started = False  # retry open on the next recv
+            await asyncio.sleep(self._RETRY_BACKOFF_S)
+            return self._new_black_frame()
 
     def _new_black_frame(self) -> Any:
         """Fresh black frame at the source resolution (2 fps → cheap)."""
@@ -215,8 +245,9 @@ class VideoWebRTCSender:
         self._track_frame_counts: list[int] = []
 
     async def start(self) -> None:
-        for src in self._sources:
-            await src.start()
+        # Sources are NOT started here: each track lazily opens its source on
+        # the first un-muted frame (see _AdapterVideoTrack), so gated-off or
+        # missing cameras are never opened.
         self._pc = self._new_peer_connection()
         self._add_video_tracks()
         self._wire_ice_callbacks()
@@ -226,7 +257,10 @@ class VideoWebRTCSender:
             await self._pc.close()
             self._pc = None
         for src in self._sources:
-            await src.stop()
+            try:
+                await src.stop()  # adapters no-op when never started
+            except Exception:
+                pass
 
     async def apply_offer(self, *, sdp_offer: str) -> str:
         if self._pc is None:
@@ -402,6 +436,7 @@ class VideoWebRTCSender:
                 _AdapterVideoTrack(
                     source, fps=video_format.fps,
                     gate=self._gate, label=video_format.label,
+                    log=self._log,
                 ),
                 self, idx,
             )
