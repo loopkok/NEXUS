@@ -98,6 +98,16 @@ quest3_video_streamer:
         distance: 1.8
         size_multiplier: 0.38
 
+    # D435i 彩色节点（auto_scan 去重后应选 YUYV 的 video8，不是深度 video4）。
+    video8:
+      preset: "1080p30"
+      fov_h_deg: 69.0
+      force_mjpg: false
+      layout:
+        position: [0.5, -0.1, 1.8]
+        distance: 1.8
+        size_multiplier: 0.6
+
     # --- 公共参数 ---
     # WebSocket 信令服务器（Quest 连这里）。
     signaling_host: "0.0.0.0"

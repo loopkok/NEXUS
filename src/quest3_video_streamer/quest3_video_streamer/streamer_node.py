@@ -179,7 +179,11 @@ def _scan_spec(
     label = dev["label"]
     preset = str(_get_param(node, f"{label}.preset", "720p30"))
     fov_h = float(_get_param(node, f"{label}.fov_h_deg", 60.0))
-    force_mjpg = bool(_get_param(node, f"{label}.force_mjpg", True))
+    # Scan suggests force_mjpg from fourcc (MJPG=True, YUYV/Z16=False).
+    force_mjpg = bool(
+        _get_param(node, f"{label}.force_mjpg", bool(dev.get("force_mjpg", True)))
+    )
+    device = str(_get_param(node, f"{label}.device", dev["device"]))
     pos = _get_param(node, f"{label}.layout.position", None)
     distance = float(_get_param(node, f"{label}.layout.distance", 1.8))
     size_mult = float(_get_param(node, f"{label}.layout.size_multiplier", 0.38))
@@ -194,7 +198,7 @@ def _scan_spec(
     }
     spec: dict[str, Any] = {
         "type": "webcam",
-        "webcam_index": _device_to_index(dev["device"]),
+        "webcam_index": _device_to_index(device),
         "preset": preset,
         "fov_h_deg": fov_h,
         "label": label,

@@ -4,7 +4,16 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
-## 2026-08-27
+## 2026-08-27（三）
+
+**视频扫描按像素格式挑彩色节点（修 RealSense 无画面）**——`quest3_video_streamer`。
+
+- 问题：插上 D435i 后 auto_scan 按"最小编号"选中深度节点 `/dev/video4`（Z16），OpenCV 打不开 → 该轨反复黑帧重试刷屏、Quest 无画面。
+- `scan.py`：同一物理设备多采集节点时，用 `v4l2-ctl --get-fmt-video` 读**当前像素格式**打分（彩色 YUYV/MJPG=100 > 红外 GREY/Y8=10 > 深度 Z16=0），自动选中彩色节点（D435i → video8）；并输出 `force_mjpg` 建议（YUYV 节点强制 MJPG 会让 cv2 打不开）。
+- `streamer_node.py` `_scan_spec`：`force_mjpg` 默认采用扫描建议；新增 `{label}.device` 覆盖项。`params.yaml` 新增 `video8` 显式块（D435i 彩色、右侧布局）。
+- 修复：`hook_gate_visibility()` 接线被误删导致 web 改勾选后 Quest 面板不跟随，已恢复。
+
+## 2026-08-27（二）
 
 **静音轨 Quest 面板缩小到边缘 / 可隐藏（track_visibility）**——`quest3_video_streamer` / `astral-tracking`。
 
