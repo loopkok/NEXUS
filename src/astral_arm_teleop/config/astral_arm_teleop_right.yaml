@@ -46,4 +46,4 @@ astral_arm_teleop_right:
     latency_print_interval: 2.0
     publish_tune: true
 
-    init_pose: [0.32, -0.11, 0.53, -0.80, 0.28, 0.00, 0.00]
+    init_pose: [0.32, -0.11, 0.53, -0.80, -0.28, 0.00, 0.00]

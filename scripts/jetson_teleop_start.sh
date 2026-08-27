@@ -3,7 +3,7 @@
 # Astral 遥操启动脚本（Jetson 终端1：清场 + adb + Web 控制台）
 #
 # 流程：
-#   0. 终端环境归一 + sudo systemctl restart rob-station.target
+#   0. 终端环境归一 + sudo systemctl stop rob-station.target
 #   1. 清场：停 daemon、查残留节点（有残留→提示确认后强清/退出）、
 #      查 astral_drivers（抢 8081）、查 Web 端口（8080 被占→可换 8088）
 #   2. adb：确认 Quest 在线（device），清掉旧 reverse 再重新建立
@@ -36,16 +36,20 @@ confirm() {  # confirm "提示语" → 0=yes / 1=no（默认 no）
 info "终端环境归一（conda deactivate / PATH / ROS / 工作区）"
 conda deactivate 2>/dev/null || true
 export PATH=/usr/bin:$PATH
+# ROS setup.bash 会读未导出的 AMENT_TRACE_SETUP_FILES 等变量；
+# 脚本开了 set -u，必须先关掉 nounset 再 source。
+set +u
 # shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash || die "找不到 /opt/ros/humble/setup.bash"
 # shellcheck disable=SC1091
 source "$WS/install/setup.bash" || die "找不到 $WS/install/setup.bash（先 colcon build）"
+set -u
 
-info "重启 rob-station.target（sudo 会交互询问密码，不落盘）"
-if sudo systemctl restart rob-station.target; then
-    ok "rob-station.target 已重启"
+info "停止 rob-station.target（释放 8080；sudo 会询问密码）"
+if sudo systemctl stop rob-station.target; then
+    ok "rob-station.target 已停止"
 else
-    warn "rob-station.target 重启失败（不存在/无权限/超时），继续"
+    warn "rob-station.target 停止失败（不存在/无权限/超时），继续"
 fi
 
 # ----------------------------------------------------------------------------
