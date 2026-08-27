@@ -29,9 +29,15 @@ _VIDIOC_QUERYCAP = 0x80685600
 _V4L2_CAP_VIDEO_CAPTURE = 0x00000001
 _V4L2_CAP_DEVICE_CAPS = 0x80000000
 
-_COLOR_FOURCC = frozenset({"YUYV", "MJPG", "JPEG", "RGB3", "BGR3", "RGBP"})
-_IR_FOURCC = frozenset({"GREY", "Y8  ", "Y8", "Y16 "})
+_COLOR_FOURCC = frozenset({
+    "YUYV", "YUY2", "UYVY", "MJPG", "JPEG", "RGB3", "BGR3", "RGBP", "NV12", "NV21",
+})
+_IR_FOURCC = frozenset({"GREY", "Y8  ", "Y8", "Y16 ", "Y16"})
 _DEPTH_FOURCC = frozenset({"Z16 ", "Z16"})
+
+# VIDIOC_ENUM_FMT = _IOWR('V', 2, struct v4l2_fmtdesc[64])
+_VIDIOC_ENUM_FMT = 0xC0405602
+_V4L2_BUF_TYPE_VIDEO_CAPTURE = 1
 
 
 def _is_capture_node(path: str) -> bool:
@@ -78,8 +84,36 @@ def _node_index(node: str) -> int:
         return 0
 
 
+def _fourcc_str(pixelformat: int) -> str:
+    return "".join(chr((pixelformat >> (8 * i)) & 0xFF) for i in range(4))
+
+
+def _enum_fourccs(path: str) -> list[str]:
+    """Formats advertised by VIDIOC_ENUM_FMT (no v4l2-ctl needed)."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError:
+        return []
+    out: list[str] = []
+    try:
+        for index in range(32):
+            buf = bytearray(64)
+            struct.pack_into("<III", buf, 0, index, _V4L2_BUF_TYPE_VIDEO_CAPTURE, 0)
+            try:
+                fcntl.ioctl(fd, _VIDIOC_ENUM_FMT, buf, True)
+            except OSError:
+                break
+            (pixelformat,) = struct.unpack_from("<I", buf, 44)
+            fourcc = _fourcc_str(pixelformat).strip()
+            if fourcc:
+                out.append(fourcc)
+    finally:
+        os.close(fd)
+    return out
+
+
 def _current_fourcc(path: str) -> str:
-    """Current Pixel Format fourcc via v4l2-ctl, e.g. 'YUYV' / 'Z16' / 'MJPG'."""
+    """Current Pixel Format via v4l2-ctl (optional; ioctl enum is primary)."""
     try:
         out = subprocess.check_output(
             ["v4l2-ctl", "-d", path, "--get-fmt-video"],
@@ -110,6 +144,29 @@ def _fourcc_score(fourcc: str) -> int:
     return 1
 
 
+def _name_score(name: str) -> int:
+    """sysfs name hint when fourcc is unavailable."""
+    n = name.lower()
+    if any(k in n for k in ("rgb", "color", "colour")):
+        return 50
+    if "infrared" in n or n.endswith(" ir") or " ir " in n:
+        return 10
+    if "depth" in n:
+        return 0
+    return 1
+
+
+def _best_score(fourccs: list[str], current: str, sysfs: str) -> tuple[int, str]:
+    """Return (score, representative fourcc) for ranking this node."""
+    scored = [( _fourcc_score(f), f) for f in fourccs]
+    if current:
+        scored.append((_fourcc_score(current), current))
+    if scored:
+        scored.sort(key=lambda x: -x[0])
+        return scored[0]
+    return _name_score(sysfs), current or ""
+
+
 def enumerate_capture_devices() -> list[dict[str, Any]]:
     """One entry per physical capture device, ordered by device node number."""
     by_group: dict[str, list[dict[str, Any]]] = {}
@@ -119,13 +176,16 @@ def enumerate_capture_devices() -> list[dict[str, Any]]:
         node = os.path.basename(path)
         if not _is_capture_node(path):
             continue
-        fourcc = _current_fourcc(path)
+        fourccs = _enum_fourccs(path)
+        current = _current_fourcc(path)
+        name = sysfs_name(node)
+        score, fourcc = _best_score(fourccs, current, name)
         rec = {
             "label": node,
             "device": path,
-            "sysfs_name": sysfs_name(node),
+            "sysfs_name": name,
             "fourcc": fourcc,
-            "score": _fourcc_score(fourcc),
+            "score": score,
         }
         by_group.setdefault(_physical_group(node), []).append(rec)
 
@@ -133,12 +193,14 @@ def enumerate_capture_devices() -> list[dict[str, Any]]:
     for recs in by_group.values():
         recs.sort(key=lambda r: (-int(r["score"]), _node_index(str(r["label"]))))
         best = recs[0]
+        if int(best["score"]) <= 0:
+            # Depth-only node (Z16); OpenCV cannot open it as a webcam.
+            continue
         fourcc = str(best.get("fourcc", ""))
         out.append({
             "label": best["label"],
             "device": best["device"],
             "sysfs_name": best["sysfs_name"],
-            # D435i color is YUYV; forcing MJPG makes cv2 fail to open.
             "force_mjpg": fourcc.strip() in ("MJPG", "JPEG"),
         })
     out.sort(key=lambda d: _node_index(str(d["label"])))
