@@ -14,6 +14,7 @@ export function VideoCard({ state }: Props) {
   const [cams, setCams] = useState<VideoCameraInfo[]>([])
   const [online, setOnline] = useState(false)
   const [checked, setChecked] = useState<string[]>([])
+  const [showPreview, setShowPreview] = useState(true)
 
   const gate = state?.videoGate ?? null
   const pushEnabled = gate?.pushEnabled ?? false
@@ -83,6 +84,12 @@ export function VideoCard({ state }: Props) {
     setTimeout(() => void refresh(), 300)
   }
 
+  // Live previews: checked + online cameras only (MJPEG, ~10fps JPEG relay).
+  const previewCams = useMemo(
+    () => (online && showPreview ? cams.filter((c) => checked.includes(c.label) && c.exists) : []),
+    [online, showPreview, cams, checked],
+  )
+
   return (
     <div style={cardStyle}>
       <div style={titleStyle}>
@@ -131,13 +138,38 @@ export function VideoCard({ state }: Props) {
           </label>
         ))}
         {cams.length === 0 && <span style={hintStyle}>主机未扫描到可采集的视频设备（/dev/video*）</span>}
+        <label style={checkLabel}>
+          <input
+            type="checkbox"
+            checked={showPreview}
+            onChange={(e) => setShowPreview(e.target.checked)}
+          />
+          实时画面
+        </label>
       </div>
+
+      {previewCams.length > 0 && (
+        <div style={previewRowStyle}>
+          {previewCams.map((c) => (
+            <figure key={c.label} style={previewItemStyle}>
+              <img
+                src={api.videoFeedUrl(c.label)}
+                alt={c.label}
+                style={previewImgStyle}
+              />
+              <figcaption style={previewCapStyle}>{c.label}</figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
 
       <div style={hintStyle}>
         设备列表来自自动扫描（按物理设备去重的 /dev/video* 采集节点），不写死配置。
         勾选通过 latched <code>~/active_cameras</code> 下发：<b>离线时也可预选</b>，streamer 启动后即生效；
         在线时取消勾选 = 该轨改发 2fps 黑帧（几乎不占带宽，Quest 面板变黑），重新勾选即时恢复，无需重连。
         总开关（<code>~/set_push_enabled</code> 服务）需 streamer 在线。
+        实时画面 = streamer 抽帧 JPEG（10fps/640宽/q65，独立线程编码，不影响 Quest 链路）经本站 MJPEG 转发，
+        延迟约 0.2~0.4s，仅供监控；取消勾选的路预览同步停止。
         推流前提：<code>adb reverse tcp:8765 tcp:8765</code>（full_teleop 已自动执行）+ Quest 端开启 video feed。
         启动后才插入的相机需重启栈才会进入 track 集合。
       </div>
@@ -189,3 +221,23 @@ const selectStyle: React.CSSProperties = {
   marginLeft: '4px',
 }
 const hintStyle: React.CSSProperties = { color: '#6b7280', fontSize: '12px', lineHeight: 1.5 }
+const previewRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: '10px',
+  flexWrap: 'wrap',
+}
+const previewItemStyle: React.CSSProperties = {
+  margin: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
+}
+const previewImgStyle: React.CSSProperties = {
+  width: '320px',
+  aspectRatio: '16 / 9',
+  objectFit: 'cover',
+  borderRadius: '8px',
+  border: '1px solid #374151',
+  background: '#111827',
+}
+const previewCapStyle: React.CSSProperties = { color: '#9ca3af', fontSize: '11px' }

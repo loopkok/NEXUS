@@ -42,6 +42,9 @@ class RosImageSourceAdapter(VideoSourceAdapter):
         self._topic = topic
         self._sub = None
         self._frame_count = 0
+        # Optional tap for the web preview pipeline: callable(rgb_frame).
+        # Called from the rclpy executor thread; must be non-blocking.
+        self.preview_hook: Any = None
 
     async def start(self) -> None:
         # Called from the asyncio loop thread: capture the loop so the rclpy
@@ -98,6 +101,14 @@ class RosImageSourceAdapter(VideoSourceAdapter):
             rgb = self._convert(msg)
         except Exception:
             return
+        if rgb is None:
+            return
+        hook = self.preview_hook
+        if hook is not None:
+            try:
+                hook(rgb)
+            except Exception:
+                pass
         if self._loop is None:
             return
         self._frame_count += 1

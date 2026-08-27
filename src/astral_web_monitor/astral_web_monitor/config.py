@@ -122,6 +122,8 @@ VIDEO_NODE = os.environ.get("ASTRAL_WEB_MONITOR_VIDEO_NODE", "quest3_video_strea
 VIDEO_SRV_PUSH = f"/{VIDEO_NODE}/set_push_enabled"
 VIDEO_TOPIC_CAMERAS = f"/{VIDEO_NODE}/active_cameras"
 VIDEO_TOPIC_GATE_STATE = f"/{VIDEO_NODE}/gate_state"
+# Per-camera JPEG preview topics published by the streamer (CompressedImage).
+VIDEO_TOPIC_PREVIEW = f"/{VIDEO_NODE}/preview"  # + "/{label}"
 
 # --- Orphan process detection ----------------------------------------------
 # Regex fragment matched against the full command line of running processes

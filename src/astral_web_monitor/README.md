@@ -107,6 +107,8 @@
 | GET | `/api/v1/video/status` | 视频回传状态：在线时 = streamer 自动扫描的相机列表（label/device/实时在线/sysfs 名）+ 门控状态；离线时 = monitor 自行扫描主机设备（供预选） |
 | POST | `/api/v1/video/push` | `{enabled: bool}` 调 streamer `~/set_push_enabled` 总开关（关 = 全轨 2fps 黑帧静音） |
 | POST | `/api/v1/video/cameras` | `{cameras: [...]}` 发 latched `~/active_cameras`（label 子集，空数组 = 全部配置相机） |
+| GET | `/api/v1/video/feed/{label}` | 该路相机的 MJPEG 实时预览流（转发 streamer `~/preview/{label}`，浏览器 `<img>` 可直接用） |
+| GET | `/api/v1/video/snapshot/{label}` | 该路最新一帧预览 JPEG（404 = 未知相机或暂无帧） |
 
 ## WebSocket
 
@@ -173,9 +175,9 @@ stopped ──start──► starting ──2s暖机──► running
 |-----|------|
 | 监控 | 4 个关节面板（左/右臂、左夹爪、右灵巧手）+ 指令频率 chips + 实时折线图（指令 Hz、臂关节0 角度） |
 | 健康 | 总体徽标 + 每实体卡片（状态流 Hz / 指令流 Hz / 期望 / 数据龄期 / ok·slow·stale） |
-| 系统 | 预设管理（启动/停止/重启）+ **机器人模式**（一键就绪/归零/位置保持/阻尼释放/急停断电）+ **视频回传**（总开关/路数下拉/逐路勾选/设备在线点）+ Launch 日志控制台 |
+| 系统 | 预设管理（启动/停止/重启）+ **机器人模式**（一键就绪/归零/位置保持/阻尼释放/急停断电）+ **视频回传**（总开关/路数下拉/逐路勾选/设备在线点/**实时画面预览**）+ Launch 日志控制台 |
 
-- **视频回传卡片**：调 `quest3_video_streamer` 的运行时门控（`~/set_push_enabled` + latched `~/active_cameras`）。总开关关掉后所有轨发 2fps 黑帧（几乎不占带宽，Quest 面板变黑）；逐路勾选决定哪些相机推流；「路数」下拉是快捷选择（选 n = 勾前 n 路，逐路勾选后显示"自定义"）。**相机列表不写死**：streamer 默认 `auto_scan` 自动扫描主机采集设备（label = `videoN`），卡片在线时显示其扫描结果（含 `/dev/videoN` 与 sysfs 设备名，未接置灰）；**离线时卡片自行扫描主机设备，可预选**——latched 话题会在 streamer 启动后生效（总开关服务需在线）。在线判定看 `~/gate_state` 是否还有活发布者，streamer 死掉会正确显示"离线"。启动后才插入的相机需重启栈进入 track 集合
+- **视频回传卡片**：调 `quest3_video_streamer` 的运行时门控（`~/set_push_enabled` + latched `~/active_cameras`）。总开关关掉后所有轨发 2fps 黑帧（几乎不占带宽，Quest 面板变黑）；逐路勾选决定哪些相机推流；「路数」下拉是快捷选择（选 n = 勾前 n 路，逐路勾选后显示"自定义"）。**相机列表不写死**：streamer 默认 `auto_scan` 自动扫描主机采集设备（label = `videoN`），卡片在线时显示其扫描结果（含 `/dev/videoN` 与 sysfs 设备名，未接置灰）；**离线时卡片自行扫描主机设备，可预选**——latched 话题会在 streamer 启动后生效（总开关服务需在线）。在线判定看 `~/gate_state` 是否还有活发布者，streamer 死掉会正确显示"离线"。启动后才插入的相机需重启栈进入 track 集合。**实时画面**：勾选「实时画面」后，在线且勾选的每路相机显示 MJPEG 实时预览（streamer 抽帧 10fps/640宽/q65 JPEG，独立线程编码经 `~/preview/{label}` 转发，延迟约 0.2~0.4s，仅供监控；取消勾选的路预览同步停止，不勾不耗资源）
 
 - **急停（真断电）**：红色常驻按钮，确认后调 driver `~/estop` → SDK `e_stop()`/`disable()`，臂失去保持力；恢复需重新「一键就绪」。区别于「暂停」（软 disarm，臂仍上电保持位姿）
 - **阻尼释放**：调 driver `~/damping` → `motion_mode=0`，电机仍上电、关节可手动拖拽。典型流程：遥操中 → 停止（臂保持末位姿）→ 阻尼释放（手动拖回 home）→ 位置保持/归零

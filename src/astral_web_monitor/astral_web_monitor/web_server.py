@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config
@@ -404,6 +404,52 @@ async def video_cameras(req: VideoCamerasRequest) -> ApiEnvelope:
     node.publish_video_cameras(req.cameras)
     label = ", ".join(req.cameras) if req.cameras else "全部已配置相机"
     return ApiEnvelope(ok=True, message=f"已下发推送相机: {label}")
+
+
+# --- Web live preview (MJPEG relay of the streamer's ~/preview/{label}) -----
+
+@app.get("/api/v1/video/feed/{label}")
+async def video_feed(label: str) -> StreamingResponse:
+    """MJPEG stream for one camera label (browser <img> compatible)."""
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    if label not in node.preview_labels():
+        raise HTTPException(status_code=404, detail=f"未知相机: {label}")
+
+    async def gen():
+        last_seq = -1
+        try:
+            while True:
+                jpeg, seq = node.preview_frame(label)
+                if jpeg is not None and seq != last_seq:
+                    last_seq = seq
+                    yield (
+                        b"--frame\r\nContent-Type: image/jpeg\r\n"
+                        b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n"
+                        + jpeg + b"\r\n"
+                    )
+                await asyncio.sleep(1.0 / 15.0)
+        except (asyncio.CancelledError, GeneratorExit):
+            return
+
+    return StreamingResponse(
+        gen(), media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.get("/api/v1/video/snapshot/{label}")
+async def video_snapshot(label: str) -> Response:
+    """Latest preview frame as a single JPEG."""
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    if label not in node.preview_labels():
+        raise HTTPException(status_code=404, detail=f"未知相机: {label}")
+    jpeg, _ = node.preview_frame(label)
+    if jpeg is None:
+        raise HTTPException(status_code=404, detail=f"{label} 暂无预览帧")
+    return Response(content=jpeg, media_type="image/jpeg")
 
 
 # --- WebSocket -------------------------------------------------------------

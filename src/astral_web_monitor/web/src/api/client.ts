@@ -49,4 +49,6 @@ export const api = {
   videoStatus: () => get<VideoStatusData>('/api/v1/video/status'),
   videoPush: (enabled: boolean) => post<unknown>('/api/v1/video/push', { enabled }),
   videoCameras: (cameras: string[]) => post<unknown>('/api/v1/video/cameras', { cameras }),
+  // MJPEG live preview URL for <img src> (streamed, not fetched)
+  videoFeedUrl: (label: string) => `${base}/api/v1/video/feed/${encodeURIComponent(label)}`,
 }

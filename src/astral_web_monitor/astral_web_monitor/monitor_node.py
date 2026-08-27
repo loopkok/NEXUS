@@ -43,6 +43,7 @@ from .config import (
     VIDEO_SRV_PUSH,
     VIDEO_TOPIC_CAMERAS,
     VIDEO_TOPIC_GATE_STATE,
+    VIDEO_TOPIC_PREVIEW,
 )
 from .rate_counter import RateRegistry
 
@@ -108,6 +109,11 @@ class MonitorNode(Node):
             String, VIDEO_TOPIC_GATE_STATE, self._on_video_gate_state, qos,
         )
         self._video_push_client: Any = None  # SetBool client, created lazily
+        # Web preview: latest JPEG bytes per camera label + dynamic subscriptions
+        # (created when gate_state reports the camera list).
+        self._preview_jpeg: dict[str, bytes] = {}
+        self._preview_seq: dict[str, int] = {}
+        self._preview_subs: dict[str, Any] = {}
 
         # Read-only subscriptions.
         for entity, pair in TOPICS.items():
@@ -150,6 +156,48 @@ class MonitorNode(Node):
         if isinstance(data, dict):
             with self._lock:
                 self._video_gate_state = data
+            self._ensure_preview_subs(data)
+
+    def _ensure_preview_subs(self, gate: dict[str, Any]) -> None:
+        """Subscribe ~/preview/{label} for every camera the streamer reports."""
+        from sensor_msgs.msg import CompressedImage
+
+        labels = [
+            str(c.get("label", ""))
+            for c in (gate.get("cameras") or [])
+            if c.get("label")
+        ]
+        if not labels:
+            labels = [str(x) for x in (gate.get("configured") or [])]
+        preview_qos = rclpy.qos.QoSProfile(
+            reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
+            history=rclpy.qos.HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        for label in labels:
+            if not label or label in self._preview_subs:
+                continue
+            self._preview_subs[label] = self.create_subscription(
+                CompressedImage,
+                f"{VIDEO_TOPIC_PREVIEW}/{label}",
+                lambda m, lb=label: self._on_preview(lb, m),
+                preview_qos,
+            )
+
+    def _on_preview(self, label: str, msg: Any) -> None:
+        data = bytes(msg.data)
+        with self._lock:
+            self._preview_jpeg[label] = data
+            self._preview_seq[label] = self._preview_seq.get(label, 0) + 1
+
+    def preview_frame(self, label: str) -> tuple[bytes | None, int]:
+        """(latest JPEG bytes, sequence) for the web MJPEG relay."""
+        with self._lock:
+            return self._preview_jpeg.get(label), self._preview_seq.get(label, 0)
+
+    def preview_labels(self) -> list[str]:
+        """Labels that have a preview subscription (i.e. known cameras)."""
+        return list(self._preview_subs.keys())
 
     # --- snapshot read (web thread) ---------------------------------------
     def snapshot(self) -> dict[str, Any]:

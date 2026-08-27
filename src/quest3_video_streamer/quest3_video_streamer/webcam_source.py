@@ -44,6 +44,9 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         self._latest_rgb: Any = None
         self._frame_ready = asyncio.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
+        # Optional tap for the web preview pipeline: callable(bgr_frame).
+        # Called from the capture thread; must be non-blocking.
+        self.preview_hook: Any = None
 
     async def start(self) -> None:
         import cv2
@@ -118,6 +121,12 @@ class WebcamSourceAdapter(VideoSourceAdapter):
             if not ok or bgr is None:
                 # Brief retry on transient read failure.
                 continue
+            hook = self.preview_hook
+            if hook is not None:
+                try:
+                    hook(bgr)  # native BGR, before the RGB conversion
+                except Exception:
+                    pass
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
             with self._lock:
                 self._latest_rgb = rgb

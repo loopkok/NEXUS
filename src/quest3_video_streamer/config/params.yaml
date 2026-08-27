@@ -96,4 +96,12 @@ quest3_video_streamer:
     push_enabled: true
     active_cameras: ""
 
+    # --- Web 实时预览（astral_web_monitor 视频卡片画面）---
+    # 抽帧 → 独立线程 JPEG 编码 → ~/preview/{label}（CompressedImage, BEST_EFFORT）。
+    # 跟随门控：被静音的路不发。编码不在捕获线程/asyncio 循环里，不影响 Quest 链路。
+    web_preview: true
+    web_preview_fps: 10.0      # 每路预览帧率（抽帧）
+    web_preview_width: 640     # 预览宽度（等比缩放）
+    web_preview_quality: 65    # JPEG 质量
+
     verbose: false

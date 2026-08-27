@@ -315,6 +315,11 @@ Quest 端：在 astral-tracking app 里填 PC 的信令地址（WiFi 或 `adb re
 
 ## 更新日志
 
+### v0.6 — Web 实时预览（JPEG 抽帧 + MJPEG 转发）
+- **`~/preview/{label}`**（`sensor_msgs/CompressedImage`，BEST_EFFORT）：每路相机的低成本 web 预览流。捕获线程只 `put_nowait` 到 maxsize=1 队列，JPEG 编码在**独立线程**（不进捕获线程/asyncio 循环，Quest RTP 节奏不受影响）；跟随门控——被静音的路不发。参数：`web_preview`（默认 true）/ `web_preview_fps`(10) / `web_preview_width`(640) / `web_preview_quality`(65)。
+- 两个 source 适配器新增 `preview_hook` 抽头（webcam 抽原生 BGR，ros 抽转换后 RGB）。
+- `astral_web_monitor`：按 gate_state 相机列表动态订阅 preview 话题；新增 `GET /api/v1/video/feed/{label}`（MJPEG）与 `GET /api/v1/video/snapshot/{label}`（单帧）；视频卡片新增「实时画面」勾选相机的实时预览（浏览器 `<img>` 原生解 MJPEG）。
+
 ### v0.5 — 自动扫描 + 懒打开（web 免配置可选）
 - **`auto_scan`（默认 true）**：新增 `scan.py`，启动时枚举 `/dev/video*`（ioctl `VIDIOC_QUERYCAP` 查 `V4L2_CAP_VIDEO_CAPTURE`，按物理设备 sysfs 父级去重，跳过 metadata 节点），label = 节点名（`video0`…），面板一行网格自动排布；同名 yaml 块（如 `video0.preset`）可覆盖单路字段；一台都没扫到时回退 `cameras` 列表。D435i 多节点取第一个不一定是彩色——用显式块。
 - **懒打开 + 失败黑帧**：sender 不再启动时打开全部相机；每轨在首个未静音帧才 `source.start()`，打开/读帧失败退化为黑帧 + 1s 退避重试，不再拖垮整个 sender。

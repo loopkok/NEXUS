@@ -300,6 +300,11 @@ def _declare_params(node: Node) -> None:
     _safe_declare(node, "active_cameras", "")  # comma labels; "" = all
     # Auto-scan host capture devices instead of the fixed `cameras` list.
     _safe_declare(node, "auto_scan", False)
+    # Web preview (JPEG over CompressedImage on ~/preview/{label}).
+    _safe_declare(node, "web_preview", True)
+    _safe_declare(node, "web_preview_fps", 10.0)
+    _safe_declare(node, "web_preview_width", 640)
+    _safe_declare(node, "web_preview_quality", 65)
     # Legacy single-source params (kept for backward compatibility).
     _safe_declare(node, "source_type", "ros")
     _safe_declare(node, "image_topic", "/camera/camera/color/image_raw")
@@ -331,6 +336,8 @@ def main() -> None:
         "signaling_host", "signaling_port", "mocap_tcp_host",
         "mocap_tcp_port", "enable_mocap_tcp", "verbose",
         "preset", "push_enabled", "active_cameras",
+        "web_preview", "web_preview_fps", "web_preview_width",
+        "web_preview_quality",
     ]}
 
     verbose = bool(params["verbose"])
@@ -344,6 +351,7 @@ def main() -> None:
 
     sources, layouts, cameras_info = _build_sources(node, params)
     gate = _setup_gate(node, sources, params, cameras_info)
+    previews = _setup_previews(node, sources, gate, params)
 
     config = VideoServiceConfig(
         signaling_host=str(params["signaling_host"]),
@@ -358,8 +366,49 @@ def main() -> None:
     except KeyboardInterrupt:
         _LOG.info("interrupted")
     finally:
+        for p in previews:
+            p.stop()
         node.destroy_node()
         rclpy.shutdown()
+
+
+def _setup_previews(
+    node: Node,
+    sources: list[VideoSourceAdapter],
+    gate: StreamGate,
+    params: dict[str, Any],
+) -> list[Any]:
+    """Attach a PreviewPublisher tap to each source (web live preview).
+
+    No-op when ``web_preview`` is false. Frames are tapped from the producer
+    threads (capture thread / rclpy callback) and JPEG-encoded in a dedicated
+    thread per camera — never in the asyncio loop, so the Quest RTP pacing is
+    unaffected.
+    """
+    if not bool(params.get("web_preview", True)):
+        return []
+    from quest3_video_streamer.preview import PreviewPublisher
+    from quest3_video_streamer.ros_source import RosImageSourceAdapter
+
+    fps = float(params.get("web_preview_fps", 10.0))
+    width = int(params.get("web_preview_width", 640))
+    quality = int(params.get("web_preview_quality", 65))
+    previews: list[Any] = []
+    for src in sources:
+        label = str(src.get_format().label)
+        pub = PreviewPublisher(
+            node=node, label=label, gate=gate,
+            fps=fps, width=width, quality=quality,
+        )
+        is_ros = isinstance(src, RosImageSourceAdapter)
+        src.preview_hook = lambda f, p=pub, rgb=is_ros: p.submit(f, is_rgb=rgb)
+        previews.append(pub)
+    if previews:
+        _LOG.info(
+            f"web preview on ~/preview/<label>: {len(previews)} cams, "
+            f"{fps}fps width={width} q{quality}"
+        )
+    return previews
 
 
 _LATCHED_QOS = QoSProfile(
