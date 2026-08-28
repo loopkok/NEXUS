@@ -243,12 +243,14 @@ def make_ik_solver(
     ik_max_iter: int = 20,
     ik_tol: float = 1e-8,
     ik_w_pos: float = 1.0,
-    ik_w_ori: float = 0.40,
-    ik_w_reg: float = 0.02,
-    ik_q4_max: float = -0.25,
+    ik_w_ori: float = 0.3,
+    ik_w_reg: float = 1e-4,
+    ik_q4_max: float = -0.45,
     ik_w_limit: float = 0.12,
-    ik_dq_max: float = 0.30,
-    ik_w_pref: float = 0.004,
+    ik_dq_max: float = 0.0,
+    ik_w_pref: float = 0.0,
+    ik_w_fold: float = 0.015,
+    ik_q4_fold: float = -1.20,
 ) -> AstralIKBridge:
     st = solver_type.strip().lower()
 
@@ -280,6 +282,8 @@ def make_ik_solver(
             w_limit=float(ik_w_limit),
             dq_max=float(ik_dq_max),
             w_pref=float(ik_w_pref),
+            w_fold=float(ik_w_fold),
+            q4_fold=float(ik_q4_fold),
         )
         return AstralIKBridge(solver, "urdf_numerical")
 
@@ -296,12 +300,14 @@ def make_single_arm_ik(
     ik_max_iter: int = 20,
     ik_tol: float = 1e-8,
     ik_w_pos: float = 1.0,
-    ik_w_ori: float = 0.40,
-    ik_w_reg: float = 0.02,
-    ik_q4_max: float = -0.25,
+    ik_w_ori: float = 0.3,
+    ik_w_reg: float = 1e-4,
+    ik_q4_max: float = -0.45,
     ik_w_limit: float = 0.12,
-    ik_dq_max: float = 0.30,
-    ik_w_pref: float = 0.004,
+    ik_dq_max: float = 0.0,
+    ik_w_pref: float = 0.0,
+    ik_w_fold: float = 0.015,
+    ik_q4_fold: float = -1.20,
 ):
     """One-arm solver for ``astral_arm_teleop_node`` (DH native or URDF adapter)."""
     st = solver_type.strip().lower()
@@ -329,6 +335,8 @@ def make_single_arm_ik(
             ik_w_limit=ik_w_limit,
             ik_dq_max=ik_dq_max,
             ik_w_pref=ik_w_pref,
+            ik_w_fold=ik_w_fold,
+            ik_q4_fold=ik_q4_fold,
         )
         return SingleArmIKAdapter(bridge, arm_side)
 

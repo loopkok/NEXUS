@@ -73,14 +73,16 @@ class URDFNumericalIKSolver(IKSolverBase):
         max_iter: int = 20,
         tol: float = 1e-8,
         w_pos: float = 1.0,
-        w_ori: float = 0.40,
-        w_reg: float = 0.02,
-        q4_max: float = -0.25,
+        w_ori: float = 0.3,
+        w_reg: float = 1e-4,
+        q4_max: float = -0.45,
         w_limit: float = 0.12,
         limit_margin: float = 0.18,
-        dq_max: float = 0.30,
-        w_pref: float = 0.004,
+        dq_max: float = 0.0,
+        w_pref: float = 0.0,
         q_pref: Sequence[float] | None = None,
+        w_fold: float = 0.015,
+        q4_fold: float = -1.20,
     ):
         urdf_path = str(Path(urdf_path).resolve())
         self._urdf_path = urdf_path
@@ -151,6 +153,10 @@ class URDFNumericalIKSolver(IKSolverBase):
         self._limit_margin = float(max(1e-3, limit_margin))
         self._dq_max = float(max(0.0, dq_max))
         self._w_pref = float(max(0.0, w_pref))
+        # One-sided: penalize an elbow straighter than q4_fold so J3 keeps
+        # a lever arm and the hand can come in. Position still wins for reach.
+        self._w_fold = float(max(0.0, w_fold))
+        self._q4_fold = float(q4_fold)
         # Proximal joints (esp. shoulder roll) cause the "weird" teleop poses.
         self._reg_scale = np.array([1.0, 1.6, 1.4, 1.3, 0.7, 0.5, 0.5], dtype=float)
         self._pref_scale = np.array([1.0, 1.4, 1.2, 1.3, 0.4, 0.3, 0.3], dtype=float)
@@ -271,6 +277,8 @@ class URDFNumericalIKSolver(IKSolverBase):
         dq_max: float | None = None,
         w_pref: float | None = None,
         q_pref: Sequence[float] | None = None,
+        w_fold: float | None = None,
+        q4_fold: float | None = None,
     ) -> None:
         if max_iter is not None:
             self._max_nfev = max(int(max_iter) * 15, 80)
@@ -294,6 +302,10 @@ class URDFNumericalIKSolver(IKSolverBase):
             self._w_pref = float(max(0.0, w_pref))
         if q_pref is not None:
             self._q_pref = np.asarray(q_pref, dtype=float).reshape(-1)
+        if w_fold is not None:
+            self._w_fold = float(max(0.0, w_fold))
+        if q4_fold is not None:
+            self._q4_fold = float(q4_fold)
 
     def bounds_for(self, is_left: bool) -> Tuple[np.ndarray, np.ndarray]:
         model = self._model_L if is_left else self._model_R
@@ -372,29 +384,41 @@ class URDFNumericalIKSolver(IKSolverBase):
         w_pref = self._w_pref
         q_pref = self._q_pref
         n_pref = nq if (w_pref > 0.0 and q_pref is not None and q_pref.size >= nq) else 0
+        w_fold, q4_fold = self._w_fold, self._q4_fold
+        n_fold = 1 if (w_fold > 0.0 and nq > 3) else 0
         rs = self._reg_scale[:nq]
         ps = self._pref_scale[:nq]
         s_reg = np.sqrt(w_reg) * rs
         s_pref = np.sqrt(w_pref) * ps if n_pref else None
         q_pref_n = q_pref[:nq] if n_pref else None
+        # Don't spend most of a short-side travel (left J2 inward is 0.3 rad)
+        # inside the hinge. Scale margin by room from q=0 (clipped to bounds).
+        ref0 = np.clip(np.zeros(nq), lower_j, upper_j)
+        room_lo = np.maximum(ref0 - lower_j, 1e-3)
+        room_hi = np.maximum(upper_j - ref0, 1e-3)
+        m_lo = np.minimum(margin, 0.30 * room_lo)
+        m_hi = np.minimum(margin, 0.30 * room_hi)
 
         def _cost(q):
             pin.forwardKinematics(model, data, q)
             pin.updateFramePlacements(model, data)
             Tc = self._ee_in_base(model, data, ee_id, base_name)
             err = pin.log(Tc.inverse() * T_tgt).vector
-            out = np.empty(6 + nq + n_lim + n_pref)
+            out = np.empty(6 + nq + n_lim + n_pref + n_fold)
             out[:3] = w_pos * err[:3]
             out[3:6] = w_ori * err[3:]
             out[6 : 6 + nq] = s_reg * (q - q0)
             off = 6 + nq
             if n_lim:
-                lo_pen = np.maximum(0.0, margin - (q - lower_j))
-                hi_pen = np.maximum(0.0, margin - (upper_j - q))
+                lo_pen = np.maximum(0.0, m_lo - (q - lower_j))
+                hi_pen = np.maximum(0.0, m_hi - (upper_j - q))
                 out[off : off + nq] = w_limit * (lo_pen + hi_pen)
                 off += nq
             if n_pref:
                 out[off : off + nq] = s_pref * (q - q_pref_n)
+                off += nq
+            if n_fold:
+                out[off] = w_fold * max(0.0, float(q[3]) - q4_fold)
             # At the elbow cap, drop orientation so the other 6 joints
             # can still slide the EE along the reach surface.
             if nq > 3 and (upper_j[3] - q[3]) < 0.04:

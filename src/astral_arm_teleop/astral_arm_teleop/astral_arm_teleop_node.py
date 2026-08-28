@@ -95,16 +95,19 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("ik_max_iter", 20)
         self.declare_parameter("ik_tol", 1e-8)
         self.declare_parameter("ik_w_pos", 1.0)
-        self.declare_parameter("ik_w_ori", 0.40)
-        self.declare_parameter("ik_w_reg", 0.02)
+        self.declare_parameter("ik_w_ori", 0.3)
+        self.declare_parameter("ik_w_reg", 1e-4)
         # Joint4 URDF upper=0 is fully stretched (elbow singularity).
         # <0 caps IK/safety below that; >=0 keeps the URDF limit.
-        self.declare_parameter("ik_q4_max", -0.25)
+        self.declare_parameter("ik_q4_max", -0.45)
         self.declare_parameter("ik_w_limit", 0.12)
         # Per-solve joint step box around q_prev (rad). 0 = off. Blocks IK branch jumps.
-        self.declare_parameter("ik_dq_max", 0.30)
+        self.declare_parameter("ik_dq_max", 0.0)
         # Pull toward init_pose when redundant. 0 = off.
-        self.declare_parameter("ik_w_pref", 0.004)
+        self.declare_parameter("ik_w_pref", 0.0)
+        # One-sided elbow fold: penalize q4 straighter than ik_q4_fold.
+        self.declare_parameter("ik_w_fold", 0.015)
+        self.declare_parameter("ik_q4_fold", -1.20)
         self.declare_parameter(
             "vr_to_arm_rot",
             [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
@@ -181,6 +184,8 @@ class AstralTeleopArmNode(Node):
             ik_w_limit=float(self.get_parameter("ik_w_limit").value),
             ik_dq_max=float(self.get_parameter("ik_dq_max").value),
             ik_w_pref=float(self.get_parameter("ik_w_pref").value),
+            ik_w_fold=float(self.get_parameter("ik_w_fold").value),
+            ik_q4_fold=float(self.get_parameter("ik_q4_fold").value),
         )
         init_q_old = np.asarray(
             self.get_parameter("init_pose").value, dtype=float
@@ -371,6 +376,10 @@ class AstralTeleopArmNode(Node):
                     lm["dq_max"] = float(p.value)
                 elif name == "ik_w_pref":
                     lm["w_pref"] = float(p.value)
+                elif name == "ik_w_fold":
+                    lm["w_fold"] = float(p.value)
+                elif name == "ik_q4_fold":
+                    lm["q4_fold"] = float(p.value)
                 elif name == "ik_q4_max":
                     lm["q4_max"] = float(p.value)
                 elif name == "ik_w_limit":
@@ -431,6 +440,8 @@ class AstralTeleopArmNode(Node):
             ik_w_limit=float(self.get_parameter("ik_w_limit").value),
             ik_dq_max=float(self.get_parameter("ik_dq_max").value),
             ik_w_pref=float(self.get_parameter("ik_w_pref").value),
+            ik_w_fold=float(self.get_parameter("ik_w_fold").value),
+            ik_q4_fold=float(self.get_parameter("ik_q4_fold").value),
         )
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:

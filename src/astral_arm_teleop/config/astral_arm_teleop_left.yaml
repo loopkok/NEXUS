@@ -11,24 +11,26 @@ astral_arm_teleop_left:
     ik_max_iter: 20
     ik_tol: 0.00000001
     ik_w_pos: 1.0
-    # With ik_w_reg=0.02 the arm shape stays put; raise ori so the
-    # flange tracks Quest wrist. 0.12 drifted; 0.3 was OK before reg.
-    ik_w_ori: 0.40
-    # Continuity vs last q. 1e-4 let LM pick a new arm shape every frame.
-    ik_w_reg: 0.02
+    # Temporarily back to pre stick-to-prev-frame. Restore:
+    # ik_w_ori 0.40 / ik_w_reg 0.02 / ik_dq_max 0.30 / ik_w_pref 0.004
+    ik_w_ori: 0.3
+    ik_w_reg: 0.0001
     # Joint4 URDF upper=0 is fully stretched (elbow singularity → 卡死).
-    # IK/safety cap; more negative = keep more bend. 0 = use URDF 0.
-    ik_q4_max: -0.25
-    ik_w_limit: 0.12  # soft hinge near all joint bounds
-    ik_dq_max: 0.30   # rad per IK solve; blocks branch jumps (0=off)
-    ik_w_pref: 0.004  # pull toward init_pose when redundant
+    # Keep more bend than -0.25 so J3 still has a lever for inward reach.
+    ik_q4_max: -0.45
+    ik_w_limit: 0.12  # soft hinge; short-side travel is not fully eaten
+    ik_dq_max: 0.0    # rad per IK solve; 0=off
+    ik_w_pref: 0.0    # pull toward init_pose when redundant; 0=off
+    # One-sided fold: penalize q4 straighter than ik_q4_fold (0=off).
+    ik_w_fold: 0.015
+    ik_q4_fold: -1.20
 
     vr_to_arm_rot: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
     pos_smoothing: 0.5 #0.8   # 0=无滤波 1=几乎不跟；可热改（tune 滑动条）
     rot_smoothing: 0.6 #0.8
-    motion_scale: 0.65 #0.65
+    motion_scale: 0.8 #0.65
     flip_pitch: false
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 

@@ -6,6 +6,20 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-08-28
 
+**夹爪开合限速 + 扳机整形**——`astral_gripper_teleop`。
+
+- 现象：手柄扳机控制夹爪"一扣到底"，中间态几乎不可见。链路（Unity `Axis1D` F3 模拟量 → Joy → ratio → 驱动每拍绝对角度 0x97/0x98）全程比例，但**没有任何速度整形**，夹爪伺服对每个目标全速赴位，快扣时宏观上就是直接合死。
+- `pinch_gripper_node` 新增合并输出限速 `max_ratio_rate`（默认 **2.5 ratio/s**，全行程 ≥0.4 s；≤0 关闭），trigger/pinch 两路合并后的比值按拍斜坡下发；首拍直取，避免持握中恢复时先松一下。比例性保留：扳机停半路夹爪停半路。
+- 扳机路径补整形链（此前无任何滤波）：死区重标定 `[trigger_deadzone,1]→[0,1]` → `trigger_gamma`（默认 **1.4**，前半程更细，便于半捏）→ `trigger_ema_alpha`（默认 **0.4**，去 Joy 抖动）。
+- 参数在 `gripper_teleop.yaml`，节点启动时读取（无热改回调，改后需重启节点）。
+
+**肘折偏置，方便内收**——`astral_arm_teleop` `urdf_numerical`。
+
+- 现象：J4 卡死少了，但肘经常伸太直（`ik_q4_max=-0.25` 只剩约 14°），J3 对末端几乎没力臂，手难往内收。左 J2 内收侧 URDF 只有 0.3 rad，软限位 0.18 还吃掉大半。
+- `ik_q4_max` −0.25→**−0.45**；新增单向折肘 `ik_w_fold=0.015` / `ik_q4_fold=-1.20`（比这更直才罚，约 2 mm 级位置代价；位置误差仍优先）。限位铰链按「到 0 的短边」缩 margin，J2 内收不再一碰就顶。
+
+**暂时撤回「贴上一帧」默认值**——`astral_arm_teleop`。求解器仍支持这些项，默认改回改之前：`ik_w_ori=0.3`、`ik_w_reg=1e-4`、`ik_dq_max=0`、`ik_w_pref=0`。yaml 注释里留了 0.40 / 0.02 / 0.30 / 0.004 以便恢复。J4 帽和工作球不动。
+
 **驱动 SESSION 低通 + 建议 100 Hz**——`astral_robot_control`。
 
 - yaml 新增 `lpf_enable` / `lpf_alpha`，connect 与 `~/ready` 后调 SDK `set_lpf`（进 WORK 可能重置，故每次 ready 重写）。默认开、`alpha=0.35`（100 Hz 约 19 ms）。

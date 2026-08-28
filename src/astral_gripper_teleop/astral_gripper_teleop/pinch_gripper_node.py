@@ -67,6 +67,15 @@ class PinchGripperNode(Node):
         self.declare_parameter("trigger_axis", 0)
         self.declare_parameter("trigger_deadzone", 0.05)
         self.declare_parameter("trigger_invert", False)
+        # Trigger shaping: deadzone rescale → gamma → EMA. gamma > 1 gives
+        # finer control at the start of the stroke (easier half-grasp).
+        self.declare_parameter("trigger_gamma", 1.4)
+        self.declare_parameter("trigger_ema_alpha", 0.4)
+        # Slew limit on the merged published ratio (ratio/s); <=0 disables.
+        # The gripper servo executes every absolute target at max speed, so
+        # without this a fast trigger pull slams it shut despite the pipeline
+        # being proportional end to end.
+        self.declare_parameter("max_ratio_rate", 2.5)
 
         side = str(self.get_parameter("hand_side").value).strip().lower()
         if side not in ("left", "right"):
@@ -109,8 +118,16 @@ class PinchGripperNode(Node):
         self.trigger_axis = int(self.get_parameter("trigger_axis").value)
         self.trigger_deadzone = float(self.get_parameter("trigger_deadzone").value)
         self.trigger_invert = bool(self.get_parameter("trigger_invert").value)
+        self.trigger_gamma = max(
+            0.05, float(self.get_parameter("trigger_gamma").value)
+        )
+        self.trigger_ema_alpha = float(self.get_parameter("trigger_ema_alpha").value)
+        self.max_ratio_rate = float(self.get_parameter("max_ratio_rate").value)
         self._trigger_ratio = 0.0
+        self._trigger_ema_ready = False
         self._last_joy_t = 0.0
+        self._ratio_cmd = 0.0  # slew-limited published value
+        self._last_pub_t = 0.0
         if self.controller_joy_topic:
             from sensor_msgs.msg import Joy
             self.create_subscription(
@@ -134,6 +151,8 @@ class PinchGripperNode(Node):
             f"pinch=[{self.close_dist:.3f},{self.open_dist:.3f}]m "
             f"auto_range={self.auto_range} forget={self._env_tau:.1f}s "
             f"joy={self.controller_joy_topic or 'off'} axis={self.trigger_axis} "
+            f"gamma={self.trigger_gamma:.2f} trig_ema={self.trigger_ema_alpha:.2f} "
+            f"rate={self.max_ratio_rate:.2f}/s "
             f"(ratio only; rad mapping in driver config)"
         )
 
@@ -167,7 +186,9 @@ class PinchGripperNode(Node):
         """Touch controller trigger (analog) → close ratio in [0,1].
 
         axes[trigger_axis]: 0 = released (open), 1 = fully pressed (closed).
-        A deadzone removes jitter near 0; ``trigger_invert`` flips polarity.
+        Shaping chain: deadzone + rescale (travel above the deadzone spans the
+        full 0..1 stroke) → gamma curve → EMA against Joy jitter.
+        ``trigger_invert`` flips polarity.
         """
         ax = list(msg.axes) if msg.axes else []
         if self.trigger_axis < 0 or self.trigger_axis >= len(ax):
@@ -175,9 +196,16 @@ class PinchGripperNode(Node):
         t = float(ax[self.trigger_axis])
         if self.trigger_invert:
             t = 1.0 - t
-        if t < self.trigger_deadzone:
-            t = 0.0
-        self._trigger_ratio = max(0.0, min(1.0, t))
+        t = (t - self.trigger_deadzone) / max(1e-3, 1.0 - self.trigger_deadzone)
+        t = max(0.0, min(1.0, t))
+        if self.trigger_gamma != 1.0:
+            t = t ** self.trigger_gamma
+        if not self._trigger_ema_ready or self.trigger_ema_alpha >= 1.0:
+            self._trigger_ratio = t
+            self._trigger_ema_ready = True
+        else:
+            a = max(0.0, min(1.0, self.trigger_ema_alpha))
+            self._trigger_ratio = a * t + (1.0 - a) * self._trigger_ratio
         self._last_joy_t = time.monotonic()
 
     def _update_envelope(self, dist: float, now: float) -> None:
@@ -248,6 +276,20 @@ class PinchGripperNode(Node):
             return  # no input yet
 
         ratio = max(0.0, min(1.0, ratio))
+
+        # Slew limit on the merged output. The driver sends an absolute angle
+        # per tick and the servo goes at max speed, so a fast trigger pull (or
+        # a pinch↔trigger source switch) would otherwise slam the gripper.
+        # First publish snaps (avoids opening first when resuming mid-grasp).
+        dt_pub = now - self._last_pub_t if self._last_pub_t > 0.0 else 0.0
+        self._last_pub_t = now
+        if self.max_ratio_rate > 0.0 and dt_pub > 0.0:
+            max_d = self.max_ratio_rate * min(dt_pub, 0.1)
+            d = ratio - self._ratio_cmd
+            self._ratio_cmd += max(-max_d, min(max_d, d))
+            ratio = self._ratio_cmd
+        else:
+            self._ratio_cmd = ratio
 
         cmd = Float64()
         cmd.data = float(ratio)

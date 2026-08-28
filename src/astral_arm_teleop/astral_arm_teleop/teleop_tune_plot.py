@@ -60,9 +60,9 @@ _DEFAULTS = {
     "max_joint_vel": 4.0,
     "workspace_radius": 0.55,
     "ik_w_pos": 1.0,
-    "ik_w_ori": 0.40,
-    "ik_w_reg": 0.02,
-    "ik_q4_max": -0.25,
+    "ik_w_ori": 0.3,
+    "ik_w_reg": 1e-4,
+    "ik_q4_max": -0.45,
     "ik_w_limit": 0.12,
     "ik_max_iter": 20.0,
     "ik_tol": 1e-8,
@@ -706,7 +706,7 @@ def _run_plot(node: TeleopTunePlot) -> None:
         gs_urdf, 4, "ik_tol", "公差 log10", -10.0, -4.0, 0.5, "%.1f", _COL["filt"], "log10"
     )
     _add_slider(
-        gs_urdf, 5, "ik_w_reg", "正则 log10", -5.0, -1.0, 0.1, "%.1f", _COL["filt"], "log10"
+        gs_urdf, 5, "ik_w_reg", "正则 log10", -6.0, -2.0, 0.5, "%.1f", _COL["filt"], "log10"
     )
     _add_slider(gs_urdf, 6, "ik_q4_max", "肘上限 q4", -1.00, 0.00, 0.01, "%.2f", _COL["filt"])
     _add_slider(gs_urdf, 7, "ik_w_limit", "限位软约束", 0.00, 0.50, 0.01, "%.2f", _COL["filt"])
