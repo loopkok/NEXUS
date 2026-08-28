@@ -6,6 +6,11 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-08-28
 
+**驱动 SESSION 低通 + 建议 100 Hz**——`astral_robot_control`。
+
+- yaml 新增 `lpf_enable` / `lpf_alpha`，connect 与 `~/ready` 后调 SDK `set_lpf`（进 WORK 可能重置，故每次 ready 重写）。默认开、`alpha=0.35`（100 Hz 约 19 ms）。
+- `obs_hz` / `ctrl_hz` / `control_rate` / `state_publish_rate` 50→**100**（与遥操 150 对齐的起步档；UDP 稳再升 150）。
+
 **URDF IK 贴上一帧，少换怪构型**——`astral_arm_teleop` `urdf_numerical`。
 
 - `ik_w_reg` 1e-4→**0.02**（贴 `q_prev`；肩/肘权重大、腕小）。另：`ik_dq_max=0.30` 每拍关节步进盒，挡住一次解跳到另一支 IK；`ik_w_pref=0.004` 冗余时往 `init_pose` 靠。**`ik_w_ori` 提到 0.40**（在强正则下跟 Quest 腕朝向；0.12 会漂）。位置权重不变。tune 正则滑条范围扩到 0.1。

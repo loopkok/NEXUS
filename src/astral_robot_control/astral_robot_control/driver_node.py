@@ -80,6 +80,8 @@ class AstralRobotDriverNode(Node):
         self.declare_parameter("local_port", 8081)
         self.declare_parameter("obs_hz", 50)
         self.declare_parameter("ctrl_hz", 50)
+        self.declare_parameter("lpf_enable", True)
+        self.declare_parameter("lpf_alpha", 0.35)
         self.declare_parameter("auto_ready", True)
         self.declare_parameter("dry_run", False)
         self.declare_parameter("enable_full_body_cmd", True)
@@ -109,6 +111,8 @@ class AstralRobotDriverNode(Node):
         self.local_port = int(self.get_parameter("local_port").value)
         self.obs_hz = int(self.get_parameter("obs_hz").value)
         self.ctrl_hz = int(self.get_parameter("ctrl_hz").value)
+        self.lpf_enable = bool(self.get_parameter("lpf_enable").value)
+        self.lpf_alpha = float(self.get_parameter("lpf_alpha").value)
         self.auto_ready = bool(self.get_parameter("auto_ready").value)
         self.dry_run = bool(self.get_parameter("dry_run").value)
         self.enable_full_body_cmd = bool(
@@ -293,6 +297,22 @@ class AstralRobotDriverNode(Node):
                 )
             else:
                 self.get_logger().info("one_click_ready OK")
+        self._apply_lpf()
+
+    def _apply_lpf(self) -> None:
+        """Push SESSION target LPF after WORK (one_click_ready may reset it)."""
+        if self._robot is None:
+            return
+        alpha = min(1.0, max(1e-3, float(self.lpf_alpha)))
+        try:
+            self._robot.set_lpf(self.lpf_enable, alpha)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warn(f"set_lpf failed: {exc}")
+            return
+        self.get_logger().info(
+            f"lpf enable={self.lpf_enable} alpha={alpha:.3f} "
+            f"(obs={self.obs_hz} ctrl={self.ctrl_hz} Hz)"
+        )
 
     def destroy_node(self) -> bool:
         try:
@@ -579,6 +599,7 @@ class AstralRobotDriverNode(Node):
             return res
         try:
             ok = self._robot.one_click_ready(enable_timeout_s=3.0)
+            self._apply_lpf()
             res.success = bool(ok)
             res.message = "one_click_ready OK" if ok else "enable not confirmed"
         except Exception as exc:  # noqa: BLE001

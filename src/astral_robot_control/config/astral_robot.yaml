@@ -24,14 +24,22 @@ astral_robot_driver:
     board_cmd_port: 5001
     local_ip: "0.0.0.0"
     local_port: 8081
-    obs_hz: 50
-    ctrl_hz: 50
+    # 板卡 SESSION + ROS 定时器建议同档。遥操 IK 默认 150 Hz。
+    #   50  = SDK/板卡出厂，跟手会丢掉大量 IK 帧
+    #   100 = 建议起步（本文件）：带宽约 2×，仍低于遥操，稳妥
+    #   150 = 与 teleop 1:1；UDP 稳再升
+    obs_hz: 100
+    ctrl_hz: 100
+    state_publish_rate: 100.0
+    control_rate: 100.0
+    # 板卡 SESSION 目标低通（SDK set_lpf）。y += alpha*(x-y)，alpha 越大越跟手。
+    # 100 Hz 下 0.35 ≈ 19 ms 时间常数；发颤再降到 0.2，发肉再升到 0.5。
+    lpf_enable: true
+    lpf_alpha: 0.35
     auto_ready: true
     dry_run: false
     enable_full_body_cmd: true
     command_timeout_s: 1.5
-    state_publish_rate: 50.0
-    control_rate: 50.0
     left_arm_ns: "left_arm"
     right_arm_ns: "right_arm"
     astral_ns: "astral"
