@@ -47,6 +47,9 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         # Optional tap for the web preview pipeline: callable(bgr_frame).
         # Called from the capture thread; must be non-blocking.
         self.preview_hook: Any = None
+        # Optional tap for the data-collection pipeline: callable(bgr_frame).
+        # Same contract as preview_hook (capture thread, must not block).
+        self.collect_hook: Any = None
 
     async def start(self) -> None:
         import cv2
@@ -125,6 +128,12 @@ class WebcamSourceAdapter(VideoSourceAdapter):
             if hook is not None:
                 try:
                     hook(bgr)  # native BGR, before the RGB conversion
+                except Exception:
+                    pass
+            collect_hook = self.collect_hook
+            if collect_hook is not None:
+                try:
+                    collect_hook(bgr)  # native BGR, same contract as preview
                 except Exception:
                     pass
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)

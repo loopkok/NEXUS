@@ -6,6 +6,24 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-08-28
 
+**Quest 面板：腕部靠左缩小，RealSense 居中放大**——`quest3_video_streamer`。
+
+- 左上/左下腕部 `x -0.6→-0.95`、`size 0.38→0.28`；D435i `x 0.5→0.05`、`size 0.6→0.88`。
+- auto_scan 无同名 yaml 块时按 fourcc：YUYV 居中 1080p，其余当腕部左侧叠放 720p（换 USB 口编号变了仍是这套布局）。
+
+**D435i auto_scan 勿推红外**——`quest3_video_streamer`。
+
+- 彩色节点常是 `VIDEO_CAPTURE_MPLANE`，扫描只 enum 了普通 capture，RGB 格式列表为空；同机红外 GREY 得分更高，推流变成红外。
+- 同时 enum mplane；USB 接口 `1-2:1.0` / `1-2:1.3` 归到同一设备再比分；得分低于彩色阈值的红外/深度组直接丢掉。
+
+**VLA 数据采集包**——新增 `astral_data_collect`；`quest3_video_streamer` 加采集抽头。
+
+- 目标：为 OpenPI pi0.5 采集训练数据。四段式：采集（raw HDF5，与遥操并行）→ 离线对齐（严格 1/fps 网格，action=state[t+1] 可切 command）→ 清洗校验（11 条规则 + quarantine 隔离）→ LeRobot **v2.1** 导出（逐字段对齐 `VLA/lerobot @0cf86487`，纯 pyarrow+av 手写、不依赖 lerobot 包）；另附 Rerun 回放。
+- schema 采集前配置并冻结进 meta.json：**臂侧可选（`arms`: 左/右/双臂）**、左右末端独立 gripper/wuji/none（跟随所属臂）、腰/头可选纳入；state 布局 `[左臂7?, 右臂7?, 左EE?, 右EE?, 腰2?, 头2?]`，夹爪用闭合比（0..1，同 pi0.5 dim6 约定）。
+- 控制：键盘热键（s/q/d/n/p/t）与 `/data_collect/control` 话题双通道；`/data_collect/state` latched JSON 报各流帧率/丢弃数；任务文本每段一条、录制中可改。
+- streamer 抽头 `~/collect/{label}`：全分辨率 JPEG，**仅在有订阅者时编码**（不采集零开销），与 preview 同线程模型、跟随门控；参数 `collect_tap`/`collect_tap_fps`/`collect_tap_quality`。
+- 测试：36 项离线单测（schema/align/validate/convert 逐字段校验 v2.1 布局）+ ROS 进程内冒烟（假话题 start/stop/discard/pause 全流程）。
+
 **夹爪开合限速 + 扳机整形**——`astral_gripper_teleop`。
 
 - 现象：手柄扳机控制夹爪"一扣到底"，中间态几乎不可见。链路（Unity `Axis1D` F3 模拟量 → Joy → ratio → 驱动每拍绝对角度 0x97/0x98）全程比例，但**没有任何速度整形**，夹爪伺服对每个目标全速赴位，快扣时宏观上就是直接合死。

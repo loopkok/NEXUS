@@ -57,6 +57,12 @@ Quest3 ← WebRTC（quest3_video_streamer，信令 :8765）
 | `wujihandros2` | vendored 驱动：`wujihand_driver` / `wujihand_msgs` / `wujihand_bringup` |
 | `wujihand_mujoco_sim` | 手仿真 + TuningViewer |
 
+### 数据
+
+| 包 | 作用 |
+|----|------|
+| `astral_data_collect` | VLA 数据采集：raw HDF5 录制（与遥操并行）→ 离线对齐 → 清洗校验 → LeRobot v2.1 导出（OpenPI pi0.5 可读）→ Rerun 回放 |
+
 开源 retarget 库仍可放在本仓库旁：`../wuji-retargeting`。
 
 ## 构建
@@ -71,7 +77,7 @@ colcon build --symlink-install --packages-select \
   astral_robot_control astral_mujoco_sim \
   wuji_glove wujihand_retargeting wujihand_control \
   wujihand_driver wujihand_msgs wujihand_bringup \
-  wujihand_mujoco_sim
+  wujihand_mujoco_sim astral_data_collect
 source install/setup.bash
 ```
 
@@ -111,6 +117,17 @@ ros2 launch wujihand_control wujihand_real_pipeline.launch.py \
 
 Quest 有线 HTS：`adb reverse tcp:8000 tcp:8000`。  
 Quest 视频回传：`ros2 launch quest3_video_streamer multi_camera.launch.py`；有线可 `adb reverse tcp:8765 tcp:8765`。细节见 [`src/quest3_video_streamer/README.md`](src/quest3_video_streamer/README.md)。
+
+数据采集（VLA 训练，遥操运行时并行）：
+
+```bash
+ros2 launch astral_data_collect data_collect.launch.py \
+  session:=pick_place end_effector_right:=wuji
+# 另一终端：ros2 run astral_data_collect keyboard_controller（s/q/d/n/p/t 热键）
+# 离线：align_data → validate_data → convert_to_lerobot → replay_rerun
+```
+
+细节见 [`src/astral_data_collect/README.md`](src/astral_data_collect/README.md)。
 
 ## IK 约定（臂）
 

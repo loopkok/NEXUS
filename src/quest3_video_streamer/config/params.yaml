@@ -46,9 +46,9 @@ quest3_video_streamer:
       label: "d435i"
       force_mjpg: false
       layout:
-        position: [0.5, -0.1, 1.8]
+        position: [0.05, 0.0, 1.8]
         distance: 1.8
-        size_multiplier: 0.6
+        size_multiplier: 0.88
 
     wrist_left:
       source: "webcam"
@@ -59,9 +59,9 @@ quest3_video_streamer:
       label: "wrist_left"
       force_mjpg: true
       layout:
-        position: [-0.6, 0.32, 1.8]
+        position: [-0.95, 0.32, 1.8]
         distance: 1.8
-        size_multiplier: 0.38
+        size_multiplier: 0.28
 
     wrist_right:
       source: "webcam"
@@ -72,41 +72,39 @@ quest3_video_streamer:
       label: "wrist_right"
       force_mjpg: true
       layout:
-        position: [-0.6, -0.42, 1.8]
+        position: [-0.95, -0.42, 1.8]
         distance: 1.8
-        size_multiplier: 0.38
+        size_multiplier: 0.28
 
-    # --- auto_scan 覆盖块：扫描 label = 设备节点名（video0/video2/...）---
-    # 这两块把扫描到的两路恢复成之前的"左侧上下"布局（与 wrist 块一致）。
-    # 若 Jetson 上扫描出的 label 不是 video0/video2（看 ~/gate_state 里的
-    # cameras 列表），把块名改成对应 label 即可。
+    # --- auto_scan 覆盖块：label = 节点名。换口后编号变了会走代码里按
+    # fourcc 的默认（腕部左侧缩小上下叠，YUYV RealSense 居中放大）。
     video0:
       preset: "720p30"
       fov_h_deg: 60.0
       force_mjpg: true
       layout:
-        position: [-0.6, 0.32, 1.8]
+        position: [-0.95, 0.32, 1.8]
         distance: 1.8
-        size_multiplier: 0.38
+        size_multiplier: 0.28
 
     video2:
       preset: "720p30"
       fov_h_deg: 60.0
       force_mjpg: true
       layout:
-        position: [-0.6, -0.42, 1.8]
+        position: [-0.95, -0.42, 1.8]
         distance: 1.8
-        size_multiplier: 0.38
+        size_multiplier: 0.28
 
-    # D435i 彩色节点（auto_scan 去重后应选 YUYV 的 video8，不是深度 video4）。
+    # D435i 彩色节点（auto_scan 应选 YUYV，不是红外 GREY / 深度 Z16）。
     video8:
       preset: "1080p30"
       fov_h_deg: 69.0
       force_mjpg: false
       layout:
-        position: [0.5, -0.1, 1.8]
+        position: [0.05, 0.0, 1.8]
         distance: 1.8
-        size_multiplier: 0.6
+        size_multiplier: 0.88
 
     # --- 公共参数 ---
     # WebSocket 信令服务器（Quest 连这里）。
@@ -135,5 +133,12 @@ quest3_video_streamer:
     web_preview_fps: 10.0      # 每路预览帧率（抽帧）
     web_preview_width: 640     # 预览宽度（等比缩放）
     web_preview_quality: 65    # JPEG 质量
+
+    # --- 数据采集抽头（astral_data_collect 训练数据采集）---
+    # 全分辨率 JPEG → ~/collect/{label}（CompressedImage, BEST_EFFORT）。
+    # 按需编码：仅当话题有订阅者时才编码，纯遥操作运行时零开销。
+    collect_tap: true
+    collect_tap_fps: 30.0      # 每路采集帧率上限（跟随数据集网格）
+    collect_tap_quality: 90    # JPEG 质量（像素即训练数据）
 
     verbose: false

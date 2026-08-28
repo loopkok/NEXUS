@@ -125,12 +125,11 @@ def _build_sources(
 
         found = enumerate_capture_devices()
         if found:
-            n = len(found)
             sources = []
             layouts = []
             infos = []
-            for i, dev in enumerate(found):
-                spec, layout = _scan_spec(node, dev, i, n)
+            for dev in found:
+                spec, layout = _scan_spec(node, dev, found)
                 sources.append(_build_one_source(node, spec))
                 layouts.append(layout)
                 infos.append({
@@ -142,7 +141,7 @@ def _build_sources(
                 })
             _LOG.info(
                 f"auto_scan built {len(sources)} sources: "
-                f"{[(d['label'], d['device'], d.get('sysfs_name', '')) for d in found]}"
+                f"{[(d['label'], d['device'], d.get('fourcc', ''), d.get('sysfs_name', '')) for d in found]}"
             )
             return sources, layouts, infos
         _LOG.warning("auto_scan found no capture device; falling back to cameras list")
@@ -171,26 +170,60 @@ def _build_sources(
     return sources, layouts, infos
 
 
+_RS_COLOR_FOURCC = frozenset({"YUYV", "YUY2", "UYVY"})
+
+
+def _is_realsense_color(dev: dict[str, Any]) -> bool:
+    fc = str(dev.get("fourcc", "")).strip().upper()
+    if fc in _RS_COLOR_FOURCC:
+        return True
+    name = str(dev.get("sysfs_name", "")).lower()
+    return "rgb" in name or "color" in name
+
+
+def _scan_role_defaults(dev: dict[str, Any], found: list[dict[str, Any]]) -> dict[str, Any]:
+    """Layout/preset when yaml has no per-label override. Wrist left stack, RS center."""
+    if _is_realsense_color(dev):
+        return {
+            "preset": "1080p30",
+            "fov_h_deg": 69.0,
+            "force_mjpg": False,
+            "position": [0.05, 0.0, 1.8],
+            "size_multiplier": 0.88,
+        }
+    wrists = [d for d in found if not _is_realsense_color(d)]
+    idx = next((i for i, d in enumerate(wrists) if d.get("label") == dev.get("label")), 0)
+    # First wrist = upper, rest stacked downward.
+    y = 0.32 if idx == 0 else -0.42 - 0.12 * max(0, idx - 1)
+    return {
+        "preset": "720p30",
+        "fov_h_deg": 60.0,
+        "force_mjpg": True,
+        "position": [-0.95, y, 1.8],
+        "size_multiplier": 0.28,
+    }
+
+
 def _scan_spec(
-    node: Node, dev: dict[str, Any], index: int, count: int
+    node: Node, dev: dict[str, Any], found: list[dict[str, Any]]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Spec for an auto-scanned device; a yaml block named after the label
     (e.g. ``video0.preset``) overrides individual fields."""
     label = dev["label"]
-    preset = str(_get_param(node, f"{label}.preset", "720p30"))
-    fov_h = float(_get_param(node, f"{label}.fov_h_deg", 60.0))
-    # Scan suggests force_mjpg from fourcc (MJPG=True, YUYV/Z16=False).
+    role = _scan_role_defaults(dev, found)
+    preset = str(_get_param(node, f"{label}.preset", role["preset"]))
+    fov_h = float(_get_param(node, f"{label}.fov_h_deg", role["fov_h_deg"]))
     force_mjpg = bool(
-        _get_param(node, f"{label}.force_mjpg", bool(dev.get("force_mjpg", True)))
+        _get_param(node, f"{label}.force_mjpg", bool(dev.get("force_mjpg", role["force_mjpg"])))
     )
     device = str(_get_param(node, f"{label}.device", dev["device"]))
     pos = _get_param(node, f"{label}.layout.position", None)
     distance = float(_get_param(node, f"{label}.layout.distance", 1.8))
-    size_mult = float(_get_param(node, f"{label}.layout.size_multiplier", 0.38))
+    size_mult = float(
+        _get_param(node, f"{label}.layout.size_multiplier", role["size_multiplier"])
+    )
     if pos is None:
-        # Auto grid: spread panels in a single row in front of the eyes.
-        x = (index - (count - 1) / 2.0) * 0.75
-        pos = [x, 0.0, 1.8]
+        pos = role["position"]
     layout = {
         "position": [float(p) for p in pos],
         "distance": distance,
@@ -309,6 +342,10 @@ def _declare_params(node: Node) -> None:
     _safe_declare(node, "web_preview_fps", 10.0)
     _safe_declare(node, "web_preview_width", 640)
     _safe_declare(node, "web_preview_quality", 65)
+    # Data-collection tap (full-res JPEG on ~/collect/{label}, on-demand).
+    _safe_declare(node, "collect_tap", True)
+    _safe_declare(node, "collect_tap_fps", 30.0)
+    _safe_declare(node, "collect_tap_quality", 90)
     # Legacy single-source params (kept for backward compatibility).
     _safe_declare(node, "source_type", "ros")
     _safe_declare(node, "image_topic", "/camera/camera/color/image_raw")
@@ -342,6 +379,7 @@ def main() -> None:
         "preset", "push_enabled", "active_cameras",
         "web_preview", "web_preview_fps", "web_preview_width",
         "web_preview_quality",
+        "collect_tap", "collect_tap_fps", "collect_tap_quality",
     ]}
 
     verbose = bool(params["verbose"])
@@ -356,6 +394,7 @@ def main() -> None:
     sources, layouts, cameras_info = _build_sources(node, params)
     gate = _setup_gate(node, sources, params, cameras_info)
     previews = _setup_previews(node, sources, gate, params)
+    collect_taps = _setup_collect_taps(node, sources, gate, params)
 
     config = VideoServiceConfig(
         signaling_host=str(params["signaling_host"]),
@@ -372,6 +411,8 @@ def main() -> None:
     finally:
         for p in previews:
             p.stop()
+        for t in collect_taps:
+            t.stop()
         node.destroy_node()
         rclpy.shutdown()
 
@@ -413,6 +454,42 @@ def _setup_previews(
             f"{fps}fps width={width} q{quality}"
         )
     return previews
+
+
+def _setup_collect_taps(
+    node: Node,
+    sources: list[VideoSourceAdapter],
+    gate: StreamGate,
+    params: dict[str, Any],
+) -> list[Any]:
+    """Attach a CollectTapPublisher to each source (data-collection feed).
+
+    Full-res JPEG on ``~/collect/{label}`` at up to ``collect_tap_fps``.
+    Frames are only encoded while the topic has subscribers, so a teleop-only
+    run pays nothing. Follows the same runtime gate as the preview.
+    """
+    if not bool(params.get("collect_tap", True)):
+        return []
+    from quest3_video_streamer.collect_tap import CollectTapPublisher
+    from quest3_video_streamer.ros_source import RosImageSourceAdapter
+
+    fps = float(params.get("collect_tap_fps", 30.0))
+    quality = int(params.get("collect_tap_quality", 90))
+    taps: list[Any] = []
+    for src in sources:
+        label = str(src.get_format().label)
+        pub = CollectTapPublisher(
+            node=node, label=label, gate=gate, max_fps=fps, quality=quality,
+        )
+        is_ros = isinstance(src, RosImageSourceAdapter)
+        src.collect_hook = lambda f, p=pub, rgb=is_ros: p.submit(f, is_rgb=rgb)
+        taps.append(pub)
+    if taps:
+        _LOG.info(
+            f"collect tap on ~/collect/<label>: {len(taps)} cams, "
+            f"max {fps}fps full-res q{quality} (encode-on-demand)"
+        )
+    return taps
 
 
 _LATCHED_QOS = QoSProfile(

@@ -110,9 +110,10 @@ quest3_video_streamer:
 
 **改任何参数只需编辑这个 yaml**，不用动 launch 和代码。
 
-> **D435i 注意**：它在一个 USB 设备上暴露多个可采集节点（深度/红外/彩色），
-> auto_scan 按物理设备去重取的第一个节点不一定是彩色。用 D435i 请
-> `auto_scan: false` + 上面的显式 `d435i` 块（或加 `videoN` 覆盖块指定正确节点）。
+> **D435i**：同一摄像头会露出深度 / 红外 / 彩色多个 `/dev/video*`。auto_scan
+> 按 USB 设备去重，只推 **YUYV/MJPG/RGB** 彩色节点，丢掉 GREY 红外和 Z16 深度。
+> 启动日志 `auto_scan built … (video8, /dev/video8, YUYV, …)` 里应看到 YUYV 而不是 GREY。
+> 仍不对时用 `auto_scan: false` + 显式 `d435i` 块指定彩色节点。
 
 > **懒打开**：相机在 Quest 连上且该路未被门控静音时才真正打开设备；打开失败
 > （没插/被占用）不会拖垮整个 sender——该轨退化为黑帧并每秒重试，插上即恢复。
@@ -158,6 +159,21 @@ ros2 topic echo --once /quest3_video_streamer/gate_state std_msgs/msg/String
 走的就是这组接口。
 
 初值由 yaml 的 `push_enabled` / `active_cameras` 决定。
+
+## 数据采集抽头（~/collect/{label}）
+
+`~/collect/{label}`（`sensor_msgs/CompressedImage`，BEST_EFFORT）是每路相机的
+**全分辨率 JPEG 采集流**，供 `astral_data_collect` 录制 VLA 训练数据：
+
+- **按需编码**：仅当话题有订阅者时才入队编码，纯遥操作运行零开销
+- 全分辨率不降采样，`collect_tap_fps`（默认 30）是帧率上限，
+  `collect_tap_quality`（默认 90）为 JPEG 质量——像素即训练数据
+- 与 preview 同线程模型（编码在独立 daemon 线程，不进捕获线程/asyncio 循环），
+  跟随门控：被静音的路不出流
+- 两个 source 适配器各新增 `collect_hook`（与 `preview_hook` 并列；
+  webcam 源回调原生 BGR，ros 源回调转换后 RGB）
+
+关闭：`collect_tap: false`。
 
 ### 每相机字段含义
 

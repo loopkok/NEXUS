@@ -9,8 +9,9 @@ device:
 
 When a device exposes several capture nodes (RealSense D435i: depth / IR /
 color), pick the **color-like** format (YUYV / MJPG / RGB) rather than the
-lowest-numbered node. Lowest-number-first would take D435i ``/dev/video4``
-(Z16 depth), which OpenCV cannot open as a webcam — color is ``/dev/video8``.
+lowest-numbered node. IR GREY and Z16 depth are never chosen as the stream.
+Color is often ``VIDEO_CAPTURE_MPLANE`` (``/dev/video8``); IR is classic
+capture — both buffer types are enumerated.
 
 Label convention: ``video{N}`` (the device node basename).
 """
@@ -27,17 +28,25 @@ from typing import Any
 # VIDIOC_QUERYCAP = _IOR('V', 0, struct v4l2_capability[104])
 _VIDIOC_QUERYCAP = 0x80685600
 _V4L2_CAP_VIDEO_CAPTURE = 0x00000001
+_V4L2_CAP_VIDEO_CAPTURE_MPLANE = 0x00001000
 _V4L2_CAP_DEVICE_CAPS = 0x80000000
 
 _COLOR_FOURCC = frozenset({
-    "YUYV", "YUY2", "UYVY", "MJPG", "JPEG", "RGB3", "BGR3", "RGBP", "NV12", "NV21",
+    "YUYV", "YUY2", "UYVY", "MJPG", "JPEG", "RGB3", "BGR3", "RGBP",
+    "NV12", "NV21", "YU12", "I420",
 })
-_IR_FOURCC = frozenset({"GREY", "Y8  ", "Y8", "Y16 ", "Y16"})
-_DEPTH_FOURCC = frozenset({"Z16 ", "Z16"})
+_IR_FOURCC = frozenset({
+    "GREY", "GRAY", "Y8", "Y8I", "Y10", "Y12", "Y16", "Y16I", "W10", "MONO",
+})
+_DEPTH_FOURCC = frozenset({"Z16", "Z16H", "INVZ", "INZI"})
 
 # VIDIOC_ENUM_FMT = _IOWR('V', 2, struct v4l2_fmtdesc[64])
 _VIDIOC_ENUM_FMT = 0xC0405602
 _V4L2_BUF_TYPE_VIDEO_CAPTURE = 1
+_V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE = 9
+
+# Color-like score floor. IR GREY=10, depth=0, unknown=1. Never stream IR.
+_MIN_STREAM_SCORE = 50
 
 
 def _is_capture_node(path: str) -> bool:
@@ -52,7 +61,7 @@ def _is_capture_node(path: str) -> bool:
         (capabilities,) = struct.unpack_from("<I", buf, 84)
         (device_caps,) = struct.unpack_from("<I", buf, 88)
         caps = device_caps if (capabilities & _V4L2_CAP_DEVICE_CAPS) else capabilities
-        return bool(caps & _V4L2_CAP_VIDEO_CAPTURE)
+        return bool(caps & (_V4L2_CAP_VIDEO_CAPTURE | _V4L2_CAP_VIDEO_CAPTURE_MPLANE))
     except OSError:
         return False
     finally:
@@ -60,12 +69,19 @@ def _is_capture_node(path: str) -> bool:
 
 
 def _physical_group(node: str) -> str:
-    """Group key = the physical device owning this video node (sysfs parent)."""
+    """Group key = the USB device (not interface) owning this video node."""
     real = os.path.realpath(f"/sys/class/video4linux/{node}/device")
     suffix = f"/video4linux/{node}"
     if real.endswith(suffix):
         real = real[: -len(suffix)]
-    return os.path.dirname(real)
+    # D435i RGB is often a sibling USB interface (1-2:1.3) of depth/IR (1-2:1.0).
+    # Group by the USB device so color can beat IR on the same camera.
+    base = os.path.basename(real)
+    if ":" in base:
+        parent = os.path.dirname(real)
+        if parent and parent != "/":
+            return parent
+    return real
 
 
 def sysfs_name(node: str) -> str:
@@ -89,24 +105,34 @@ def _fourcc_str(pixelformat: int) -> str:
 
 
 def _enum_fourccs(path: str) -> list[str]:
-    """Formats advertised by VIDIOC_ENUM_FMT (no v4l2-ctl needed)."""
+    """Formats advertised by VIDIOC_ENUM_FMT (no v4l2-ctl needed).
+
+    D435i color is often ``VIDEO_CAPTURE_MPLANE``; IR/depth use classic
+    ``VIDEO_CAPTURE``. Enumerate both or the RGB node looks empty and IR wins.
+    """
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
     except OSError:
         return []
     out: list[str] = []
+    seen: set[str] = set()
     try:
-        for index in range(32):
-            buf = bytearray(64)
-            struct.pack_into("<III", buf, 0, index, _V4L2_BUF_TYPE_VIDEO_CAPTURE, 0)
-            try:
-                fcntl.ioctl(fd, _VIDIOC_ENUM_FMT, buf, True)
-            except OSError:
-                break
-            (pixelformat,) = struct.unpack_from("<I", buf, 44)
-            fourcc = _fourcc_str(pixelformat).strip()
-            if fourcc:
-                out.append(fourcc)
+        for buf_type in (
+            _V4L2_BUF_TYPE_VIDEO_CAPTURE,
+            _V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
+        ):
+            for index in range(32):
+                buf = bytearray(64)
+                struct.pack_into("<III", buf, 0, index, buf_type, 0)
+                try:
+                    fcntl.ioctl(fd, _VIDIOC_ENUM_FMT, buf, True)
+                except OSError:
+                    break
+                (pixelformat,) = struct.unpack_from("<I", buf, 44)
+                fourcc = _fourcc_str(pixelformat).strip()
+                if fourcc and fourcc not in seen:
+                    seen.add(fourcc)
+                    out.append(fourcc)
     finally:
         os.close(fd)
     return out
@@ -193,14 +219,16 @@ def enumerate_capture_devices() -> list[dict[str, Any]]:
     for recs in by_group.values():
         recs.sort(key=lambda r: (-int(r["score"]), _node_index(str(r["label"]))))
         best = recs[0]
-        if int(best["score"]) <= 0:
-            # Depth-only node (Z16); OpenCV cannot open it as a webcam.
+        if int(best["score"]) < _MIN_STREAM_SCORE:
+            # Depth (0) / IR GREY (10) / unknown. Do not stream IR as "the camera".
             continue
         fourcc = str(best.get("fourcc", ""))
         out.append({
             "label": best["label"],
             "device": best["device"],
             "sysfs_name": best["sysfs_name"],
+            "fourcc": fourcc,
+            "score": int(best["score"]),
             "force_mjpg": fourcc.strip() in ("MJPG", "JPEG"),
         })
     out.sort(key=lambda d: _node_index(str(d["label"])))
