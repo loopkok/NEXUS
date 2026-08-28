@@ -95,6 +95,8 @@ class AstralIKBridge:
         if self._dh:
             s = self._dh[key]
             return s.lower_limits, s.upper_limits
+        if self.method == "urdf_numerical" and hasattr(self._solver, "bounds_for"):
+            return self._solver.bounds_for(key == "L")
         if self.method == "urdf_numerical" and hasattr(self._solver, "_model_L"):
             model = self._solver._model_L if key == "L" else self._solver._model_R
             return (
@@ -133,12 +135,9 @@ class AstralIKBridge:
         pos = T_ee[:3, 3].tolist()
         rpy = Rotation.from_matrix(T_ee[:3, :3]).as_euler("xyz").tolist()
         res = self._solver.solve_ik(arm=key, pos=pos, rpy=rpy)
-        if not res.get("ik_ok", False):
-            return None
         if res.get("q7") is not None:
             return np.asarray(res["q7"], dtype=float).reshape(7)
-        q14 = self.q_full
-        return q14[0:7].copy() if key == "L" else q14[7:14].copy()
+        return None
 
     def solve_dual(
         self, targets: Mapping[str, np.ndarray]
@@ -185,13 +184,10 @@ class AstralIKBridge:
                 self._solver.solve_ik(arm=a, pos=p, rpy=r) for a, p, r in jobs
             ]
         for k, res in zip(keys, results):
-            if not res.get("ik_ok", False):
-                out[k] = None
-            elif res.get("q7") is not None:
+            if res.get("q7") is not None:
                 out[k] = np.asarray(res["q7"], dtype=float).reshape(7)
             else:
-                q14 = self.q_full
-                out[k] = q14[0:7].copy() if k == "L" else q14[7:14].copy()
+                out[k] = None
         return out
 
 
@@ -235,6 +231,9 @@ class SingleArmIKAdapter:
         solver = getattr(self.bridge, "_solver", None)
         if solver is not None and hasattr(solver, "set_lm_params"):
             solver.set_lm_params(**kwargs)
+        lo, hi = self.bridge.joint_limits(self.arm)
+        self.lower_limits = np.asarray(lo, dtype=float)
+        self.upper_limits = np.asarray(hi, dtype=float)
 
 
 def make_ik_solver(
@@ -244,8 +243,12 @@ def make_ik_solver(
     ik_max_iter: int = 20,
     ik_tol: float = 1e-8,
     ik_w_pos: float = 1.0,
-    ik_w_ori: float = 0.3,
-    ik_w_reg: float = 1e-4,
+    ik_w_ori: float = 0.40,
+    ik_w_reg: float = 0.02,
+    ik_q4_max: float = -0.25,
+    ik_w_limit: float = 0.12,
+    ik_dq_max: float = 0.30,
+    ik_w_pref: float = 0.004,
 ) -> AstralIKBridge:
     st = solver_type.strip().lower()
 
@@ -273,6 +276,10 @@ def make_ik_solver(
             w_pos=float(ik_w_pos),
             w_ori=float(ik_w_ori),
             w_reg=float(ik_w_reg),
+            q4_max=float(ik_q4_max),
+            w_limit=float(ik_w_limit),
+            dq_max=float(ik_dq_max),
+            w_pref=float(ik_w_pref),
         )
         return AstralIKBridge(solver, "urdf_numerical")
 
@@ -289,8 +296,12 @@ def make_single_arm_ik(
     ik_max_iter: int = 20,
     ik_tol: float = 1e-8,
     ik_w_pos: float = 1.0,
-    ik_w_ori: float = 0.3,
-    ik_w_reg: float = 1e-4,
+    ik_w_ori: float = 0.40,
+    ik_w_reg: float = 0.02,
+    ik_q4_max: float = -0.25,
+    ik_w_limit: float = 0.12,
+    ik_dq_max: float = 0.30,
+    ik_w_pref: float = 0.004,
 ):
     """One-arm solver for ``astral_arm_teleop_node`` (DH native or URDF adapter)."""
     st = solver_type.strip().lower()
@@ -314,6 +325,10 @@ def make_single_arm_ik(
             ik_w_pos=ik_w_pos,
             ik_w_ori=ik_w_ori,
             ik_w_reg=ik_w_reg,
+            ik_q4_max=ik_q4_max,
+            ik_w_limit=ik_w_limit,
+            ik_dq_max=ik_dq_max,
+            ik_w_pref=ik_w_pref,
         )
         return SingleArmIKAdapter(bridge, arm_side)
 

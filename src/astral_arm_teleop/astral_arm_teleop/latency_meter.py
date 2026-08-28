@@ -12,12 +12,14 @@ class LatencyMeter:
         self.print_interval = float(print_interval)
         self._last_print = time.monotonic()
         self._ms: Dict[str, List[float]] = defaultdict(list)
+        self._units: Dict[str, str] = {}
         self._counts: Dict[str, int] = defaultdict(int)
 
-    def add(self, name: str, ms: float) -> None:
+    def add(self, name: str, ms: float, unit: str = "ms") -> None:
         if ms != ms:  # NaN
             return
         self._ms[name].append(float(ms))
+        self._units[name] = unit
 
     def count(self, name: str, n: int = 1) -> None:
         self._counts[name] += int(n)
@@ -42,12 +44,14 @@ class LatencyMeter:
             mean = sum(xs) / n
             xs_sorted = sorted(xs)
             p95 = xs_sorted[min(n - 1, int(n * 0.95))]
+            unit = self._units.get(name, "ms")
             parts.append(
-                f"{name}={mean:.1f}ms(p95={p95:.1f},max={xs_sorted[-1]:.1f},n={n})"
+                f"{name}={mean:.1f}{unit}(p95={p95:.1f},max={xs_sorted[-1]:.1f},n={n})"
             )
         for name in self._counts:
             parts.append(f"{name}={self._counts[name]}")
         self._ms.clear()
+        self._units.clear()
         self._counts.clear()
         return " ".join(parts) if parts else "(no samples)"
 

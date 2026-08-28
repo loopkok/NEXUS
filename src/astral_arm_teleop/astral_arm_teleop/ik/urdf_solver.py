@@ -73,8 +73,14 @@ class URDFNumericalIKSolver(IKSolverBase):
         max_iter: int = 20,
         tol: float = 1e-8,
         w_pos: float = 1.0,
-        w_ori: float = 0.3,
-        w_reg: float = 1e-4,
+        w_ori: float = 0.40,
+        w_reg: float = 0.02,
+        q4_max: float = -0.25,
+        w_limit: float = 0.12,
+        limit_margin: float = 0.18,
+        dq_max: float = 0.30,
+        w_pref: float = 0.004,
+        q_pref: Sequence[float] | None = None,
     ):
         urdf_path = str(Path(urdf_path).resolve())
         self._urdf_path = urdf_path
@@ -137,6 +143,20 @@ class URDFNumericalIKSolver(IKSolverBase):
         self._w_pos = w_pos
         self._w_ori = w_ori
         self._w_reg = w_reg
+        # Joint4 URDF upper is 0 (fully stretched). That is an elbow
+        # singularity: LM parks on the bound and cannot fold back.
+        # q4_max < 0 shrinks the IK box; >= 0 keeps the URDF limit.
+        self._q4_max = float(q4_max)
+        self._w_limit = float(max(0.0, w_limit))
+        self._limit_margin = float(max(1e-3, limit_margin))
+        self._dq_max = float(max(0.0, dq_max))
+        self._w_pref = float(max(0.0, w_pref))
+        # Proximal joints (esp. shoulder roll) cause the "weird" teleop poses.
+        self._reg_scale = np.array([1.0, 1.6, 1.4, 1.3, 0.7, 0.5, 0.5], dtype=float)
+        self._pref_scale = np.array([1.0, 1.4, 1.2, 1.3, 0.4, 0.3, 0.3], dtype=float)
+        self._q_pref = None
+        if q_pref is not None:
+            self._q_pref = np.asarray(q_pref, dtype=float).reshape(-1)
 
         self._q_full = np.zeros(14, dtype=float)
         self._q_prev_L = np.zeros(self._nq_L, dtype=float)
@@ -246,6 +266,11 @@ class URDFNumericalIKSolver(IKSolverBase):
         w_pos: float | None = None,
         w_ori: float | None = None,
         w_reg: float | None = None,
+        q4_max: float | None = None,
+        w_limit: float | None = None,
+        dq_max: float | None = None,
+        w_pref: float | None = None,
+        q_pref: Sequence[float] | None = None,
     ) -> None:
         if max_iter is not None:
             self._max_nfev = max(int(max_iter) * 15, 80)
@@ -259,6 +284,28 @@ class URDFNumericalIKSolver(IKSolverBase):
             self._w_ori = float(max(0.0, w_ori))
         if w_reg is not None:
             self._w_reg = float(max(0.0, w_reg))
+        if q4_max is not None:
+            self._q4_max = float(q4_max)
+        if w_limit is not None:
+            self._w_limit = float(max(0.0, w_limit))
+        if dq_max is not None:
+            self._dq_max = float(max(0.0, dq_max))
+        if w_pref is not None:
+            self._w_pref = float(max(0.0, w_pref))
+        if q_pref is not None:
+            self._q_pref = np.asarray(q_pref, dtype=float).reshape(-1)
+
+    def bounds_for(self, is_left: bool) -> Tuple[np.ndarray, np.ndarray]:
+        model = self._model_L if is_left else self._model_R
+        return self._ik_bounds(model)
+
+    def _ik_bounds(self, model) -> Tuple[np.ndarray, np.ndarray]:
+        lower = np.asarray(model.lowerPositionLimit, dtype=float).copy()
+        upper = np.asarray(model.upperPositionLimit, dtype=float).copy()
+        if lower.size > 3 and self._q4_max < upper[3]:
+            upper[3] = float(self._q4_max)
+        upper = np.maximum(upper, lower + 1e-3)
+        return lower, upper
 
     @property
     def q_full(self) -> List[float]:
@@ -306,26 +353,52 @@ class URDFNumericalIKSolver(IKSolverBase):
                 self._q_prev_L.copy() if is_left else self._q_prev_R.copy()
             )
 
-        lower = model.lowerPositionLimit.copy()
-        upper = model.upperPositionLimit.copy()
+        lower_j, upper_j = self._ik_bounds(model)
+        q0 = np.clip(q_prev_arm.copy(), lower_j, upper_j)
+        lower, upper = lower_j, upper_j
+        if self._dq_max > 0.0:
+            lower = np.maximum(lower_j, q0 - self._dq_max)
+            upper = np.minimum(upper_j, q0 + self._dq_max)
+            upper = np.maximum(upper, lower + 1e-4)
 
         T_tgt_mat = np.eye(4)
         T_tgt_mat[:3, 3] = np.asarray(pos, dtype=float)
         T_tgt_mat[:3, :3] = Rotation.from_euler("xyz", rpy).as_matrix()
         T_tgt = pin.SE3(T_tgt_mat)
 
-        q0 = np.clip(q_prev_arm.copy(), lower, upper)
         w_pos, w_ori, w_reg = self._w_pos, self._w_ori, self._w_reg
+        w_limit, margin = self._w_limit, self._limit_margin
+        n_lim = nq if w_limit > 0.0 else 0
+        w_pref = self._w_pref
+        q_pref = self._q_pref
+        n_pref = nq if (w_pref > 0.0 and q_pref is not None and q_pref.size >= nq) else 0
+        rs = self._reg_scale[:nq]
+        ps = self._pref_scale[:nq]
+        s_reg = np.sqrt(w_reg) * rs
+        s_pref = np.sqrt(w_pref) * ps if n_pref else None
+        q_pref_n = q_pref[:nq] if n_pref else None
 
         def _cost(q):
             pin.forwardKinematics(model, data, q)
             pin.updateFramePlacements(model, data)
             Tc = self._ee_in_base(model, data, ee_id, base_name)
             err = pin.log(Tc.inverse() * T_tgt).vector
-            out = np.empty(6 + nq)
+            out = np.empty(6 + nq + n_lim + n_pref)
             out[:3] = w_pos * err[:3]
             out[3:6] = w_ori * err[3:]
-            out[6:] = np.sqrt(w_reg) * (q - q0)
+            out[6 : 6 + nq] = s_reg * (q - q0)
+            off = 6 + nq
+            if n_lim:
+                lo_pen = np.maximum(0.0, margin - (q - lower_j))
+                hi_pen = np.maximum(0.0, margin - (upper_j - q))
+                out[off : off + nq] = w_limit * (lo_pen + hi_pen)
+                off += nq
+            if n_pref:
+                out[off : off + nq] = s_pref * (q - q_pref_n)
+            # At the elbow cap, drop orientation so the other 6 joints
+            # can still slide the EE along the reach surface.
+            if nq > 3 and (upper_j[3] - q[3]) < 0.04:
+                out[3:6] *= 0.2
             return out
 
         try:
@@ -354,7 +427,19 @@ class URDFNumericalIKSolver(IKSolverBase):
         dt = (time.perf_counter() - t0) * 1000
         self._record_solve_ms(dt)
 
-        q_out = res.x
+        q_out = np.asarray(res.x, dtype=float).reshape(-1)
+        if not np.isfinite(q_out).all():
+            dt = (time.perf_counter() - t0) * 1000
+            self._record_solve_ms(dt)
+            return {
+                "ik_ok": False,
+                "ik_err": float("inf"),
+                "arm": "L" if is_left else "R",
+                "ik_method": self.method_name,
+                "q7": None,
+                "detail": {"nonfinite": True, "solve_ms": round(dt, 2)},
+            }
+        q_out = np.clip(q_out, lower, upper)
         pin.forwardKinematics(model, data, q_out)
         pin.updateFramePlacements(model, data)
         Tc = self._ee_in_base(model, data, ee_id, base_name)
@@ -363,25 +448,28 @@ class URDFNumericalIKSolver(IKSolverBase):
         err_norm = float(np.sqrt(pos_err * pos_err + rot_err * rot_err))
         ik_ok = pos_err < 8e-3 and rot_err < 0.25
 
-        if ik_ok or pos_err < 3e-2:
-            with self._q_lock:
-                self._q_full[arm_base : arm_base + nq] = q_out
-                if is_left:
-                    self._q_prev_L = q_out.copy()
-                else:
-                    self._q_prev_R = q_out.copy()
+        # Always keep the bounded LM pose as warm-start / teleop command.
+        # Unreachable targets (elbow at ik_q4_max) must still track along
+        # the reach surface instead of returning None and freezing q_cmd.
+        with self._q_lock:
+            self._q_full[arm_base : arm_base + nq] = q_out
+            if is_left:
+                self._q_prev_L = q_out.copy()
+            else:
+                self._q_prev_R = q_out.copy()
 
         return {
             "ik_ok": ik_ok,
             "ik_err": err_norm,
             "arm": "L" if is_left else "R",
             "ik_method": self.method_name,
-            "q7": q_out.copy() if (ik_ok or pos_err < 3e-2) else None,
+            "q7": q_out.copy(),
             "detail": {
                 "pos_err_mm": round(pos_err * 1000, 3),
                 "rot_err_rad": round(rot_err, 4),
                 "solve_ms": round(dt, 2),
                 "nfev": int(getattr(res, "nfev", 0)),
+                "saturated": (not ik_ok),
             },
         }
 

@@ -21,10 +21,11 @@ astral_arm_teleop_{left|right}                 # 进程并行
       analytic_dh: yaml(I) 再左乘 R_baseᵀ → 干净 MDH 基座
       urdf_numerical: yaml(I) 原样 → SW `left_base_link` / `right_base_link`
         （Pinocchio `T_base⁻¹ T_ee`，不再用 universe/躯干）
+  → workspace_radius 球约束（IK 帧 *_base_link 原点；≤0 关闭）
   → IK
       analytic_dh: 翻转约定 q_dh（α=+90 闭式）
       urdf_numerical: 硬件约定 q_hw（Pinocchio LM）
-  → SafetyFilter（限位与求解器同一约定）
+  → SafetyFilter（关节限位 / 速度；与求解器同一约定）
   → flip_q（仅 analytic_dh）→ q_hw
   → /{side}_arm/joint_commands             # 始终旧约定
       → 真机 astral_robot_control
@@ -270,8 +271,8 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 窗口里：**蓝=手、橙虚线=滤波、绿=末端**。先静止按 `z` 清零，再做 1–2 cm 来回。
 
 左下角 **DH analytic / URDF LM** 可热切换（切完重定 VR 零点，臂停在当前姿态）。  
-左侧滑条两套 IK 都生效：`pos_smooth` / `rot_smooth` / `motion_scale` / `max_vel`。  
-右侧滑条仅 URDF LM：`ik_w_pos` / `ik_w_ori` / `ik_max_iter` / `ik_tol` / `ik_w_reg`。DH 是闭式，改右侧无效。
+左侧滑条两套 IK 都生效：`pos_smooth` / `rot_smooth` / `motion_scale` / `max_vel` / `workspace_radius`。  
+右侧滑条仅 URDF LM：`ik_w_pos` / `ik_w_ori` / `ik_max_iter` / `ik_tol` / `ik_w_reg` / `ik_q4_max` / `ik_w_limit`。DH 是闭式，改右侧无效。
 
 | 曲线 | 说明 |
 |------|------|
@@ -281,7 +282,9 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 | 绿圆滑但落后蓝 | `pos_smoothing` 太大 |
 | 蓝幅值对、绿跟不上 | 限速 / IK |
 | URDF 位置跟、姿态飘 | 加大 `ik_w_ori` |
+| URDF 整臂拧出怪姿势 | 减小 `ik_w_ori`，或先确认 `ik_w_reg` 够大 |
 | URDF 发黏、小动作被吃 | 减小 `ik_w_reg` |
+| URDF 构型乱跳、姿势怪 | 加大 `ik_w_reg`（默认已 0.02） |
 
 右侧数字：`pos err RMS/p95`、静持 `hold jitter`、`lag`。`s` 存 CSV 到 `/tmp`。yaml 只是下次启动的初值。
 
@@ -291,6 +294,6 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 
 单臂：`config/astral_arm_teleop_{left,right}.yaml`。
 
-常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`init_waypoints`（扁平 7×N 途经点，硬件约定，先按序走到再去 `init_pose`；空=直接到 init）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（真机 yaml 默认 true、sim launch 默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
+常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`init_waypoints`（扁平 7×N 途经点，硬件约定，先按序走到再去 `init_pose`；空=直接到 init）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`workspace_radius`（末端相对 `*_base_link` 原点的球半径，m；yaml 默认 0.55，≤0 关闭；可热改）、`ik_q4_max`（URDF IK 肘关节上限，默认 −0.25；URDF 硬件上限是 0=伸直奇异，≥0 关闭此帽）、`ik_w_limit`（近限位软约束）、`ik_w_reg`（贴上一帧，默认 0.02）、`ik_dq_max`（每拍关节步进盒 rad，默认 0.30）、`ik_w_pref`（冗余时往 init_pose 靠）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（真机 yaml 默认 true、sim launch 默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
 
 `use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。

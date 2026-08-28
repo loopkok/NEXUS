@@ -11,20 +11,31 @@ astral_arm_teleop_right:
     ik_max_iter: 20
     ik_tol: 0.00000001
     ik_w_pos: 1.0
-    ik_w_ori: 0.3
-    ik_w_reg: 0.0001
+    # With ik_w_reg=0.02 the arm shape stays put; raise ori so the
+    # flange tracks Quest wrist. 0.12 drifted; 0.3 was OK before reg.
+    ik_w_ori: 0.40
+    # Continuity vs last q. 1e-4 let LM pick a new arm shape every frame.
+    ik_w_reg: 0.02
+    # Joint4 URDF upper=0 is fully stretched (elbow singularity → 卡死).
+    # IK/safety cap; more negative = keep more bend. 0 = use URDF 0.
+    ik_q4_max: -0.25
+    ik_w_limit: 0.12  # soft hinge near all joint bounds
+    ik_dq_max: 0.30   # rad per IK solve; blocks branch jumps (0=off)
+    ik_w_pref: 0.004  # pull toward init_pose when redundant
 
     vr_to_arm_rot: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
     pos_smoothing: 0.5 #0.8   # 0=无滤波 1=几乎不跟；可热改（tune 滑动条）
     rot_smoothing: 0.6 #0.8
-    motion_scale: 0.85 #0.65
+    motion_scale: 0.65 #0.65
     flip_pitch: false
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     max_joint_vel: 4.0  # rad/s  (0.08 rad/tick @ 50 Hz)
-    workspace_radius: 0.0
+    # Sphere around right_base_link origin (IK frame). <=0 off.
+    # init_pose |p|~0.44 m; q=0 hang ~0.49 m; max reach ~0.59 m.
+    workspace_radius: 0.55
     # VR 看门狗：超时即 disarm（需重新 /teleop/start 恢复）。1.5s 容忍 VR
     # 链路短暂抖动；超时前 teleop 持续发冻结目标（driver 跟随），teleop 停发
     # 后 driver 自身的 command_timeout_s(1.5) 才接管保持。<=0 关闭（不推荐）。
@@ -48,4 +59,5 @@ astral_arm_teleop_right:
 
     # Via point (hardware convention): lift / fold before extending to the table.
     init_waypoints: [-1.0, 0.0, 0.0, -2.20, 0.0, 0.46, 0.00]
-    init_pose: [0.32, -0.11, 0.53, -0.80, -0.28, 0.00, 0.00]
+    # init_pose: [0.32, -0.11, 0.53, -0.80, -0.28, 0.00, 0.00]
+    init_pose: [-0.35, -0.2, 0.0, -1.92, 0.2, 0.0, 0.00]

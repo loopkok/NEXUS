@@ -55,11 +55,11 @@ def test_fk_ik_roundtrip(solver: _ArmView, label: str) -> bool:
         np.array([-0.3, 0.5, 0.2, -0.6, -0.2, 0.3, 0.1]),
         np.array([0.2, 0.3, -0.1, -0.5, 0.2, -0.1, -0.2]),
     ]
-    solver.sync_state(np.array([0.1, 0.3, 0.0, -0.5, 0.0, 0.1, 0.0]))
     all_pass = True
     max_err = 0.0
     for i, q_seed in enumerate(q_seeds):
         q_seed = np.clip(q_seed, solver.lower_limits + 0.02, solver.upper_limits - 0.02)
+        solver.sync_state(q_seed)
         T = solver.fk(q_seed)
         t0 = time.perf_counter()
         sol = solver.solve(T)
@@ -153,7 +153,7 @@ def test_safety_filter(solver: _ArmView) -> bool:
         workspace_y_min=-1.0,
         workspace_y_max=1.0,
     )
-    sf.set_initial_state(np.zeros(7))
+    sf.set_initial_state(np.clip(np.zeros(7), solver.lower_limits, solver.upper_limits))
     q_f, info = sf.filter(np.full(7, 10.0), dt=0.02)
     ok_clamp = bool(
         np.all(q_f <= solver.upper_limits) and np.all(q_f >= solver.lower_limits)
@@ -166,7 +166,49 @@ def test_safety_filter(solver: _ArmView) -> bool:
     ee = sf.check_workspace(np.array([2.0, 0.0, 0.0]))
     ok_ws = float(np.linalg.norm(ee)) <= 0.51
     print(f"  [Workspace] {'PASS' if ok_ws else 'FAIL'} ee={np.round(ee, 3)}")
-    return ok_clamp and ok_vel and ok_ws
+    sf.workspace_radius = 0.55
+    inside = sf.check_workspace(np.array([0.077, -0.263, -0.343]))
+    ok_in = abs(float(np.linalg.norm(inside)) - 0.4388) < 0.002
+    far = sf.check_workspace(np.array([0.70, 0.0, 0.0]))
+    ok_far = abs(float(np.linalg.norm(far)) - 0.55) < 1e-6
+    print(f"  [Workspace 0.55] inside={'PASS' if ok_in else 'FAIL'} "
+          f"clip={'PASS' if ok_far else 'FAIL'}")
+    return ok_clamp and ok_vel and ok_ws and ok_in and ok_far
+
+
+def test_q4_not_straight(solver: _ArmView, label: str) -> bool:
+    print("\n  --- Joint4 stretch cap ---")
+    if label != "urdf_numerical":
+        print("  SKIP (analytic DH has its own limit weights)")
+        return True
+    hi = float(solver.upper_limits[3])
+    ok_bound = hi <= -0.24
+    print(f"  IK q4 upper={hi:.3f} (want <= -0.25) {'PASS' if ok_bound else 'FAIL'}")
+    q0 = np.array([0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00])
+    q0 = np.clip(q0, solver.lower_limits + 0.02, solver.upper_limits - 0.02)
+    solver.sync_state(q0)
+    T = solver.fk(q0)
+    p = T[:3, 3].copy()
+    r = float(np.linalg.norm(p))
+    T2 = T.copy()
+    T2[:3, 3] = p * (0.58 / max(r, 1e-6))
+    sol = None
+    for _ in range(12):
+        sol = solver.solve(T2)
+        if sol is None:
+            break
+        if float(sol[3]) <= hi + 1e-3:
+            break
+    if sol is None:
+        print("  far target: FAIL — no q (would freeze teleop)")
+        return False
+    q4 = float(sol[3])
+    ok_sol = q4 <= hi + 1e-4
+    print(
+        f"  far target q4={q4:.3f} vs cap {hi:.3f} follow=yes "
+        f"{'PASS' if ok_sol else 'FAIL'}"
+    )
+    return ok_bound and ok_sol
 
 
 def run_all(solver_type: str) -> bool:
@@ -183,6 +225,7 @@ def run_all(solver_type: str) -> bool:
         "fk_ik_roundtrip": test_fk_ik_roundtrip(solver, solver_type),
         "smooth_trajectory": test_smooth_trajectory(solver, solver_type),
         "safety_filter": test_safety_filter(solver),
+        "q4_stretch_cap": test_q4_not_straight(solver, solver_type),
     }
     print(f"\n  {solver_type} SUMMARY:")
     for k, v in results.items():

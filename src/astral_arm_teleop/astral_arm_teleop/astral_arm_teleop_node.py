@@ -95,8 +95,16 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("ik_max_iter", 20)
         self.declare_parameter("ik_tol", 1e-8)
         self.declare_parameter("ik_w_pos", 1.0)
-        self.declare_parameter("ik_w_ori", 0.3)
-        self.declare_parameter("ik_w_reg", 1e-4)
+        self.declare_parameter("ik_w_ori", 0.40)
+        self.declare_parameter("ik_w_reg", 0.02)
+        # Joint4 URDF upper=0 is fully stretched (elbow singularity).
+        # <0 caps IK/safety below that; >=0 keeps the URDF limit.
+        self.declare_parameter("ik_q4_max", -0.25)
+        self.declare_parameter("ik_w_limit", 0.12)
+        # Per-solve joint step box around q_prev (rad). 0 = off. Blocks IK branch jumps.
+        self.declare_parameter("ik_dq_max", 0.30)
+        # Pull toward init_pose when redundant. 0 = off.
+        self.declare_parameter("ik_w_pref", 0.004)
         self.declare_parameter(
             "vr_to_arm_rot",
             [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
@@ -169,6 +177,10 @@ class AstralTeleopArmNode(Node):
             ik_w_pos=float(self.get_parameter("ik_w_pos").value),
             ik_w_ori=float(self.get_parameter("ik_w_ori").value),
             ik_w_reg=float(self.get_parameter("ik_w_reg").value),
+            ik_q4_max=float(self.get_parameter("ik_q4_max").value),
+            ik_w_limit=float(self.get_parameter("ik_w_limit").value),
+            ik_dq_max=float(self.get_parameter("ik_dq_max").value),
+            ik_w_pref=float(self.get_parameter("ik_w_pref").value),
         )
         init_q_old = np.asarray(
             self.get_parameter("init_pose").value, dtype=float
@@ -177,6 +189,8 @@ class AstralTeleopArmNode(Node):
         init_q = np.clip(
             init_q, self.ik.lower_limits + 0.02, self.ik.upper_limits - 0.02
         )
+        if hasattr(self.ik, "set_lm_params"):
+            self.ik.set_lm_params(q_pref=init_q)
         self.ik.sync_state(init_q)
         T0 = self.ik.fk(init_q)
         _ = self.ik.solve(T0)
@@ -300,9 +314,12 @@ class AstralTeleopArmNode(Node):
             if self._homing
             else "homing off"
         )
+        ee0_r = float(np.linalg.norm(self.robot_init_pos))
+        ws_r = float(self.safety.workspace_radius)
         self.get_logger().info(
             f"Astral arm teleop: {self.side} solver={solver_name} "
             f"EE0={np.round(self.robot_init_pos, 3).tolist()} "
+            f"r={ee0_r:.3f}m ws_r={ws_r:.3f}m "
             f"scale={self.pose.motion_scale} dry_run={self.dry_run} {home_msg}"
         )
         if self._require_start:
@@ -350,6 +367,14 @@ class AstralTeleopArmNode(Node):
                     lm["w_ori"] = float(p.value)
                 elif name == "ik_w_reg":
                     lm["w_reg"] = float(p.value)
+                elif name == "ik_dq_max":
+                    lm["dq_max"] = float(p.value)
+                elif name == "ik_w_pref":
+                    lm["w_pref"] = float(p.value)
+                elif name == "ik_q4_max":
+                    lm["q4_max"] = float(p.value)
+                elif name == "ik_w_limit":
+                    lm["w_limit"] = float(p.value)
                 elif name in (
                     "arm_side",
                     "urdf_path",
@@ -378,7 +403,9 @@ class AstralTeleopArmNode(Node):
         ik = self.ik
         if hasattr(ik, "set_lm_params"):
             ik.set_lm_params(**lm)
-            return
+        if hasattr(ik, "lower_limits") and hasattr(ik, "upper_limits"):
+            self.safety.joint_lower = np.asarray(ik.lower_limits, dtype=float).copy()
+            self.safety.joint_upper = np.asarray(ik.upper_limits, dtype=float).copy()
         # DH closed-form: LM weights do not apply.
 
     def _rebuild_solver(self, solver_type: str) -> None:
@@ -400,6 +427,10 @@ class AstralTeleopArmNode(Node):
             ik_w_pos=float(self.get_parameter("ik_w_pos").value),
             ik_w_ori=float(self.get_parameter("ik_w_ori").value),
             ik_w_reg=float(self.get_parameter("ik_w_reg").value),
+            ik_q4_max=float(self.get_parameter("ik_q4_max").value),
+            ik_w_limit=float(self.get_parameter("ik_w_limit").value),
+            ik_dq_max=float(self.get_parameter("ik_dq_max").value),
+            ik_w_pref=float(self.get_parameter("ik_w_pref").value),
         )
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
@@ -410,6 +441,8 @@ class AstralTeleopArmNode(Node):
         q_ik = np.clip(
             q_ik, self.ik.lower_limits + 0.02, self.ik.upper_limits - 0.02
         )
+        if hasattr(self.ik, "set_lm_params"):
+            self.ik.set_lm_params(q_pref=self._flip_q(self._init_q_hw))
         self.ik.sync_state(q_ik)
         T0 = self.ik.fk(q_ik)
         self.robot_init_pos = T0[:3, 3].copy()
@@ -605,6 +638,17 @@ class AstralTeleopArmNode(Node):
             dp, dr, self.robot_init_pos, self.robot_init_rot
         )
         T_flange = T_tcp @ self._T_tcp_to_flange
+        # Sphere in the IK frame (*_base_link origin). radius<=0 disables.
+        p_req = T_flange[:3, 3].copy()
+        r_req = float(np.linalg.norm(p_req))
+        if self._print_latency:
+            self._lat.add("ee_r", r_req * 1000.0, unit="mm")
+        p_ws = self.safety.check_workspace(p_req)
+        if not np.allclose(p_ws, p_req, atol=1e-9):
+            T_flange[:3, 3] = p_ws
+            T_tcp = T_flange @ self._T_flange_to_tcp
+            if self._print_latency:
+                self._lat.count("ws_clip")
         # Warm-start from last *commanded* q (after vel limit), not raw IK jump.
         try:
             self.ik.sync_state(self._flip_q(self.q_cmd), reset_branch=False)
@@ -620,6 +664,11 @@ class AstralTeleopArmNode(Node):
             self._publish_tune_poses(T_tcp)
             self._maybe_log_latency()
             return
+        if self._print_latency:
+            Terr = self.ik.fk(sol)
+            sat = float(np.linalg.norm(Terr[:3, 3] - T_flange[:3, 3]))
+            if sat > 0.008:
+                self._lat.count("ik_sat")
         safe, _info = self.safety.filter(sol, dt)
         # IK/safety work in the flipped convention; convert back to hardware.
         self.q_cmd = self._flip_q(safe)

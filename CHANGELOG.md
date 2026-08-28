@@ -6,6 +6,21 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-08-28
 
+**URDF IK 贴上一帧，少换怪构型**——`astral_arm_teleop` `urdf_numerical`。
+
+- `ik_w_reg` 1e-4→**0.02**（贴 `q_prev`；肩/肘权重大、腕小）。另：`ik_dq_max=0.30` 每拍关节步进盒，挡住一次解跳到另一支 IK；`ik_w_pref=0.004` 冗余时往 `init_pose` 靠。**`ik_w_ori` 提到 0.40**（在强正则下跟 Quest 腕朝向；0.12 会漂）。位置权重不变。tune 正则滑条范围扩到 0.1。
+
+**URDF IK 约束 Joint4 勿伸直卡死**——`astral_arm_teleop` `urdf_numerical`。
+
+- 原因：`left/right_joint4` URDF 上限是 **0**（完全伸直）。LM 只有 `w_reg=1e-4` 贴上一帧，跟手外伸时 q4 顶死在 0，肘奇异，再收不回来。
+- 不改 URDF。IK + SafetyFilter 使用 `ik_q4_max`（默认 **−0.25 rad**，约 14° 余弯）；另加近限位铰链残差 `ik_w_limit`。`ik_q4_max≥0` 关闭帽、回到 URDF 0。可热改 / tune 滑条。
+- **边界跟手**：顶到 `ik_q4_max` 后不再因 `ik_ok=false` 丢解冻住。LM 有限解一律下发，q4 停在余弯、其余关节继续跟可达面上的手；肘贴上限时姿态权重降到 0.2。延迟日志 `ik_sat` 表示在边界上滑、`ik_fail` 才是真失败。
+
+**`workspace_radius` 接到 IK 前**——`astral_arm_teleop`。
+
+- 末端目标相对 `left_base_link` / `right_base_link` 原点超半径则径向收到球面再求解。yaml 默认 **0.55 m**（工作位 |p|≈0.44 m，零位下垂≈0.49 m，关节限位内最远≈0.59 m）。≤0 关闭。可 `ros2 param set` 热改。
+- 延迟日志增加 `ee_r=…mm`（夹之前的目标距离）和 `ws_clip` 次数。
+
 **URDF 数值 IK 改到臂基座系**——`astral_arm_teleop` `urdf_numerical`。
 
 - 此前 Pinocchio `oMf` 在 universe（= `body_link` 躯干）求解。现 FK/IK 位姿改到 `left_base_link` / `right_base_link`（肩安装座），与 DH 解析解同一类臂基座系。

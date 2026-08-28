@@ -43,9 +43,12 @@ _HOT = (
     "rot_smoothing",
     "motion_scale",
     "max_joint_vel",
+    "workspace_radius",
     "ik_w_pos",
     "ik_w_ori",
     "ik_w_reg",
+    "ik_q4_max",
+    "ik_w_limit",
     "ik_max_iter",
     "ik_tol",
     "solver_type",
@@ -55,9 +58,12 @@ _DEFAULTS = {
     "rot_smoothing": 0.8,
     "motion_scale": 0.65,
     "max_joint_vel": 4.0,
+    "workspace_radius": 0.55,
     "ik_w_pos": 1.0,
-    "ik_w_ori": 0.3,
-    "ik_w_reg": 1e-4,
+    "ik_w_ori": 0.40,
+    "ik_w_reg": 0.02,
+    "ik_q4_max": -0.25,
+    "ik_w_limit": 0.12,
     "ik_max_iter": 20.0,
     "ik_tol": 1e-8,
     "solver_type": "analytic_dh",
@@ -660,8 +666,8 @@ def _run_plot(node: TeleopTunePlot) -> None:
         ax_h.text(0.0, 0.08, hint, fontsize=8, color=_COL["muted"])
         return inner
 
-    gs_feel = _section(gs_bot[0], "手感", "DH 与 URDF 都生效", 4)
-    gs_urdf = _section(gs_bot[1], "URDF 数值 IK", "DH 闭式会忽略这些", 5)
+    gs_feel = _section(gs_bot[0], "手感", "DH 与 URDF 都生效", 5)
+    gs_urdf = _section(gs_bot[1], "URDF 数值 IK", "DH 闭式会忽略这些", 7)
     gs_act = gs_bot[2].subgridspec(6, 1, height_ratios=[0.7, 1, 1, 1, 1, 1], hspace=0.45)
 
     sliders = []
@@ -691,6 +697,7 @@ def _run_plot(node: TeleopTunePlot) -> None:
     _add_slider(gs_feel, 2, "rot_smoothing", "旋转平滑", 0.0, 0.99, 0.01, "%.2f", _COL["hand"])
     _add_slider(gs_feel, 3, "motion_scale", "行程比例", 0.10, 1.50, 0.01, "%.2f", _COL["ee"])
     _add_slider(gs_feel, 4, "max_joint_vel", "关节限速 rad/s", 0.50, 12.0, 0.05, "%.2f", _COL["ee"])
+    _add_slider(gs_feel, 5, "workspace_radius", "工作球半径 m", 0.0, 0.70, 0.01, "%.2f", _COL["ee"])
 
     _add_slider(gs_urdf, 1, "ik_w_pos", "位置权重", 0.05, 3.0, 0.05, "%.2f", _COL["filt"])
     _add_slider(gs_urdf, 2, "ik_w_ori", "姿态权重", 0.0, 2.0, 0.05, "%.2f", _COL["filt"])
@@ -699,8 +706,10 @@ def _run_plot(node: TeleopTunePlot) -> None:
         gs_urdf, 4, "ik_tol", "公差 log10", -10.0, -4.0, 0.5, "%.1f", _COL["filt"], "log10"
     )
     _add_slider(
-        gs_urdf, 5, "ik_w_reg", "正则 log10", -6.0, -2.0, 0.5, "%.1f", _COL["filt"], "log10"
+        gs_urdf, 5, "ik_w_reg", "正则 log10", -5.0, -1.0, 0.1, "%.1f", _COL["filt"], "log10"
     )
+    _add_slider(gs_urdf, 6, "ik_q4_max", "肘上限 q4", -1.00, 0.00, 0.01, "%.2f", _COL["filt"])
+    _add_slider(gs_urdf, 7, "ik_w_limit", "限位软约束", 0.00, 0.50, 0.01, "%.2f", _COL["filt"])
 
     ax_act_h = fig.add_subplot(gs_act[0])
     ax_act_h.set_facecolor(_COL["bg"])
