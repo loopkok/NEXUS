@@ -129,6 +129,8 @@ def test_dual_arms(solver_type: str) -> bool:
     print(f"  L EE0={np.round(TL[:3, 3], 3).tolist()}")
     print(f"  R EE0={np.round(TR[:3, 3], 3).tolist()}")
     if solver_type == "urdf_numerical":
+        # Poses are in left/right_base_link (same orientation as torso, origin at
+        # the shoulder). q=0 EE x is ~±0.116 m, not the torso-frame ±0.21 m.
         ok = TL[0, 3] > 0.05 and TR[0, 3] < -0.05
     else:
         # Analytic DH is per-arm base (same model L/R aside from J2 limits)

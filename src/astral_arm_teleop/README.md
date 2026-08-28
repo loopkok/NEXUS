@@ -19,7 +19,8 @@ quest3_udp_mocap (convert_to_robot:=true)
 astral_arm_teleop_{left|right}                 # 进程并行
   PoseProcessor × vr_to_arm_rot
       analytic_dh: yaml(I) 再左乘 R_baseᵀ → 干净 MDH 基座
-      urdf_numerical: yaml(I) 原样 → SW *_base_link
+      urdf_numerical: yaml(I) 原样 → SW `left_base_link` / `right_base_link`
+        （Pinocchio `T_base⁻¹ T_ee`，不再用 universe/躯干）
   → IK
       analytic_dh: 翻转约定 q_dh（α=+90 闭式）
       urdf_numerical: 硬件约定 q_hw（Pinocchio LM）
@@ -290,6 +291,6 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 
 单臂：`config/astral_arm_teleop_{left,right}.yaml`。
 
-常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（真机 yaml 默认 true、sim launch 默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
+常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`init_waypoints`（扁平 7×N 途经点，硬件约定，先按序走到再去 `init_pose`；空=直接到 init）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（真机 yaml 默认 true、sim launch 默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
 
 `use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。

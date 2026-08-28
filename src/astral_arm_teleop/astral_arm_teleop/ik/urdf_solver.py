@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Astral / RobotMain URDF numerical IK — Pinocchio FK + scipy LM.
 
+Astral scheme (``astral_robot.pin.urdf``): FK/IK poses are in
+``left_base_link`` / ``right_base_link`` (shoulder mounts), not universe.
+
 Supports:
-  - RobotMain_URDF (Joint_la_* / Joint_ra_*)
+  - RobotMain_URDF (Joint_la_* / Joint_ra_*) — poses in universe
   - astral_robot.pin.urdf (left_joint* / right_joint*)
 
 Dual-arm ``solve_ik_both`` runs left/right LM in a thread pool (separate
@@ -87,6 +90,8 @@ class URDFNumericalIKSolver(IKSolverBase):
             self._ee_L = "Link_la_7"
             self._ee_R = "Link_ra_7"
             tip_L, tip_R = "Joint_la_7", "Joint_ra_7"
+            self._base_L = None
+            self._base_R = None
         elif "left_joint1" in names and "right_joint1" in names:
             self._scheme = "astral"
             lock_R = [f"right_joint{i}" for i in range(1, 8)]
@@ -94,6 +99,8 @@ class URDFNumericalIKSolver(IKSolverBase):
             self._ee_L = "left_link7"
             self._ee_R = "right_link7"
             tip_L, tip_R = "left_joint7", "right_joint7"
+            self._base_L = "left_base_link"
+            self._base_R = "right_base_link"
         else:
             raise ValueError(
                 f"Unrecognized dual-arm URDF (need Joint_la_* or left_joint*): {urdf_path}"
@@ -106,6 +113,16 @@ class URDFNumericalIKSolver(IKSolverBase):
         self._model_R = self._build_reduced(robot, lock_L, self._ee_R, tip_R)
         self._nq_R = self._model_R.nq
         self._data_R = self._model_R.createData()
+
+        for model, base, ee in (
+            (self._model_L, self._base_L, self._ee_L),
+            (self._model_R, self._base_R, self._ee_R),
+        ):
+            if base and not model.existFrame(base):
+                raise ValueError(
+                    f"URDF IK base frame {base!r} missing after reduce "
+                    f"(ee={ee}, urdf={urdf_path})"
+                )
 
         self._joint_names = [
             n
@@ -198,6 +215,26 @@ class URDFNumericalIKSolver(IKSolverBase):
         )
         return model
 
+    @staticmethod
+    def _ee_in_base(model, data, ee_id: int, base_name: str | None):
+        """EE pose in ``*_base_link`` when set, otherwise universe."""
+        Tee = data.oMf[ee_id]
+        if not base_name:
+            return Tee
+        return data.oMf[model.getFrameId(base_name)].inverse() * Tee
+
+    def fk_homogeneous(self, arm: str, q7: Sequence[float]) -> np.ndarray:
+        is_left = str(arm).upper().startswith("L")
+        model = self._model_L if is_left else self._model_R
+        data = model.createData()
+        q = np.asarray(q7, dtype=float).reshape(-1)
+        pin.forwardKinematics(model, data, q)
+        pin.updateFramePlacements(model, data)
+        ee_name = self._ee_L if is_left else self._ee_R
+        base_name = self._base_L if is_left else self._base_R
+        T = self._ee_in_base(model, data, model.getFrameId(ee_name), base_name)
+        return T.homogeneous.copy()
+
     @property
     def method_name(self) -> str:
         return f"urdf_numerical_lm/{self._scheme}"
@@ -261,6 +298,7 @@ class URDFNumericalIKSolver(IKSolverBase):
         nq = self._nq_L if is_left else self._nq_R
         ee_name = self._ee_L if is_left else self._ee_R
         ee_id = model.getFrameId(ee_name)
+        base_name = self._base_L if is_left else self._base_R
         arm_base = 0 if is_left else 7
 
         with self._q_lock:
@@ -282,7 +320,7 @@ class URDFNumericalIKSolver(IKSolverBase):
         def _cost(q):
             pin.forwardKinematics(model, data, q)
             pin.updateFramePlacements(model, data)
-            Tc = data.oMf[ee_id]
+            Tc = self._ee_in_base(model, data, ee_id, base_name)
             err = pin.log(Tc.inverse() * T_tgt).vector
             out = np.empty(6 + nq)
             out[:3] = w_pos * err[:3]
@@ -319,7 +357,7 @@ class URDFNumericalIKSolver(IKSolverBase):
         q_out = res.x
         pin.forwardKinematics(model, data, q_out)
         pin.updateFramePlacements(model, data)
-        Tc = data.oMf[ee_id]
+        Tc = self._ee_in_base(model, data, ee_id, base_name)
         pos_err = float(np.linalg.norm(Tc.translation - T_tgt.translation))
         rot_err = float(np.linalg.norm(pin.log(Tc.inverse() * T_tgt).vector[3:]))
         err_norm = float(np.sqrt(pos_err * pos_err + rot_err * rot_err))

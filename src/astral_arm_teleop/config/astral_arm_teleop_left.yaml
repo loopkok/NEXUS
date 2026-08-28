@@ -25,10 +25,10 @@ astral_arm_teleop_left:
 
     max_joint_vel: 4.0  # rad/s  (0.08 rad/tick @ 50 Hz)
     workspace_radius: 0.0
-    # VR 看门狗：超时即 disarm（需重新 /teleop/start 恢复）。1.0s 容忍 VR
+    # VR 看门狗：超时即 disarm（需重新 /teleop/start 恢复）。1.5s 容忍 VR
     # 链路短暂抖动；超时前 teleop 持续发冻结目标（driver 跟随），teleop 停发
-    # 后 driver 自身的 command_timeout_s(0.5) 才接管保持。<=0 关闭（不推荐）。
-    data_timeout: 1.0
+    # 后 driver 自身的 command_timeout_s(1.5) 才接管保持。<=0 关闭（不推荐）。
+    data_timeout: 1.5
     dry_run: false
     require_clench_to_start: false
     auto_arm_on_start: true
@@ -37,13 +37,15 @@ astral_arm_teleop_left:
     # 用当前 pose 记零点并 arm。真机推荐 true（启动推流后手摆好再开始）。
     require_start_signal: true
     use_joint_state_seed: true
-    # Startup: slow joint-space move to init_pose (like Nero), then VR teleop.
+    # Startup: slow joint-space move along init_waypoints then to init_pose.
     move_to_init_pose: true
     init_speed_percent: 10  # of max_joint_vel
     init_arrive_tol: 0.05
-    init_timeout: 15.0
+    init_timeout: 40.0
     print_latency: true
     latency_print_interval: 2.0
     publish_tune: true
 
+    # Via point (hardware convention): lift / fold before extending to the table.
+    init_waypoints: [-1.0, 0.0, 0.0, -2.20, 0.0, 0.46, 0.00]
     init_pose: [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]

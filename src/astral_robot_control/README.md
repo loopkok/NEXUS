@@ -31,7 +31,7 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 
 - QoS：**BEST_EFFORT**（SensorData）
 - 关节名可选；无名时按位置顺序；有名时按 `joint_layout.py` 对齐
-- `command_timeout_s`（默认 0.5）：超时不再下发，避免僵持旧指令
+- `command_timeout_s`（默认 1.5）：超时不再下发，避免僵持旧指令
 
 左臂关节名：`left_shoulder_pitch` … `left_wrist_roll`  
 右臂：`right_shoulder_pitch` … `right_wrist_roll`

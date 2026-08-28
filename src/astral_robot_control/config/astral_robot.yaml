@@ -29,7 +29,7 @@ astral_robot_driver:
     auto_ready: true
     dry_run: false
     enable_full_body_cmd: true
-    command_timeout_s: 0.5
+    command_timeout_s: 1.5
     state_publish_rate: 50.0
     control_rate: 50.0
     left_arm_ns: "left_arm"

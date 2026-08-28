@@ -109,6 +109,8 @@ class AstralIKBridge:
         q = np.asarray(q7, dtype=float).reshape(7)
         if self._dh:
             return self._dh[key].fk(q)
+        if self.method == "urdf_numerical" and hasattr(self._solver, "fk_homogeneous"):
+            return self._solver.fk_homogeneous(key, q)
         if self.method == "urdf_numerical" and hasattr(self._solver, "_model_L"):
             import pinocchio as pin
 

@@ -1,13 +1,16 @@
-"""Astral dual-arm IK layer (torso ``base_link``).
+"""Astral dual-arm IK layer.
+
+URDF numerical IK poses are in ``left_base_link`` / ``right_base_link``.
+Analytic DH uses the same arm-base frames (clean MDH after ``R_base``).
 
 Layout::
 
   ik/
-    base.py          — IKSolverBase protocol
-    robot_params.py  — Modified DH parameters
-    analytic.py      — Nero-port IKSolver / AstralParams (closed-form DH)
-    urdf_solver.py   — URDFNumericalIKSolver (Pinocchio LM)
-    factory.py       — AstralIKBridge + make_ik_solver
+    base.py          -- IKSolverBase protocol
+    robot_params.py  -- Modified DH parameters
+    analytic.py      -- Nero-port IKSolver / AstralParams (closed-form DH)
+    urdf_solver.py   -- URDFNumericalIKSolver (Pinocchio LM)
+    factory.py       -- AstralIKBridge + make_ik_solver
 
 Use ``make_ik_solver(solver_type)`` from teleop; do not import solvers ad-hoc.
 """

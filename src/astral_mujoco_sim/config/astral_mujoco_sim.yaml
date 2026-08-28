@@ -8,8 +8,10 @@ astral_mujoco_sim_node:
     fps_print_interval: 5.0
     print_latency: true
     latency_print_interval: 2.0
-    init_pose_left:  [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
-    init_pose_right: [0.32, -0.11, 0.53, -0.80, 0.28, 0.00, 0.00]
+    # Viewer start pose. Zeros so sim homing is visible: rest → via → init_pose.
+    # Restore the work pose here if you want the model to boot already at init.
+    init_pose_left:  [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]
+    init_pose_right: [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]
     # Gripper (echo only — no MJCF gripper joint). Mirror astral_robot_control.
     enable_gripper_cmd: true
     left_gripper_ns: "left_gripper"

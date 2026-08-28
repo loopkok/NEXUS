@@ -15,7 +15,7 @@ from typing import Optional
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
-from rcl_interfaces.msg import SetParametersResult
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType, SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import (
     QoSProfile,
@@ -108,12 +108,12 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("tcp_offset", [0.0] * 6)
         self.declare_parameter("max_joint_vel", 4.0)
         self.declare_parameter("workspace_radius", 0.0)
-        # Watchdog: disarm when VR data is older than this. 1.0s tolerates
+        # Watchdog: disarm when VR data is older than this. 1.5s tolerates
         # brief VR link jitter; while teleop keeps publishing the frozen
         # target the driver keeps tracking it, and only after teleop stops
-        # does the driver's own command_timeout_s (0.5) engage the hold.
+        # does the driver's own command_timeout_s (1.5) engage the hold.
         # <= 0 disables the watchdog (not recommended).
-        self.declare_parameter("data_timeout", 1.0)
+        self.declare_parameter("data_timeout", 1.5)
         self.declare_parameter("dry_run", False)
         self.declare_parameter("require_clench_to_start", False)
         self.declare_parameter("auto_arm_on_start", True)
@@ -124,6 +124,15 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("use_joint_state_seed", True)
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
+        )
+        # Flat 7*N joint-space via points (hardware convention), visited in
+        # order before init_pose. Default [0.0] is a typed DOUBLE_ARRAY
+        # placeholder (empty [] would be inferred as BYTE_ARRAY in rclpy).
+        # Length < 7 means "no via points".
+        self.declare_parameter(
+            "init_waypoints",
+            [0.0],
+            ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY),
         )
         self.declare_parameter("move_to_init_pose", True)
         self.declare_parameter("init_speed_percent", 10)  # of max_joint_vel
@@ -175,6 +184,8 @@ class AstralTeleopArmNode(Node):
         self.robot_init_rot = T0[:3, :3].copy()
         self.q_cmd = self._flip_q(init_q)  # back to hardware convention
         self._init_q_hw = self.q_cmd.copy()
+        self._homing_path = self._parse_init_waypoints() + [self._init_q_hw.copy()]
+        self._homing_i = 0
         self.state_q = self.q_cmd.copy()
         self._got_state = False
         self._homing = bool(self.get_parameter("move_to_init_pose").value) and (
@@ -282,8 +293,9 @@ class AstralTeleopArmNode(Node):
         )
         self.create_timer(self.dt, self._loop)
         solver_name = getattr(self.ik, "method_name", type(self.ik).__name__)
+        n_via = max(0, len(self._homing_path) - 1)
         home_msg = (
-            f"homing→init at {self._init_joint_vel:.2f} rad/s "
+            f"homing {n_via} via + init at {self._init_joint_vel:.2f} rad/s "
             f"({self.get_parameter('init_speed_percent').value}%)"
             if self._homing
             else "homing off"
@@ -342,6 +354,7 @@ class AstralTeleopArmNode(Node):
                     "arm_side",
                     "urdf_path",
                     "init_pose",
+                    "init_waypoints",
                     "vr_to_arm_rot",
                     "tcp_offset",
                     "control_rate",
@@ -431,6 +444,34 @@ class AstralTeleopArmNode(Node):
             if f:
                 out[i] = -out[i]
         return out
+
+    def _parse_init_waypoints(self) -> list:
+        """Hardware-convention via points from the flat ``init_waypoints`` array."""
+        raw = np.asarray(
+            self.get_parameter("init_waypoints").value, dtype=float
+        ).ravel()
+        if raw.size < 7:
+            return []
+        if raw.size % 7 != 0:
+            raise ValueError(
+                f"init_waypoints length {raw.size} is not a multiple of 7"
+            )
+        out = []
+        lo = self.ik.lower_limits + 0.02
+        hi = self.ik.upper_limits - 0.02
+        for row in raw.reshape(-1, 7):
+            q_ik = np.clip(self._flip_q(row), lo, hi)
+            q_hw = self._flip_q(q_ik)
+            if not np.allclose(q_hw, row, atol=1e-3):
+                self.get_logger().warn(
+                    f"[{self.side}] init_waypoints clipped to joint limits: "
+                    f"{np.round(row, 3).tolist()} → {np.round(q_hw, 3).tolist()}"
+                )
+            out.append(q_hw)
+        return out
+
+    def _homing_target(self) -> np.ndarray:
+        return self._homing_path[self._homing_i]
 
     def _on_armed(self, msg: Bool) -> None:
         # Only Bool(true) arms; a stray/default Bool(false) must not arm.
@@ -614,15 +655,17 @@ class AstralTeleopArmNode(Node):
         )
 
     def _homing_tick(self, now: float, dt: float) -> None:
-        """Slow joint-space approach to yaml init_pose (Nero move_j equivalent)."""
+        """Slow joint-space approach: init_waypoints in order, then init_pose."""
         if not self._homing_started:
             self._homing_started = True
             self._homing_t0 = now
             self._homing_last_log = now
+            self._homing_i = 0
+            n = len(self._homing_path)
             self.get_logger().warn(
-                f"[{self.side}] Moving to initial pose at "
-                f"{self._init_joint_vel:.2f} rad/s: "
-                f"{np.round(self._init_q_hw, 3).tolist()}"
+                f"[{self.side}] Homing {n} segment(s) at "
+                f"{self._init_joint_vel:.2f} rad/s; first target="
+                f"{np.round(self._homing_target(), 3).tolist()}"
             )
 
         elapsed = now - self._homing_t0
@@ -642,17 +685,29 @@ class AstralTeleopArmNode(Node):
             )
             self._homing_seeded = True
 
-        err = self._init_q_hw - self.q_cmd
+        target = self._homing_target()
+        last = self._homing_i >= len(self._homing_path) - 1
+        err = target - self.q_cmd
         max_abs = float(np.max(np.abs(err)))
         if now - self._homing_last_log >= 2.0:
+            kind = "init" if last else f"via[{self._homing_i}]"
             self.get_logger().info(
-                f"[{self.side}] Init pose approach: error={max_abs:.3f} rad, "
+                f"[{self.side}] Homing {kind}: error={max_abs:.3f} rad, "
                 f"elapsed={elapsed:.1f}s"
             )
             self._homing_last_log = now
 
         if max_abs < self._init_arrive_tol:
-            self._finish_homing(now, "arrived")
+            self.q_cmd = target.copy()
+            if last:
+                self._finish_homing(now, "arrived")
+                self._publish_q()
+                return
+            self._homing_i += 1
+            self.get_logger().warn(
+                f"[{self.side}] Via {self._homing_i}/{len(self._homing_path)-1} "
+                f"reached; next={np.round(self._homing_target(), 3).tolist()}"
+            )
             self._publish_q()
             return
         if elapsed >= self._init_timeout:

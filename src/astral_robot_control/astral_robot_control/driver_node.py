@@ -83,7 +83,7 @@ class AstralRobotDriverNode(Node):
         self.declare_parameter("auto_ready", True)
         self.declare_parameter("dry_run", False)
         self.declare_parameter("enable_full_body_cmd", True)
-        self.declare_parameter("command_timeout_s", 0.5)
+        self.declare_parameter("command_timeout_s", 1.5)
         self.declare_parameter("state_publish_rate", 50.0)
         self.declare_parameter("control_rate", 50.0)
 

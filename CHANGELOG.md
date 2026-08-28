@@ -4,6 +4,24 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-08-28
+
+**URDF 数值 IK 改到臂基座系**——`astral_arm_teleop` `urdf_numerical`。
+
+- 此前 Pinocchio `oMf` 在 universe（= `body_link` 躯干）求解。现 FK/IK 位姿改到 `left_base_link` / `right_base_link`（肩安装座），与 DH 解析解同一类臂基座系。
+- `*_base_link` 相对躯干只有平移、无旋转，Quest `robot_world` 增量方向仍可与 `vr_to_arm_rot=I` 相加；`robot_init` 原点会从躯干原点变为肩原点（日志 EE0 的 z 不再含 0.412 m 肩高）。
+
+## 2026-08-28（超时）
+
+**超时统一 1.5s**——`astral_arm_teleop` `data_timeout`、`astral_robot_control` `command_timeout_s` 均改为 1.5s（代码默认 + yaml）。VR 断连后 teleop 再撑 1.5s 才 disarm；teleop 停发后 driver 再 1.5s 才停刷电机目标。
+
+## 2026-08-27（四）
+
+**Homing 途经点（先抬再伸，避桌）**——`astral_arm_teleop` / `astral_mujoco_sim`。
+
+- 启动不再关节空间直达 `init_pose`（那条弧会刮桌）。新增 `init_waypoints`（扁平 7×N，硬件约定）：按序走完再到工作位。当前左右各一个途经点 `[-1, 0, 0, -2.20, 0, 0.46, 0]`。
+- `init_timeout` 15→40s（两段慢速）。MuJoCo 默认起始改为零位，便于看 rest → via → init。
+
 ## 2026-08-27（三）
 
 **视频扫描按像素格式挑彩色节点（修 RealSense 无画面）**——`quest3_video_streamer`。
