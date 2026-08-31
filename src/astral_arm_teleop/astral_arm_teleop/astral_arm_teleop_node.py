@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """Single-arm Astral teleop (Nero layout).
 
-Quest wrist → PoseProcessor → IK (``analytic_dh`` or ``urdf_numerical``)
-→ SafetyFilter → ``/{side}_arm/joint_commands``.
+Quest wrist → PoseProcessor → IK (``geometric`` default; ``analytic_dh`` /
+``urdf_numerical`` selectable) → SafetyFilter → ``/{side}_arm/joint_commands``.
+
+With ``use_human_elbow`` (default on, geometric only), the Quest IOBT
+shoulder/elbow from ``quest3/body_joints`` pins the arm angle psi_ref so the
+robot elbow plane follows the human's.
 
 Use two instances (left + right) for dual-arm (process-level parallel).
 """
 
 from __future__ import annotations
 
+import json
+import math
 import time
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseArray, PoseStamped
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import (
@@ -25,7 +31,7 @@ from rclpy.qos import (
 )
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray, String
 from std_srvs.srv import Trigger
 
 from astral_arm_teleop.ik.factory import make_single_arm_ik
@@ -90,7 +96,7 @@ class AstralTeleopArmNode(Node):
         super().__init__("astral_arm_teleop_arm")
         self.declare_parameter("arm_side", "left")
         self.declare_parameter("control_rate", 50.0)
-        self.declare_parameter("solver_type", "urdf_numerical")
+        self.declare_parameter("solver_type", "geometric")
         self.declare_parameter("urdf_path", "")  # empty → astral_robot.pin.urdf
         self.declare_parameter("ik_max_iter", 20)
         self.declare_parameter("ik_tol", 1e-8)
@@ -119,6 +125,12 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("tcp_offset", [0.0] * 6)
         self.declare_parameter("max_joint_vel", 4.0)
         self.declare_parameter("workspace_radius", 0.0)
+        # Radial soft wall at the elbow-straight singularity (geometric
+        # solver only): the wrist target is clamped to l_se + l_ew -
+        # reach_margin from the shoulder center. At full extension the
+        # elbow circle degenerates and q4 hits its limit, so without the
+        # clamp IK returns None and the arm visibly catches. <=0 disables.
+        self.declare_parameter("reach_margin", 0.01)
         # Watchdog: disarm when VR data is older than this. 1.5s tolerates
         # brief VR link jitter; while teleop keeps publishing the frozen
         # target the driver keeps tracking it, and only after teleop stops
@@ -152,6 +164,20 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("print_latency", True)
         self.declare_parameter("latency_print_interval", 2.0)
         self.declare_parameter("publish_tune", True)
+        # Human arm-angle prior from Quest body tracking (geometric solver
+        # only): body_joints {side}-arm-upper/-lower give the human upper-arm
+        # direction -> psi_ref, so the robot elbow plane follows the human's.
+        # Falls back to pure continuity when the body stream is stale.
+        self.declare_parameter("use_human_elbow", True)
+        self.declare_parameter("human_elbow_weight", 2.0)
+        self.declare_parameter("human_elbow_timeout", 0.3)
+        self.declare_parameter("human_elbow_smoothing_tau", 0.15)
+        # Straightness gate: when the human arm is nearly straight (elbow
+        # within ~sin*upper-arm-length of the shoulder-wrist line), psi is
+        # unobservable and IOBT bias would swivel the robot elbow to a
+        # garbage angle. 0.15 ~= elbow 4 cm off the line on a 28 cm upper
+        # arm; normal bent-arm gestures have sin >= 0.5.
+        self.declare_parameter("human_elbow_min_sin", 0.15)
 
         self.side = str(self.get_parameter("arm_side").value).lower()
         if self.side not in ("left", "right"):
@@ -187,6 +213,24 @@ class AstralTeleopArmNode(Node):
             ik_w_fold=float(self.get_parameter("ik_w_fold").value),
             ik_q4_fold=float(self.get_parameter("ik_q4_fold").value),
         )
+        self.reach_margin = float(self.get_parameter("reach_margin").value)
+        self._use_human_elbow = bool(self.get_parameter("use_human_elbow").value)
+        self._human_elbow_weight = float(self.get_parameter("human_elbow_weight").value)
+        self._human_elbow_timeout = float(
+            self.get_parameter("human_elbow_timeout").value
+        )
+        self._human_elbow_tau = float(
+            self.get_parameter("human_elbow_smoothing_tau").value
+        )
+        self._human_elbow_min_sin = float(
+            self.get_parameter("human_elbow_min_sin").value
+        )
+        self._apply_human_elbow_cfg()
+        # Body-tracking prior state (Quest IOBT, robot_body/hips frame).
+        self._body_names: Optional[List[str]] = None
+        self._elbow_dir_vr: Optional[np.ndarray] = None  # EMA-smoothed unit dir
+        self._elbow_dir_t: float = 0.0
+        self._body_subs = None
         init_q_old = np.asarray(
             self.get_parameter("init_pose").value, dtype=float
         ).reshape(7)  # hardware/original convention (config)
@@ -278,6 +322,7 @@ class AstralTeleopArmNode(Node):
         self.create_subscription(
             PoseStamped, f"quest3/{self.side}_wrist_pose", self._on_wrist, 10
         )
+        self._ensure_body_subs()
         if self._homing or bool(self.get_parameter("use_joint_state_seed").value):
             self.create_subscription(
                 JointState,
@@ -354,6 +399,8 @@ class AstralTeleopArmNode(Node):
                     self.safety.max_joint_vel = float(p.value)
                 elif name == "workspace_radius":
                     self.safety.workspace_radius = float(p.value)
+                elif name == "reach_margin":
+                    self.reach_margin = float(p.value)
                 elif name == "data_timeout":
                     self.data_timeout = float(p.value)
                 elif name == "dry_run":
@@ -384,6 +431,18 @@ class AstralTeleopArmNode(Node):
                     lm["q4_max"] = float(p.value)
                 elif name == "ik_w_limit":
                     lm["w_limit"] = float(p.value)
+                elif name == "use_human_elbow":
+                    self._use_human_elbow = bool(p.value)
+                    self._ensure_body_subs()
+                elif name == "human_elbow_weight":
+                    self._human_elbow_weight = float(p.value)
+                    self._apply_human_elbow_cfg()
+                elif name == "human_elbow_timeout":
+                    self._human_elbow_timeout = float(p.value)
+                elif name == "human_elbow_smoothing_tau":
+                    self._human_elbow_tau = float(p.value)
+                elif name == "human_elbow_min_sin":
+                    self._human_elbow_min_sin = float(p.value)
                 elif name in (
                     "arm_side",
                     "urdf_path",
@@ -447,6 +506,12 @@ class AstralTeleopArmNode(Node):
             ik_w_fold=float(self.get_parameter("ik_w_fold").value),
             ik_q4_fold=float(self.get_parameter("ik_q4_fold").value),
         )
+        self._apply_human_elbow_cfg()
+        if self._use_human_elbow and not hasattr(self.ik, "arm_angle_from_elbow_dir"):
+            self.get_logger().warn(
+                f"[{self.side}] human elbow prior requires the geometric solver; "
+                f"disabled for {st}"
+            )
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
             R = _R_BASE_T @ R
@@ -617,6 +682,108 @@ class AstralTeleopArmNode(Node):
             if 0.0 <= age < 5000.0:
                 self._lat.add("vr_rx", age)
 
+    # ---- Human elbow prior (Quest body tracking -> geometric arm angle) ----
+
+    def _apply_human_elbow_cfg(self) -> None:
+        cont = getattr(self.ik, "continuity", None)
+        if cont is not None and hasattr(cont, "w_psi_ref"):
+            cont.w_psi_ref = self._human_elbow_weight
+
+    def _ensure_body_subs(self) -> None:
+        if not self._use_human_elbow or self._body_subs is not None:
+            return
+        if not hasattr(self.ik, "arm_angle_from_elbow_dir"):
+            self.get_logger().warn(
+                f"[{self.side}] use_human_elbow=true but solver "
+                f"{getattr(self.ik, 'method_name', '?')} has no arm-angle prior "
+                "support (geometric only) — ignoring"
+            )
+            self._use_human_elbow = False
+            return
+        latched = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+        self._body_subs = (
+            self.create_subscription(
+                String, "quest3/body_joint_names", self._on_body_names, latched
+            ),
+            self.create_subscription(
+                PoseArray, "quest3/body_joints", self._on_body_joints, _sensor_qos()
+            ),
+        )
+        self.get_logger().info(
+            f"[{self.side}] human elbow prior on: quest3/body_joints "
+            f"({self.side}-arm-upper/-lower), w={self._human_elbow_weight}"
+        )
+
+    def _on_body_names(self, msg: String) -> None:
+        try:
+            names = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if isinstance(names, list) and names:
+            self._body_names = [str(n) for n in names]
+
+    def _on_body_joints(self, msg: PoseArray) -> None:
+        names = self._body_names
+        if not names or len(msg.poses) != len(names):
+            return
+        # {side}-arm-upper joint sits at the shoulder ball, {side}-arm-lower
+        # at the elbow (Meta IOBT skeleton; aliases tolerated).
+        i_up = i_lo = -1
+        for alias_up, alias_lo in (
+            (f"{self.side}-arm-upper", f"{self.side}-arm-lower"),
+            (f"{self.side}-upper-arm", f"{self.side}-lower-arm"),
+            (f"{self.side}-shoulder", f"{self.side}-elbow"),
+        ):
+            if alias_up in names and alias_lo in names:
+                i_up, i_lo = names.index(alias_up), names.index(alias_lo)
+                break
+        if i_up < 0:
+            return
+        pu, pl = msg.poses[i_up].position, msg.poses[i_lo].position
+        d = np.array([pl.x - pu.x, pl.y - pu.y, pl.z - pu.z], dtype=float)
+        if not np.isfinite(d).all():
+            return
+        n = float(np.linalg.norm(d))
+        if n < 0.05 or n > 1.0:  # implausible human upper-arm length
+            return
+        d /= n
+        now = time.monotonic()
+        if self._elbow_dir_vr is None or self._elbow_dir_t <= 0.0:
+            self._elbow_dir_vr = d
+        else:
+            dt_e = min(0.5, max(1e-3, now - self._elbow_dir_t))
+            a = math.exp(-dt_e / max(1e-3, self._human_elbow_tau))
+            v = a * self._elbow_dir_vr + (1.0 - a) * d
+            nv = float(np.linalg.norm(v))
+            if nv > 1e-6:  # keep last good dir if EMA degenerates
+                self._elbow_dir_vr = v / nv
+        self._elbow_dir_t = now
+
+    def _human_psi_ref(self, T_flange: np.ndarray) -> Optional[float]:
+        """Arm-angle prior (rad) from the latest human elbow direction."""
+        fn = getattr(self.ik, "arm_angle_from_elbow_dir", None)
+        d = self._elbow_dir_vr
+        if fn is None or d is None or self._elbow_dir_t <= 0.0:
+            return None
+        if (time.monotonic() - self._elbow_dir_t) > self._human_elbow_timeout:
+            return None
+        # Same rotation as wrist deltas (direction only: no zero-point/scale).
+        d_arm = self.pose.R_vr_to_arm @ d
+        try:
+            psi = fn(T_flange, d_arm, min_sin=self._human_elbow_min_sin)
+        except Exception:  # noqa: BLE001 - never let the prior break teleop
+            return None
+        if psi is None and self._print_latency:
+            # Fresh body data but prior gated (nearly straight human arm or
+            # degenerate target) — visible in the [Latency] line.
+            self._lat.count("psi_off")
+        return psi
+
     def _loop(self) -> None:
         now = time.monotonic()
         dt = max(1e-3, now - self._prev_t)
@@ -664,13 +831,30 @@ class AstralTeleopArmNode(Node):
             T_tcp = T_flange @ self._T_flange_to_tcp
             if self._print_latency:
                 self._lat.count("ws_clip")
+        # Soft wall at full elbow extension: clamp the wrist target to the
+        # reachable sphere around the shoulder center. Beyond it the elbow
+        # circle degenerates, q4 hits its limit, IK fails, and the arm
+        # catches; clamping keeps IK well-posed (hand feels a soft wall).
+        clamp_reach = getattr(self.ik, "clamp_wrist_reach", None)
+        if clamp_reach is not None and self.reach_margin > 0.0:
+            p_clamped, clipped = clamp_reach(p_req, self.reach_margin)
+            if clipped:
+                T_flange[:3, 3] = p_clamped
+                T_tcp = T_flange @ self._T_flange_to_tcp
+                p_req = p_clamped
+                if self._print_latency:
+                    self._lat.count("reach_clip")
         # Warm-start from last *commanded* q (after vel limit), not raw IK jump.
         try:
             self.ik.sync_state(self._flip_q(self.q_cmd), reset_branch=False)
         except TypeError:
             self.ik.sync_state(self._flip_q(self.q_cmd))
         t_ik = time.perf_counter()
-        sol = self.ik.solve(T_flange)
+        psi_ref = self._human_psi_ref(T_flange) if self._use_human_elbow else None
+        if psi_ref is None:
+            sol = self.ik.solve(T_flange)
+        else:
+            sol = self.ik.solve(T_flange, psi_ref=psi_ref)
         if self._print_latency:
             self._lat.add("ik", (time.perf_counter() - t_ik) * 1000.0)
         if sol is None:

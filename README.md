@@ -37,7 +37,7 @@ Quest3 ← WebRTC（quest3_video_streamer，信令 :8765）
 
 | 包 | 作用 |
 |----|------|
-| `astral_arm_teleop` | 双臂遥操 IK（`analytic_dh` / `urdf_numerical`）+ 安全滤波（原 `astral_quest_teleop`，纯臂） |
+| `astral_arm_teleop` | 双臂遥操 IK（默认 `geometric` 臂角闭式 + 人臂肘先验；可选 `analytic_dh` / `urdf_numerical`）+ 安全滤波（原 `astral_quest_teleop`，纯臂） |
 | `astral_teleop` | 整机遥操编排 launch：mocap + 双臂 + 左夹爪 + 右 Wuji（Quest 或手套） |
 | `astral_gripper_teleop` | Quest3 左手捏合 → `/left_gripper/command`（可换硬件源） |
 | `astral_robot_description` | 双臂 URDF（`astral_robot.pin.urdf`，SW 原约定） |
@@ -88,10 +88,10 @@ URDF 数值 IK：`pip install pin`。
 ## 启动
 
 ```bash
-# 臂仿真（求解器 / 协议在 yaml，默认 URDF IK + HTS 有线 TCP）
+# 臂仿真（求解器 / 协议在 yaml，默认 geometric 臂角 IK + 人臂肘先验 + HTS 有线 TCP）
 ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
 
-# 臂仿真改 DH：把 astral_arm_teleop_{left,right}.yaml 的 solver_type 改成 analytic_dh
+# 臂仿真改求解器：把 astral_arm_teleop_{left,right}.yaml 的 solver_type 改成 analytic_dh / urdf_numerical
 # 臂仿真改 UDP：把 quest3_mocap.yaml 的 protocol 改成 udp
 
 # 臂真机（默认左手捏合控左夹爪）
@@ -134,7 +134,8 @@ ros2 launch astral_data_collect data_collect.launch.py \
 | `solver_type` | 位姿帧 | 发布的 q |
 |---------------|--------|----------|
 | `analytic_dh` | 干净 MDH 基座；yaml `vr_to_arm_rot=I` 再乘 \(R_\text{base}^\top\) | DH 约定求解后 `flip_q` 成 SW 约定 |
-| `urdf_numerical`（yaml 默认） | SW `*_base_link`；`astral_robot.pin.urdf` | 已是硬件约定，不 flip |
+| `geometric`（yaml 默认） | SW `*_base_link`；`astral_robot.pin.urdf` | 已是硬件约定，不 flip |
+| `urdf_numerical` | SW `*_base_link`；`astral_robot.pin.urdf` | 已是硬件约定，不 flip |
 
 仿真 MJCF **未改**（`astral_dual.xml`）。细节见 [`astral_arm_teleop/README.md`](src/astral_arm_teleop/README.md)。
 

@@ -6,7 +6,7 @@ astral_arm_teleop_right:
     control_rate: 150.0
     # analytic_dh | geometric | urdf_numerical  — launch 不覆盖；改这里即可
     # geometric: 免 DH 臂角解析 IK（S/E/W 空间几何 + POE/Paden-Kahan，URDF 提取）
-    solver_type: "urdf_numerical"
+    solver_type: "geometric"
     urdf_path: ""  # empty → astral_robot.pin.urdf
     # URDF LM (ignored by DH; hot-tunable)
     ik_max_iter: 20
@@ -29,16 +29,19 @@ astral_arm_teleop_right:
     vr_to_arm_rot: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
-    pos_smoothing: 0.5 #0.8   # 0=无滤波 1=几乎不跟；可热改（tune 滑动条）
-    rot_smoothing: 0.6 #0.8
+    pos_smoothing: 0.4 #0.8   # 0=无滤波 1=几乎不跟；可热改（tune 滑动条）
+    rot_smoothing: 0.4 #0.8
     motion_scale: 0.8 #0.65
     flip_pitch: false
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-    max_joint_vel: 4.0  # rad/s  (0.08 rad/tick @ 50 Hz)
+    max_joint_vel: 6.0  # rad/s  (0.08 rad/tick @ 50 Hz)
     # Sphere around right_base_link origin (IK frame). <=0 off.
     # init_pose |p|~0.44 m; q=0 hang ~0.49 m; max reach ~0.59 m.
     workspace_radius: 0.55
+    # 肘伸直奇异软墙（geometric）：腕目标钳制在肩心 l_se+l_ew-margin 内，
+    # 防止全伸展时 q4 撞限位 → IK 无解 → 臂"卡一下"。<=0 关闭。
+    reach_margin: 0.01
     # VR 看门狗：超时即 disarm（需重新 /teleop/start 恢复）。1.5s 容忍 VR
     # 链路短暂抖动；超时前 teleop 持续发冻结目标（driver 跟随），teleop 停发
     # 后 driver 自身的 command_timeout_s(1.5) 才接管保持。<=0 关闭（不推荐）。
@@ -59,6 +62,18 @@ astral_arm_teleop_right:
     print_latency: true
     latency_print_interval: 2.0
     publish_tune: true
+
+    # 人臂肘先验（仅 geometric 求解器）：订阅 quest3/body_joints 的
+    # {side}-arm-upper/-lower（Quest IOBT 推算的肩/肘），把人的大臂方向
+    # 映射成臂角 psi_ref，机器人肘平面跟随人臂。数据超时/缺失自动回退
+    # 纯连续性。weight 越大越贴近人姿态（相对 w_vel=1.0）。
+    use_human_elbow: true
+    human_elbow_weight: 2.0
+    human_elbow_timeout: 0.3        # s；body_joints 超过此龄期则不用
+    human_elbow_smoothing_tau: 0.15 # s；肘方向 EMA 时间常数
+    # 伸直度门控：人臂接近伸直时 ψ 不可观测（IOBT 肘偏置会把机器人肘拧到
+    # 错误角度），低于此 sin 值关闭先验回退纯连续性。0.15 ≈ 肘尖离线 4cm。
+    human_elbow_min_sin: 0.15
 
     # Via point (hardware convention): lift / fold before extending to the table.
     init_waypoints: [-1.0, 0.0, 0.0, -2.20, 0.0, 0.46, 0.00]

@@ -208,6 +208,11 @@ class ContinuityParams:
     w_acc: float = 0.25
     w_pose: float = 0.1
     w_theta0: float = 0.15
+    # Human arm-angle prior (geometric solver only): when solve() receives a
+    # psi_ref (e.g. from Quest shoulder/elbow tracking), the local psi window
+    # is centered on it and the score gains w_psi_ref*|theta0 - psi_ref|.
+    # Must dominate w_vel/w_theta0 so the elbow plane follows the human arm.
+    w_psi_ref: float = 2.0
     # Hysteresis: keep locked branch unless significantly better candidate appears.
     hysteresis_margin: float = 0.03
     # Fallback to global scan when local window fails.

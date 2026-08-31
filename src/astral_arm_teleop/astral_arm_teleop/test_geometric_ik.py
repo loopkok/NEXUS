@@ -12,6 +12,7 @@ Usage:
 
 from __future__ import annotations
 
+import math
 import sys
 import time
 
@@ -22,10 +23,29 @@ from astral_arm_teleop.ik.factory import (
     make_ik_solver,
     make_single_arm_ik,
 )
-from astral_arm_teleop.ik.geometric import GeometricIKSolver
+from astral_arm_teleop.ik.geometric import (
+    GeometricIKSolver,
+    _axis_angle_rot,
+    _compute_sw,
+    _elbow_point,
+    psi_from_elbow_dir,
+)
 from astral_arm_teleop.ik.urdf_solver import URDFNumericalIKSolver
 
 ARMS = ("L", "R")
+
+
+def _elbow_fk(q: np.ndarray, g) -> np.ndarray:
+    """Elbow center under joints 1-3 (q4 spins about E and cannot move it)."""
+    T = np.eye(4)
+    I3 = np.eye(3)
+    for i in range(3):
+        R = _axis_angle_rot(g.axes[i], float(q[i]))
+        Ti = np.eye(4)
+        Ti[:3, :3] = R
+        Ti[:3, 3] = (I3 - R) @ g.points[i]
+        T = T @ Ti
+    return (T @ np.append(g.E0, 1.0))[:3]
 
 
 def _wrap(x: np.ndarray) -> np.ndarray:
@@ -256,6 +276,119 @@ def test_single_arm_factory() -> bool:
     return ok
 
 
+def test_psi_ref_prior() -> bool:
+    """Human elbow prior: psi_from_elbow_dir roundtrip + solve(psi_ref) tracking."""
+    print("\n  --- Human elbow prior (psi_ref) ---")
+    rng = np.random.default_rng(21)
+    ok_all = True
+    for arm in ARMS:
+        solver = _make(arm)
+        g = solver.geom
+        ok = True
+        seeds = _sample_q(rng, solver.lower_limits, solver.upper_limits, 6)
+
+        # 1) algebraic roundtrip: psi -> E(psi) -> direction S->E -> psi
+        worst_rt = 0.0
+        for q_seed in seeds:
+            T = solver.fk(q_seed)
+            S, W, q4l = _compute_sw(T, g)
+            if not q4l:
+                continue
+            for psi in np.linspace(-np.pi, np.pi, 25):
+                E = _elbow_point(float(psi), S, W, g)
+                if E is None:
+                    continue
+                got = psi_from_elbow_dir(S, W, E - S, g)
+                err = abs(float(_wrap(np.array([got - psi]))[0]))
+                worst_rt = max(worst_rt, err)
+        if worst_rt > 1e-9:
+            print(f"  arm {arm}: FAIL psi roundtrip err {worst_rt:.2e}")
+            ok = False
+
+        # 2) end-to-end: seed elbow direction -> psi_ref -> solve -> same arm angle
+        worst_dpsi = 0.0
+        for q_seed in seeds:
+            T = solver.fk(q_seed)
+            S, W, _ = _compute_sw(T, g)
+            E_seed = _elbow_fk(q_seed, g)
+            psi_ref = solver.arm_angle_from_elbow_dir(T, E_seed - S)
+            if psi_ref is None:
+                print(f"  arm {arm}: FAIL arm_angle_from_elbow_dir returned None")
+                ok = False
+                continue
+            # cold-start from a zero seed: continuity alone would not pick
+            # the seed's arm-angle branch — only psi_ref pulls it there.
+            solver.sync_state(np.zeros(7), reset_branch=True)
+            sol = solver.solve(T, psi_ref=psi_ref)
+            if sol is None:
+                print(f"  arm {arm}: FAIL no solution with psi_ref")
+                ok = False
+                continue
+            pos_mm = float(np.linalg.norm(solver.fk(sol)[:3, 3] - T[:3, 3]) * 1000.0)
+            psi_sol = psi_from_elbow_dir(S, W, _elbow_fk(sol, g) - S, g)
+            dpsi = abs(float(_wrap(np.array([psi_sol - psi_ref]))[0]))
+            worst_dpsi = max(worst_dpsi, dpsi)
+            if dpsi > 0.02 or pos_mm > 1.0:
+                print(
+                    f"  arm {arm}: FAIL dpsi={np.degrees(dpsi):.2f} deg "
+                    f"pos={pos_mm:.3f} mm"
+                )
+                ok = False
+
+        # 3) psi_ref in a joint-limit-infeasible region: must still solve
+        #    (global fallback + continuity), pose stays exact.
+        q_seed = seeds[0]
+        T = solver.fk(q_seed)
+        solver.sync_state(q_seed, reset_branch=True)
+        sol = solver.solve(T, psi_ref=0.0 if abs(0.0 - float(psi_ref)) > 0.5 else 2.0)
+        # pick a psi_ref far from the seed's own arm angle: it may or may not
+        # be feasible, but the solver must never return None or a bad pose.
+        if sol is None:
+            print(f"  arm {arm}: FAIL infeasible-side psi_ref returned None")
+            ok = False
+        else:
+            pos_mm = float(np.linalg.norm(solver.fk(sol)[:3, 3] - T[:3, 3]) * 1000.0)
+            if pos_mm > 1.0:
+                print(f"  arm {arm}: FAIL fallback pose err {pos_mm:.3f} mm")
+                ok = False
+
+        # 4) psi_ref=None unchanged: continuity keeps the seed branch.
+        solver.sync_state(q_seed)
+        sol = solver.solve(T)
+        dq = float(np.max(np.abs(_wrap(sol - q_seed)))) if sol is not None else 9.9
+        if dq > 0.2:
+            print(f"  arm {arm}: FAIL no-prior continuity dq={dq:.3f}")
+            ok = False
+
+        # 5) straightness gate: with the human arm nearly straight, the elbow
+        #    direction is ~parallel to S-W and psi is unobservable — IOBT
+        #    bias would otherwise swivel the robot elbow to a garbage angle.
+        q_bent = max(seeds, key=lambda q: abs(float(q[3])))
+        T = solver.fk(q_bent)
+        S, W, _ = _compute_sw(T, g)
+        u = (W - S) / float(np.linalg.norm(W - S))
+        d_bent = _elbow_fk(q_bent, g) - S
+        e_perp = d_bent - float(d_bent @ u) * u
+        e_perp = e_perp / float(np.linalg.norm(e_perp))
+        for s in (0.02, 0.05, 0.10):  # nearly-parallel dirs: gate must close
+            d_str = u * math.sqrt(1.0 - s * s) + e_perp * s
+            got = solver.arm_angle_from_elbow_dir(T, d_str, min_sin=0.15)
+            if got is not None:
+                print(f"  arm {arm}: FAIL gate open at sin={s}")
+                ok = False
+        got = solver.arm_angle_from_elbow_dir(T, d_bent, min_sin=0.15)
+        if got is None:
+            print(f"  arm {arm}: FAIL gate closed on a bent arm")
+            ok = False
+
+        ok_all &= ok
+        print(
+            f"  arm {arm}: roundtrip {worst_rt:.1e} rad, tracked dpsi "
+            f"{np.degrees(worst_dpsi):.3f} deg -> {'PASS' if ok else 'FAIL'}"
+        )
+    return ok_all
+
+
 def main() -> None:
     print("Astral Teleop — Geometric (DH-free) IK Test Suite")
     gt = _GroundTruth()
@@ -267,6 +400,8 @@ def main() -> None:
         "smooth_trajectory": test_smooth_trajectory(),
         "dual_arm_factory": test_dual_arm_factory(gt),
         "single_arm_factory": test_single_arm_factory(),
+        "psi_ref_prior": test_psi_ref_prior(),
+        "full_extension": test_full_extension(),
     }
     print("\n  SUMMARY:")
     for k, v in results.items():
@@ -275,6 +410,122 @@ def main() -> None:
     print(f"FINAL: {'ALL PASSED' if ok else 'SOME FAILED'}")
     if not ok:
         sys.exit(1)
+
+
+def test_full_extension() -> bool:
+    """Elbow-straight singularity: wrist target crossing the reach boundary.
+
+    Without a reach clamp the q4 elbow limit (|q4| <= 2.88 rad < pi) rejects
+    every branch in an outer band of the workspace, solve() returns None, the
+    node holds the last command, and the arm visibly "catches" when IK
+    recovers. With clamp_wrist_reach every step must solve smoothly.
+    """
+    print("\n  --- Full-extension reach boundary ---")
+    solver = _make("R")
+    g = solver.geom
+    S = np.asarray(g.S, dtype=float)
+    ok = True
+
+    # Find a seed whose S->W ray stays feasible (fixed flange orientation)
+    # essentially to the reach boundary, so the elbow is what runs out.
+    rng = np.random.default_rng(3)
+    r_max = g.l_se + g.l_ew
+    best = None
+    for cand in _sample_q(rng, solver.lower_limits, solver.upper_limits, 60):
+        T_c = solver.fk(cand)
+        r_c = float(np.linalg.norm(T_c[:3, 3] - S))
+        if not (0.28 < r_c < 0.36):
+            continue
+        ray_c = (T_c[:3, 3] - S) / r_c
+        solver.sync_state(cand, reset_branch=True)
+        last = r_c
+        for rr in np.arange(r_c, r_max + 0.02, 0.005):
+            Tt = T_c.copy()
+            Tt[:3, 3] = S + ray_c * rr
+            q = solver.solve(Tt)
+            if q is None:
+                break
+            solver.sync_state(q, reset_branch=False)
+            last = rr
+        if best is None or last > best[0]:
+            best = (last, cand, T_c, ray_c, r_c)
+    if best is None or best[0] < r_max - 0.005:
+        print(f"  FAIL no ray feasible to boundary (best={best and best[0]})")
+        return False
+    _, q_seed, T_seed, ray, r_seed = best
+
+    def _target(r: float) -> np.ndarray:
+        T = T_seed.copy()
+        T[:3, 3] = S + ray * r
+        return T
+
+    # 1) clamp_wrist_reach: beyond -> on the sphere, direction preserved.
+    p_far = S + np.array([0.0, 0.0, -(g.l_se + g.l_ew + 0.05)])
+    p_c, clipped = solver.clamp_wrist_reach(p_far, margin=0.01)
+    if not clipped:
+        print("  FAIL clamp did not report clip beyond reach")
+        ok = False
+    elif abs(float(np.linalg.norm(p_c - S)) - (g.l_se + g.l_ew - 0.01)) > 1e-9:
+        print("  FAIL clamp radius wrong")
+        ok = False
+    elif not np.allclose(
+        (p_far - S) / np.linalg.norm(p_far - S),
+        (p_c - S) / np.linalg.norm(p_c - S),
+        atol=1e-12,
+    ):
+        print("  FAIL clamp changed direction")
+        ok = False
+    p_in = S + np.array([0.30, 0.0, -0.20])
+    p_c2, clipped2 = solver.clamp_wrist_reach(p_in, margin=0.01)
+    if clipped2 or not np.allclose(p_c2, p_in):
+        print("  FAIL clamp touched an in-reach target")
+        ok = False
+
+    # 2) raw sweep must actually fail somewhere (test exercises the band).
+    radii = np.arange(r_seed, r_max + 0.03, 0.0005)
+    solver.sync_state(q_seed, reset_branch=True)
+    raw_failed = 0
+    for r in radii:
+        q = solver.solve(_target(float(r)))
+        if q is None:
+            raw_failed += 1
+        else:
+            solver.sync_state(q, reset_branch=False)
+    if raw_failed == 0:
+        print("  FAIL raw sweep never left the feasible region")
+        ok = False
+
+    # 3) clamped sweep: every step solvable, q4 in limits, motion smooth.
+    solver.sync_state(q_seed, reset_branch=True)
+    q_prev = None
+    max_step = 0.0
+    n_fail = 0
+    for r in radii:
+        T = _target(float(r))
+        T[:3, 3], _ = solver.clamp_wrist_reach(T[:3, 3], 0.01)
+        q = solver.solve(T)
+        if q is None:
+            n_fail += 1
+            continue
+        if not (g.lower[3] - 1e-6 <= float(q[3]) <= g.upper[3] + 1e-6):
+            print(f"  FAIL q4 limit at r={float(r):.4f}")
+            ok = False
+            break
+        if q_prev is not None:
+            max_step = max(max_step, float(np.max(np.abs(_wrap(q - q_prev)))))
+        q_prev = q
+    if n_fail:
+        print(f"  FAIL clamped sweep had {n_fail} unsolved steps")
+        ok = False
+    if max_step > 0.15:
+        print(f"  FAIL per-frame jump {max_step:.3f} rad")
+        ok = False
+
+    print(
+        f"  raw fails={raw_failed}/{len(radii)}, clamped max step "
+        f"{np.degrees(max_step):.2f} deg -> {'PASS' if ok else 'FAIL'}"
+    )
+    return ok
 
 
 if __name__ == "__main__":

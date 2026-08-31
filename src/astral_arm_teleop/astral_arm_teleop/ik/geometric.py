@@ -44,6 +44,7 @@ __all__ = [
     "GeometricIKSolver",
     "extract_arm_geometry",
     "fk",
+    "psi_from_elbow_dir",
     "solve_pose_continuous_with_state",
 ]
 
@@ -370,10 +371,15 @@ def _solve_q4(l_sw: float, g: ArmGeometry) -> List[float]:
     return [base + d, base - d]
 
 
-def _elbow_point(
-    psi: float, S: np.ndarray, W: np.ndarray, g: ArmGeometry
-) -> Optional[np.ndarray]:
-    """Elbow center on the arm-angle circle around the S-W axis."""
+def _circle_basis_sw(
+    S: np.ndarray, W: np.ndarray, g: ArmGeometry
+) -> Optional[Tuple[float, ...]]:
+    """Elbow-circle frame: (C, u, e1, e2, r) as flat scalars, None if degenerate.
+
+    ``u`` = unit S->W axis, circle center ``C = S + x u``, radius ``r``, and
+    (e1, e2) the in-plane basis with e1 from ``g.psi_ref`` (psi = 0 points the
+    elbow along e1). Scalar math — hot path of the psi scan.
+    """
     swx, swy, swz = float(W[0] - S[0]), float(W[1] - S[1]), float(W[2] - S[2])
     l_sw = math.sqrt(swx * swx + swy * swy + swz * swz)
     if l_sw < 1e-12:
@@ -398,11 +404,63 @@ def _elbow_point(
     e1x, e1y, e1z = tx / n, ty / n, tz / n
     # e2 = u x e1
     e2x, e2y, e2z = uy * e1z - uz * e1y, uz * e1x - ux * e1z, ux * e1y - uy * e1x
+    return (Cx, Cy, Cz, ux, uy, uz, e1x, e1y, e1z, e2x, e2y, e2z, r)
+
+
+def _elbow_point(
+    psi: float, S: np.ndarray, W: np.ndarray, g: ArmGeometry
+) -> Optional[np.ndarray]:
+    """Elbow center on the arm-angle circle around the S-W axis."""
+    basis = _circle_basis_sw(S, W, g)
+    if basis is None:
+        return None
+    Cx, Cy, Cz, _, _, _, e1x, e1y, e1z, e2x, e2y, e2z, r = basis
     cp, sp = r * math.cos(psi), r * math.sin(psi)
     return np.array(
         [Cx + cp * e1x + sp * e2x, Cy + cp * e1y + sp * e2y, Cz + cp * e1z + sp * e2z],
         dtype=float,
     )
+
+
+def psi_from_elbow_dir(
+    S: np.ndarray,
+    W: np.ndarray,
+    elbow_dir: np.ndarray,
+    g: ArmGeometry,
+    min_sin: float = 0.0,
+) -> Optional[float]:
+    """Arm angle psi whose elbow points along ``elbow_dir`` (arm base frame).
+
+    ``elbow_dir`` is a measured upper-arm direction (shoulder -> elbow) already
+    rotated into the arm base frame. Only its component perpendicular to the
+    S-W axis enters, so human/robot arm-length and scale differences cancel:
+    the robot elbow swings to the same side of the S-W axis as the human's.
+
+    ``min_sin`` gates observability: when the human arm is nearly straight,
+    the elbow sits ~on the S-W line and the perpendicular component is IOBT
+    bias/noise, not signal — returning a psi then swivels the robot elbow to
+    a garbage angle. Require sin(angle(elbow_dir, S-W)) >= min_sin.
+    Returns None when degenerate or below the gate.
+    """
+    basis = _circle_basis_sw(S, W, g)
+    if basis is None:
+        return None
+    _, _, _, ux, uy, uz, e1x, e1y, e1z, e2x, e2y, e2z, _ = basis
+    dx, dy, dz = (
+        float(elbow_dir[0]),
+        float(elbow_dir[1]),
+        float(elbow_dir[2]),
+    )
+    n = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if n < 1e-9:
+        return None
+    dx, dy, dz = dx / n, dy / n, dz / n
+    du = dx * ux + dy * uy + dz * uz
+    px, py, pz = dx - du * ux, dy - du * uy, dz - du * uz
+    p2 = px * px + py * py + pz * pz  # = sin^2(angle(d, u)), d unit
+    if p2 < max(1e-12, min_sin * min_sin):
+        return None
+    return math.atan2(px * e2x + py * e2y + pz * e2z, px * e1x + py * e1y + pz * e1z)
 
 
 def _compute_sw(T: np.ndarray, g: ArmGeometry) -> Tuple[np.ndarray, np.ndarray, List[float]]:
@@ -534,7 +592,18 @@ def solve_pose_continuous_with_state(
     n_psi: int = 181,
     continuity: Optional[ContinuityParams] = None,
     skip_qp: bool = False,
+    psi_ref: Optional[float] = None,
+    singular_sin_alpha: float = 0.05,
 ) -> Tuple[Optional[np.ndarray], dict, ContinuityRuntimeState]:
+    """Continuous IK; optional ``psi_ref`` pins the arm angle to a human prior.
+
+    When ``psi_ref`` (rad, e.g. from Quest shoulder/elbow tracking via
+    ``psi_from_elbow_dir``) is given, the local psi window is centered on it
+    instead of ``theta0_prev`` and the branch score gains
+    ``w_psi_ref * |theta0 - psi_ref|`` — the elbow plane follows the human arm
+    while w_vel/w_theta0/hysteresis still smooth out tracking noise.
+    Fallback chain: psi_ref window -> theta0_prev window -> global scan.
+    """
     if continuity is None:
         continuity = ContinuityParams()
 
@@ -546,9 +615,54 @@ def solve_pose_continuous_with_state(
 
     S, W, q4_list = _compute_sw(T, g)
 
+    # Near the elbow-straight singularity (S, E, W ~collinear) the elbow
+    # circle radius ~0, so the arm angle is numerically meaningless: every
+    # psi gives ~the same elbow point and the scan only amplifies target
+    # noise into shoulder motion. Collapse the grid to theta0_prev.
+    swx, swy, swz = float(W[0] - S[0]), float(W[1] - S[1]), float(W[2] - S[2])
+    l_sw = math.sqrt(swx * swx + swy * swy + swz * swz)
+    singular = False
+    if l_sw > 1e-12:
+        x_c = (g.l_se * g.l_se - g.l_ew * g.l_ew + l_sw * l_sw) / (2.0 * l_sw)
+        r2_c = g.l_se * g.l_se - x_c * x_c
+        sin_alpha = math.sqrt(max(0.0, r2_c)) / g.l_se if g.l_se > 0.0 else 0.0
+        singular = sin_alpha < singular_sin_alpha
+    else:
+        singular = True
+
     all_solutions: List[np.ndarray] = []
-    method = "continuous_local_theta0"
-    if theta0_prev is not None and q4_list:
+    method = "continuous_local_theta0" if psi_ref is None else "continuous_local_psi_ref"
+    if singular and q4_list:
+        hold = theta0_prev if theta0_prev is not None else 0.0
+        psi_grid = np.array([hold])
+        all_solutions = _collect_solutions(T, g, S, W, q4_list, psi_grid)
+        method = "continuous_singular_hold"
+    center = psi_ref if psi_ref is not None else theta0_prev
+    if not singular and center is not None and q4_list:
+        psi_grid = np.linspace(
+            center - continuity.local_theta0_window,
+            center + continuity.local_theta0_window,
+            max(5, continuity.local_theta0_count),
+            endpoint=True,
+        )
+        if psi_ref is not None:
+            # Exact-psi candidate: w_psi_ref makes it win, so the elbow lands
+            # on the human prior without grid quantization error.
+            psi_grid = np.append(psi_grid, psi_ref)
+        all_solutions = _collect_solutions(T, g, S, W, q4_list, psi_grid)
+
+    # psi_ref window came up empty (human arm angle infeasible for the current
+    # orientation demand): try the continuity window around theta0_prev before
+    # going global, so the arm holds its pose instead of jumping branches.
+    if (
+        not all_solutions
+        and not singular
+        and psi_ref is not None
+        and theta0_prev is not None
+        and q4_list
+        and abs(float(wrap_to_pi(np.array([psi_ref - theta0_prev]))[0]))
+        > 0.5 * continuity.local_theta0_window
+    ):
         psi_grid = np.linspace(
             theta0_prev - continuity.local_theta0_window,
             theta0_prev + continuity.local_theta0_window,
@@ -556,6 +670,7 @@ def solve_pose_continuous_with_state(
             endpoint=True,
         )
         all_solutions = _collect_solutions(T, g, S, W, q4_list, psi_grid)
+        method = "continuous_local_theta0"
 
     if not all_solutions and continuity.enable_global_fallback and q4_list:
         step = min(0.03, 2.0 * math.pi / max(1, n_psi))
@@ -587,11 +702,16 @@ def solve_pose_continuous_with_state(
             theta0_cost = 0.0
         else:
             theta0_cost = abs(float(wrap_to_pi(np.array([theta0 - theta0_prev]))[0]))
+        if psi_ref is None:
+            psi_ref_cost = 0.0
+        else:
+            psi_ref_cost = abs(float(wrap_to_pi(np.array([theta0 - psi_ref]))[0]))
         score = (
             continuity.w_vel * vel_cost
             + continuity.w_acc * acc_cost
             + continuity.w_pose * pose_cost
             + continuity.w_theta0 * theta0_cost
+            + continuity.w_psi_ref * psi_ref_cost
         )
         scored.append((score, vel_cost, acc_cost, pose_cost, theta0_cost, cand))
 
@@ -630,6 +750,7 @@ def solve_pose_continuous_with_state(
         "score_best": float(selected[0]),
         "pose_err_best": pose_best,
         "theta0_selected": theta0_best,
+        "psi_ref": None if psi_ref is None else float(psi_ref),
     }
     return q_best, report, next_state
 
@@ -694,8 +815,14 @@ class GeometricIKSolver:
 
     # ---- Core methods ----
 
-    def solve(self, T_target: np.ndarray) -> Optional[np.ndarray]:
-        """Solve IK for the flange pose in ``*_base_link`` (same frame as fk)."""
+    def solve(
+        self, T_target: np.ndarray, psi_ref: Optional[float] = None
+    ) -> Optional[np.ndarray]:
+        """Solve IK for the flange pose in ``*_base_link`` (same frame as fk).
+
+        ``psi_ref``: optional human arm-angle prior (rad) — see
+        ``arm_angle_from_elbow_dir``; the elbow plane tracks it softly.
+        """
         state_prev = self._state
         q_best, _report, new_state = solve_pose_continuous_with_state(
             np.array(T_target, dtype=float),
@@ -704,12 +831,65 @@ class GeometricIKSolver:
             n_psi=91,
             continuity=self.continuity,
             skip_qp=self.fast_mode,
+            psi_ref=psi_ref,
         )
         if q_best is None:
             self._state = state_prev
             return None
         self._state = new_state
         return q_best.reshape(7).copy()
+
+    def arm_angle_from_elbow_dir(
+        self,
+        T_target: np.ndarray,
+        elbow_dir: np.ndarray,
+        min_sin: float = 0.0,
+    ) -> Optional[float]:
+        """Human upper-arm direction -> arm-angle prior for this flange target.
+
+        ``elbow_dir`` is the human shoulder->elbow direction expressed in the
+        arm base frame (``*_base_link``; rotate from the VR frame with the
+        same ``vr_to_arm_rot`` used for wrist deltas — direction only, no
+        zero-point/scale). ``min_sin`` gates the human-arm straightness below
+        which psi is unobservable (nearly straight arm; see
+        ``psi_from_elbow_dir``). Returns psi (rad) for ``solve(psi_ref=...)``,
+        or None when the target/direction is degenerate or gated.
+        """
+        T = np.array(T_target, dtype=float)
+        S, W, q4_list = _compute_sw(T, self.geom)
+        if not q4_list:
+            return None
+        d = np.asarray(elbow_dir, dtype=float).reshape(3)
+        if not np.isfinite(d).all():
+            return None
+        return psi_from_elbow_dir(S, W, d, self.geom, min_sin=min_sin)
+
+    def clamp_wrist_reach(
+        self, p_wrist: np.ndarray, margin: float = 0.01
+    ) -> Tuple[np.ndarray, bool]:
+        """Radial soft wall at the elbow-straight singularity.
+
+        Clamps the wrist-center target to
+        ``|l_se - l_ew| + margin <= |p - S| <= l_se + l_ew - margin``.
+        Past the outer boundary the elbow circle degenerates and the q4
+        limit rejects every branch — solve() returns None, the node holds
+        the last command, and the arm visibly catches when IK recovers.
+        Direction from S is preserved, so the hand feels a soft wall.
+        Returns ``(p_clamped, was_clipped)``.
+        """
+        p = np.asarray(p_wrist, dtype=float).reshape(3)
+        S = np.asarray(self.geom.S, dtype=float)
+        v = p - S
+        d = float(np.linalg.norm(v))
+        if d < 1e-9:
+            return p.copy(), False
+        m = max(0.0, float(margin))
+        r_max = float(self.geom.l_se + self.geom.l_ew) - m
+        r_min = abs(float(self.geom.l_se - self.geom.l_ew)) + m
+        d_c = min(max(d, r_min), r_max)
+        if d_c == d:
+            return p.copy(), False
+        return S + v * (d_c / d), True
 
     def fk(self, q: np.ndarray) -> np.ndarray:
         """FK: joints -> flange pose in ``left_base_link`` / ``right_base_link``."""

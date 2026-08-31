@@ -64,17 +64,50 @@ astral_arm_teleop/
 | `solver_type` | 实现 | 位姿帧 | 输出 q | 默认模型 |
 |---------------|------|--------|--------|----------|
 | `analytic_dh` | Nero 臂角闭式，硬编码 MDH | 干净 MDH 基座 | 翻转约定，发布前 flip | 无 URDF |
-| `geometric` | 免 DH 臂角闭式：URDF 提取肩/肘/腕中心与关节轴，POE + Paden-Kahan | SW `*_base_link` | 已是硬件约定，不 flip | `astral_robot_description/urdf/astral_robot.pin.urdf` |
-| `urdf_numerical`（yaml 默认） | Pinocchio + scipy LM | SW `*_base_link` | 已是硬件约定，不 flip | `astral_robot_description/urdf/astral_robot.pin.urdf` |
+| `geometric`（yaml 默认） | 免 DH 臂角闭式：URDF 提取肩/肘/腕中心与关节轴，POE + Paden-Kahan；支持 `use_human_elbow` 人臂肘先验 | SW `*_base_link` | 已是硬件约定，不 flip | `astral_robot_description/urdf/astral_robot.pin.urdf` |
+| `urdf_numerical` | Pinocchio + scipy LM | SW `*_base_link` | 已是硬件约定，不 flip | `astral_robot_description/urdf/astral_robot.pin.urdf` |
 
 单臂节点 `urdf_path` 为空 → `default_astral_urdf_path()` = **`astral_robot.pin.urdf`**（与 MuJoCo 同源）。  
 支持 RobotMain 命名（`Joint_la_*`）或 Astral 命名（`left_joint*`）。
 
+### 人臂肘先验（`use_human_elbow`，仅 `geometric`）
+
+Quest IOBT 身体追踪经 `quest3/body_joints` 发布 `{side}-arm-upper`（肩球头）/
+`{side}-arm-lower`（肘）关节位置（`robot_body` 系，推算但可用）。节点取大臂
+方向 `d = elbow − shoulder`，用与腕部增量相同的 `vr_to_arm_rot` 旋到机械臂基座系
+（纯方向，与 zero point / motion_scale / 人臂长无关），投影到机器人 S–W 轴垂面
+得到人臂角 `psi_ref`，作为软先验传入 `solve(T, psi_ref)`：
+
+- 局部 ψ 扫描窗口以 `psi_ref` 为中心，评分加 `w_psi_ref·|ψ − psi_ref|`
+  （`human_elbow_weight`，默认 2.0，须主导 w_vel=1.0 / w_theta0=0.15）；
+- 效果：人转腕带动肘平面转 → 机器人肘跟转；人只转腕 → 肩肘不动；
+- 鲁棒：`human_elbow_timeout`（0.3 s）外或关节名缺失自动回退纯连续性；
+  肘方向 EMA（`human_elbow_smoothing_tau` 0.15 s）抑制 IOBT 噪声；
+  `psi_ref` 落在关节限位不可行区时走全局扫描 + 连续性，不会卡死；
+- **伸直度门控**（`human_elbow_min_sin`，默认 0.15）：人臂接近伸直时肘尖
+  几乎在肩腕连线上，ψ 不可观测 —— IOBT 骨架的系统性肘偏置会被归一化
+  放大成满权重先验，把机器人肘拧到固定错误角度（典型症状：手臂放下时
+  肘部固定偏 ~90°）。低于门限自动关闭先验回退纯连续性，被门控的帧计入
+  `[Latency]` 行的 `psi_off`。0.15 ≈ 肘尖离线 4 cm；正常弯曲手势
+  sin ≥ 0.5，远离门限。
+
 ```bash
-# 求解器见 astral_arm_teleop_{left,right}.yaml（默认 urdf_numerical）
+# 求解器见 astral_arm_teleop_{left,right}.yaml（默认 geometric + use_human_elbow）
 ros2 launch astral_arm_teleop astral_dual_arm_teleop.launch.py dry_run:=true
 # 一次性覆盖：solver_type:=analytic_dh
 ```
+
+### 肘伸直奇异（`reach_margin`，仅 `geometric`）
+
+肘完全伸直时 S/E/W 共线：肘圆半径 → 0，臂角 ψ 失去定义，且 q4（本机
+`[-2.26, 0]`，0 = 伸直）正好撞限位 —— IK 在可达边界带内无解，节点保持上一帧
+指令，恢复时臂会"卡一下"。两层防护：
+
+- **软墙**：腕目标径向钳制在肩心 `l_se + l_ew - reach_margin`（默认 0.01 m）内，
+  方向不变，手感到的是一堵软墙而不是卡顿；`reach_margin <= 0` 关闭，
+  可热改，钳制次数计入 `[Latency]` 行的 `reach_clip`；
+- **ψ 冻结**：`sin α < 0.05`（肘圆半径 < ~1.2 cm）时 ψ 在数值上无意义
+  （此时解本就与 ψ 无关），扫描网格塌缩为 `θ0_prev` 单候选，杜绝肩部噪声跳变。
 
 ### 按求解器切换的 `vr_to_arm_rot` 与 `flip_q`
 
@@ -182,7 +215,7 @@ ros2 launch astral_arm_teleop astral_dual_arm_teleop.launch.py \
   with_driver:=true control_board_ip:=192.168.10.2
 # 纯臂：不含夹爪 / 灵巧手。整机编排见 astral_teleop/full_teleop.launch.py
 
-# 仿真管线（solver / protocol 见 yaml，默认 urdf_numerical + tcp_wired）
+# 仿真管线（solver / protocol 见 yaml，默认 geometric + tcp_wired）
 ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
 # 一次性覆盖：solver_type:=analytic_dh  protocol:=udp
 ```
@@ -244,6 +277,7 @@ ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
 | `ros2 run astral_arm_teleop test_dataflow` | 订腕姿跑管线，FPS/IK 统计 | Quest 或键盘 |
 | `ros2 run astral_arm_teleop test_safe_teleop` | 保守参数发 `joint_commands` | 可选驱动 |
 | `ros2 run astral_arm_teleop keyboard_vr_sim` | 键盘发 `quest3/*_wrist_pose` | 无 |
+| `ros2 run astral_arm_teleop body_joints_sim` | 假人臂：发 `quest3/body_joints`+腕姿，测 `use_human_elbow`（scenario: elbow_circle / wrist_spin / combined） | 无 |
 
 对齐 DH 与 URDF 时必须带：**关节 ±q（左 2/3/4、右 2/4）** 和 **干净基座 `Tbinv`**，不能只跑 `test_dh_urdf_fk` 的同 q 直比。
 
@@ -298,6 +332,6 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 
 单臂：`config/astral_arm_teleop_{left,right}.yaml`。
 
-常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`init_waypoints`（扁平 7×N 途经点，硬件约定，先按序走到再去 `init_pose`；空=直接到 init）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`workspace_radius`（末端相对 `*_base_link` 原点的球半径，m；yaml 默认 0.55，≤0 关闭；可热改）、`ik_q4_max`（URDF IK 肘关节上限，默认 −0.45；URDF 硬件上限是 0=伸直奇异，≥0 关闭此帽）、`ik_w_fold` / `ik_q4_fold`（单向折肘，比 fold 更直才罚）、`ik_w_limit`（近限位软约束；短边按到 0 的余量缩 margin）、`ik_w_ori`（姿态权重，默认 0.3）、`ik_w_reg`（贴上一帧，默认 1e-4）、`ik_dq_max`（每拍关节步进盒 rad，默认 0=关）、`ik_w_pref`（冗余时往 init_pose 靠，默认 0=关）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（真机 yaml 默认 true、sim launch 默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
+常用：`solver_type`、`urdf_path`、`motion_scale`（默认 0.65）、`vr_to_arm_rot`（yaml 默认 I；DH 时节点自动乘 `R_baseᵀ`）、`init_pose`（旧约定）、`init_waypoints`（扁平 7×N 途经点，硬件约定，先按序走到再去 `init_pose`；空=直接到 init）、`move_to_init_pose`（启动低速走到 `init_pose`，默认开）、`init_speed_percent`（默认 10，相对 `max_joint_vel`）、`max_joint_vel`（rad/s）、`workspace_radius`（末端相对 `*_base_link` 原点的球半径，m；yaml 默认 0.55，≤0 关闭；可热改）、`reach_margin`（肘伸直软墙，腕目标钳在肩心 l_se+l_ew−margin，默认 0.01 m，≤0 关闭；可热改）、`ik_q4_max`（URDF IK 肘关节上限，默认 −0.45；URDF 硬件上限是 0=伸直奇异，≥0 关闭此帽）、`ik_w_fold` / `ik_q4_fold`（单向折肘，比 fold 更直才罚）、`ik_w_limit`（近限位软约束；短边按到 0 的余量缩 margin）、`ik_w_ori`（姿态权重，默认 0.3）、`ik_w_reg`（贴上一帧，默认 1e-4）、`ik_dq_max`（每拍关节步进盒 rad，默认 0=关）、`ik_w_pref`（冗余时往 init_pose 靠，默认 0=关）、`pos_smoothing` / `rot_smoothing`（0–1，按 50 Hz 标定，与 `control_rate` 无关）、`require_start_signal`（真机 yaml 默认 true、sim launch 默认 false；true 时等外部 `/teleop/start` 或 `~/start` 服务记 `vr_init` 并 arm，见上节）。
 
 `use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。

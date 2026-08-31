@@ -66,7 +66,7 @@ _DEFAULTS = {
     "ik_w_limit": 0.12,
     "ik_max_iter": 20.0,
     "ik_tol": 1e-8,
-    "solver_type": "analytic_dh",
+    "solver_type": "geometric",
 }
 _INT_PARAMS = {"ik_max_iter"}
 _STR_PARAMS = {"solver_type"}
@@ -668,7 +668,7 @@ def _run_plot(node: TeleopTunePlot) -> None:
 
     gs_feel = _section(gs_bot[0], "手感", "DH 与 URDF 都生效", 5)
     gs_urdf = _section(gs_bot[1], "URDF 数值 IK", "DH 闭式会忽略这些", 7)
-    gs_act = gs_bot[2].subgridspec(6, 1, height_ratios=[0.7, 1, 1, 1, 1, 1], hspace=0.45)
+    gs_act = gs_bot[2].subgridspec(7, 1, height_ratios=[0.7, 1, 1, 1, 1, 1, 1], hspace=0.45)
 
     sliders = []
 
@@ -728,9 +728,10 @@ def _run_plot(node: TeleopTunePlot) -> None:
 
     ax_dh, btn_dh = _mk_btn(gs_act[1], "DH  闭式")
     ax_urdf, btn_urdf = _mk_btn(gs_act[2], "URDF  数值")
-    ax_sync, btn_sync = _mk_btn(gs_act[3], "左右同步  开" if node.sync_both else "左右同步  关")
-    ax_zero, btn_zero = _mk_btn(gs_act[4], "清零  Z")
-    ax_save, btn_save = _mk_btn(gs_act[5], "保存 CSV  S")
+    ax_geo, btn_geo = _mk_btn(gs_act[3], "几何  臂角")
+    ax_sync, btn_sync = _mk_btn(gs_act[4], "左右同步  开" if node.sync_both else "左右同步  关")
+    ax_zero, btn_zero = _mk_btn(gs_act[5], "清零  Z")
+    ax_save, btn_save = _mk_btn(gs_act[6], "保存 CSV  S")
 
     def _paint_btn(ax, btn, active: bool) -> None:
         # Button redraws from btn.color; ax.set_facecolor alone is overwritten.
@@ -747,7 +748,8 @@ def _run_plot(node: TeleopTunePlot) -> None:
 
     def _paint_solver(mode: str) -> None:
         _paint_btn(ax_dh, btn_dh, mode == "dh")
-        _paint_btn(ax_urdf, btn_urdf, mode != "dh")
+        _paint_btn(ax_urdf, btn_urdf, mode == "urdf")
+        _paint_btn(ax_geo, btn_geo, mode == "geo")
         fig.canvas.draw_idle()
 
     def _paint_sync() -> None:
@@ -755,8 +757,12 @@ def _run_plot(node: TeleopTunePlot) -> None:
         _paint_btn(ax_sync, btn_sync, node.sync_both)
         fig.canvas.draw_idle()
 
-    st0 = str(init.get("solver_type", "analytic_dh")).lower()
-    _paint_solver("urdf" if "urdf" in st0 else "dh")
+    st0 = str(init.get("solver_type", "geometric")).lower()
+    _paint_solver(
+        "dh" if ("dh" in st0 or "analytic" in st0)
+        else "urdf" if "urdf" in st0
+        else "geo"
+    )
     _paint_sync()
 
     def _on_dh(_event):
@@ -766,6 +772,10 @@ def _run_plot(node: TeleopTunePlot) -> None:
     def _on_urdf(_event):
         node.queue_param("solver_type", "urdf_numerical")
         _paint_solver("urdf")
+
+    def _on_geo(_event):
+        node.queue_param("solver_type", "geometric")
+        _paint_solver("geo")
 
     def _on_sync(_event):
         node.sync_both = not node.sync_both
@@ -783,6 +793,7 @@ def _run_plot(node: TeleopTunePlot) -> None:
 
     btn_dh.on_clicked(_on_dh)
     btn_urdf.on_clicked(_on_urdf)
+    btn_geo.on_clicked(_on_geo)
     btn_sync.on_clicked(_on_sync)
     btn_zero.on_clicked(_on_zero)
     btn_save.on_clicked(_on_save)

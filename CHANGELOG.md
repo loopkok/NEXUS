@@ -6,7 +6,18 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-08-31
 
-**免 DH 几何臂角闭式 IK**——`astral_arm_teleop` 新增 `solver_type: geometric`（yaml 默认仍是 `urdf_numerical`）。
+**geometric 默认 + 人臂肘先验**——`astral_arm_teleop`。左右 yaml / 节点默认 `solver_type: geometric`，`use_human_elbow: true`。
+
+- 现象：只跟腕 6D 时冗余臂角由连续性随便锁一支，人转肘平面机器人肘不动；人臂伸直时 IOBT 肘偏置会被当成满权重 ψ，放下手臂肘拧到固定错角。
+- 订 `quest3/body_joints` 的 `{side}-arm-upper/-lower`，大臂方向旋到 `*_base_link` 得 `psi_ref`，局部 ψ 窗以它为中心、评分加 `w_psi_ref·|ψ−ψ_ref|`（默认 weight 2.0）。人转腕带肘 → 机器人肘跟转；人只转腕 → 肩肘不动。超时/缺名/不可行自动回退纯连续性。
+- 伸直度门控 `human_elbow_min_sin=0.15`（肘尖离肩腕线 ≲4 cm）关先验；肘方向 EMA 0.15 s。Latency 行报 `psi_off`。
+- 调参：`pos/rot_smoothing` 0.5/0.6→0.4，`max_joint_vel` 4→6。tune 图加「几何 臂角」按钮。假人臂 `body_joints_sim`（elbow_circle / wrist_spin / combined）。
+
+**肘伸直软墙**——`geometric`。全伸展 S/E/W 共线、q4 撞限位 → IK 无解 → 臂卡一下。
+
+- `reach_margin=0.01`：腕目标径向钳在肩心 `l_se+l_ew−margin` 内，手感是墙不是顿；`sin α < 0.05` 时 ψ 网格塌成上一帧单候选。Latency 行报 `reach_clip`。
+
+**免 DH 几何臂角闭式 IK**——`astral_arm_teleop` 新增 `solver_type: geometric`（当时 yaml 默认仍是 `urdf_numerical`；同日稍后改为 geometric 默认，见上）。
 
 - 现象：`analytic_dh` 靠硬编码 MDH + 关节翻转，和 SolidWorks URDF 对不齐；`urdf_numerical` 贴 URDF 但每拍 LM，遥操 150 Hz 偏重。
 - `ik/geometric.py`：q=0 时用 Pinocchio 从 URDF 抽出肩/肘/腕中心与关节轴（`left_base_link` / `right_base_link`），POE 正运动学 + 臂角 ψ + Paden-Kahan 子问题闭式求 q。无 DH 表、无 theta 偏置、无轴翻转；输出已是硬件约定，节点不 `flip_q`。
