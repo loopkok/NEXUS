@@ -27,6 +27,15 @@ export interface NormalisedState {
       status: string
     }>
   }
+  latency: {
+    stages: Record<string, {
+      valueMs: number
+      stale: boolean
+      ok: boolean
+      hz?: number
+      expectedHz?: number
+    }>
+  }
   videoGate: { pushEnabled: boolean; configured: string[]; active: string[] } | null
   logTail: string[]
 }
@@ -52,6 +61,17 @@ export function mapUiState(msg: UiState, now: number = Date.now() / 1000): Norma
       status: v.status,
     }
   }
+  const rawLatency = msg.latency ?? { stages: {} }
+  const latencyStages: NormalisedState['latency']['stages'] = {}
+  for (const [k, v] of Object.entries(rawLatency.stages)) {
+    latencyStages[k] = {
+      valueMs: v.value_ms,
+      stale: v.stale,
+      ok: v.ok,
+      hz: v.hz,
+      expectedHz: v.expected_hz,
+    }
+  }
   return {
     ts: msg.ts,
     teleopState: msg.teleop.state,
@@ -62,6 +82,7 @@ export function mapUiState(msg: UiState, now: number = Date.now() / 1000): Norma
     ratesHz: msg.rates_hz,
     stateRatesHz: msg.state_rates_hz ?? {},
     health: { overall: rawHealth.overall, entities },
+    latency: { stages: latencyStages },
     videoGate: msg.video_gate
       ? {
           pushEnabled: msg.video_gate.push_enabled,

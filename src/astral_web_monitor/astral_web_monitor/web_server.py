@@ -63,6 +63,7 @@ def _build_ui_state() -> dict[str, Any]:
         "rates_hz": ros.get("rates_hz", {}),
         "state_rates_hz": ros.get("state_rates_hz", {}),
         "health": ros.get("health", {"overall": "ok", "entities": {}}),
+        "latency": ros.get("latency", {"stages": {}}),
         "video_gate": ros.get("video_gate"),
         "log_tail": _launch_mgr.log_tail()[-50:],
     }

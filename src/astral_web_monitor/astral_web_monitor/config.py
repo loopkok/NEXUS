@@ -91,6 +91,22 @@ _right_hand_state = f"/{HAND_NAME}/joint_states"
 _right_hand_cmd = f"/{HAND_NAME}/joint_commands"
 TOPICS["right_hand"] = TopicPair(_right_hand_state, _right_hand_cmd)
 
+# --- Latency / pipeline metrics (read-only subscriptions) -------------------
+# Mocap wrist poses: header.stamp = host wall-clock packet arrival. The monitor
+# computes stamp age = now - stamp as a proxy for mocap→ROS pipeline delay.
+MOCAP_WRIST_TOPICS = {
+    "left":  "/quest3/left_wrist_pose",
+    "right": "/quest3/right_wrist_pose",
+}
+# IK solver status: std_msgs/String with "OK dt=X.XXms" or "FAILED". The monitor
+# parses the solve time for the latency panel.
+IK_STATUS_TOPICS = {
+    "left":  "/ik_solver_left/ik_status",
+    "right": "/ik_solver_right/ik_status",
+}
+# Expected mocap wrist rate (Hz) for health "slow" flagging.
+MOCAP_EXPECTED_HZ = float(os.environ.get("ASTRAL_WEB_MONITOR_MOCAP_HZ", "60.0"))
+
 # --- Control topics (publish, pause/resume) ---------------------------------
 # These already exist in astral_arm_teleop; publishing to them is the only
 # write path the monitor uses. It never touches hardware topics.

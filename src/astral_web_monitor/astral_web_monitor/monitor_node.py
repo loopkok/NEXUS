@@ -17,6 +17,7 @@ the teleop stack is handled by LaunchManager via subprocess, not by this node.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -44,8 +45,11 @@ from .config import (
     VIDEO_TOPIC_CAMERAS,
     VIDEO_TOPIC_GATE_STATE,
     VIDEO_TOPIC_PREVIEW,
+    MOCAP_WRIST_TOPICS,
+    IK_STATUS_TOPICS,
+    MOCAP_EXPECTED_HZ,
 )
-from .rate_counter import RateRegistry
+from .rate_counter import RateRegistry, RateCounter
 
 
 def _qos_best_effort() -> QoSProfile:
@@ -60,6 +64,20 @@ def _qos_best_effort() -> QoSProfile:
 class JointSlot:
     values: list[float] = field(default_factory=list)
     ts: float = 0.0
+
+    def is_stale(self, threshold: float = STALE_THRESHOLD_S, now: float | None = None) -> bool:
+        if not self.ts:
+            return True
+        now = now if now is not None else time.time()
+        return (now - self.ts) > threshold
+
+
+@dataclass
+class LatencySlot:
+    """Latest latency sample for a pipeline stage (ms)."""
+    value_ms: float = 0.0
+    ts: float = 0.0  # when the sample was received (wall clock)
+    ok: bool = True  # False for IK "FAILED"
 
     def is_stale(self, threshold: float = STALE_THRESHOLD_S, now: float | None = None) -> bool:
         if not self.ts:
@@ -130,11 +148,57 @@ class MonitorNode(Node):
             )
             if pair.command:
                 cmd_type = Float64 if pair.cmd_kind == "float64" else JointState
-                self.create_subscription(
-                    cmd_type, pair.command,
-                    lambda msg, e=entity: self._rates.tick(f"{e}_cmd"),
-                    _qos_best_effort(),
-                )
+                # Arm command topics: also capture stamp age for e2e latency.
+                arm_side = None
+                if entity == "left_arm":
+                    arm_side = "left"
+                elif entity == "right_arm":
+                    arm_side = "right"
+                if arm_side is not None:
+                    self.create_subscription(
+                        JointState, pair.command,
+                        lambda msg, e=entity, s=arm_side: (
+                            self._rates.tick(f"{e}_cmd"),
+                            self._on_arm_cmd_latency(s, msg),
+                        ),
+                        _qos_best_effort(),
+                    )
+                else:
+                    self.create_subscription(
+                        cmd_type, pair.command,
+                        lambda msg, e=entity: self._rates.tick(f"{e}_cmd"),
+                        _qos_best_effort(),
+                    )
+
+        # Latency / pipeline metrics state.
+        #   mocap: stamp age of quest3/{side}_wrist_pose (ms) + arrival Hz
+        #   ik: parsed "dt=X.XXms" from ik_solver_{side}/ik_status (String)
+        #   e2e: stamp age of {side}_arm/joint_commands (ms) — VR→command delay
+        self._latency: dict[str, LatencySlot] = {}
+        self._mocap_rates = RateRegistry()
+        for side in MOCAP_WRIST_TOPICS:
+            self._latency[f"mocap_{side}"] = LatencySlot()
+            self._mocap_rates._counters[f"mocap_{side}"] = RateCounter(f"mocap_{side}")
+        for side in IK_STATUS_TOPICS:
+            self._latency[f"ik_{side}"] = LatencySlot()
+        self._latency["e2e_left"] = LatencySlot()
+        self._latency["e2e_right"] = LatencySlot()
+
+        # Mocap wrist pose subscriptions (PoseStamped) → stamp age = pipeline delay.
+        from geometry_msgs.msg import PoseStamped
+        for side, topic in MOCAP_WRIST_TOPICS.items():
+            self.create_subscription(
+                PoseStamped, topic,
+                lambda msg, s=side: self._on_mocap_wrist(s, msg),
+                _qos_best_effort(),
+            )
+        # IK solver status subscriptions (String "OK dt=X.XXms" / "FAILED").
+        for side, topic in IK_STATUS_TOPICS.items():
+            self.create_subscription(
+                String, topic,
+                lambda msg, s=side: self._on_ik_status(s, msg),
+                _qos_best_effort(),
+            )
 
         self.get_logger().info(
             "astral_web_monitor ready (read-only subs + pause/resume pubs)"
@@ -147,6 +211,48 @@ class MonitorNode(Node):
             slot = self._state[entity]
             slot.values = list(msg.position)
             slot.ts = now
+
+    def _on_mocap_wrist(self, side: str, msg: Any) -> None:
+        """Mocap wrist pose arrived → stamp age = pipeline delay (ms)."""
+        now = time.time()
+        self._mocap_rates.tick(f"mocap_{side}")
+        stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if stamp_sec > 0:
+            age_ms = max(0.0, (now - stamp_sec) * 1000.0)
+            with self._lock:
+                slot = self._latency[f"mocap_{side}"]
+                slot.value_ms = age_ms
+                slot.ts = now
+                slot.ok = True
+
+    def _on_ik_status(self, side: str, msg: String) -> None:
+        """Parse 'OK dt=X.XXms' or 'FAILED' from ik_solver status."""
+        now = time.time()
+        data = msg.data.strip()
+        ok = not data.upper().startswith("FAIL")
+        dt_ms = 0.0
+        if ok:
+            # Extract dt=NN.NNms
+            m = re.search(r"dt=([0-9.]+)", data)
+            if m:
+                dt_ms = float(m.group(1))
+        with self._lock:
+            slot = self._latency[f"ik_{side}"]
+            slot.value_ms = dt_ms
+            slot.ts = now
+            slot.ok = ok
+
+    def _on_arm_cmd_latency(self, side: str, msg: JointState) -> None:
+        """Arm joint_commands arrived → stamp age = VR→command e2e delay (ms)."""
+        now = time.time()
+        stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if stamp_sec > 0:
+            age_ms = max(0.0, (now - stamp_sec) * 1000.0)
+            with self._lock:
+                slot = self._latency[f"e2e_{side}"]
+                slot.value_ms = age_ms
+                slot.ts = now
+                slot.ok = True
 
     def _on_video_gate_state(self, msg: String) -> None:
         try:
@@ -211,8 +317,18 @@ class MonitorNode(Node):
                 }
                 for e, s in self._state.items()
             }
+            latency_raw = {
+                k: {
+                    "value_ms": s.value_ms,
+                    "ts": s.ts,
+                    "stale": s.is_stale(now=now),
+                    "ok": s.ok,
+                }
+                for k, s in self._latency.items()
+            }
         cmd_rates = self._rates.snapshot()
         state_rates = self._state_rates.snapshot()
+        mocap_rates = self._mocap_rates.snapshot()
         with self._lock:
             video_gate = dict(self._video_gate_state) if self._video_gate_state else None
         return {
@@ -221,7 +337,43 @@ class MonitorNode(Node):
             "state_rates_hz": state_rates,
             "health": self._health_summary(joints, cmd_rates, state_rates, now),
             "video_gate": video_gate,
+            "latency": self._latency_summary(latency_raw, mocap_rates, now),
         }
+
+    @staticmethod
+    def _latency_summary(
+        latency_raw: dict[str, Any],
+        mocap_rates: dict[str, float],
+        now: float,
+    ) -> dict[str, Any]:
+        """Pipeline latency breakdown per stage (ms) + mocap arrival Hz.
+
+        Stages: mocap_{side} (stamp age), ik_{side} (solve ms), e2e_{side}
+        (VR→command stamp age). Each entry: value_ms, stale, ok, hz (mocap only).
+        """
+        stages: dict[str, Any] = {}
+        for side in ("left", "right"):
+            m = latency_raw.get(f"mocap_{side}", {})
+            ik = latency_raw.get(f"ik_{side}", {})
+            e2e = latency_raw.get(f"e2e_{side}", {})
+            stages[f"mocap_{side}"] = {
+                "value_ms": float(m.get("value_ms", 0.0)),
+                "stale": bool(m.get("stale", True)),
+                "ok": bool(m.get("ok", True)),
+                "hz": float(mocap_rates.get(f"mocap_{side}", 0.0)),
+                "expected_hz": MOCAP_EXPECTED_HZ,
+            }
+            stages[f"ik_{side}"] = {
+                "value_ms": float(ik.get("value_ms", 0.0)),
+                "stale": bool(ik.get("stale", True)),
+                "ok": bool(ik.get("ok", True)),
+            }
+            stages[f"e2e_{side}"] = {
+                "value_ms": float(e2e.get("value_ms", 0.0)),
+                "stale": bool(e2e.get("stale", True)),
+                "ok": bool(e2e.get("ok", True)),
+            }
+        return {"stages": stages}
 
     @staticmethod
     def _health_summary(

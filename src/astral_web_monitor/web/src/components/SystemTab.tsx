@@ -3,6 +3,7 @@ import type { NormalisedState } from '../lib/mapUiState'
 import type { Preset } from '../types'
 import { api } from '../api/client'
 import { pushToast } from '../hooks/useToast'
+import { LatencyPanel } from './LatencyPanel'
 import { LogConsole } from './LogConsole'
 import { VideoCard } from './VideoCard'
 
@@ -92,6 +93,8 @@ export function SystemTab({ state, presets, onAction }: Props) {
           急停=真断电（disable），臂失去保持力；恢复需重新<b>一键就绪</b>。
         </div>
       </div>
+
+      <LatencyPanel state={state} />
 
       <VideoCard state={state} />
 

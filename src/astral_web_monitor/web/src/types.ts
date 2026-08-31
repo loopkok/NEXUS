@@ -22,6 +22,18 @@ export interface HealthSummary {
   entities: Record<string, EntityHealth>
 }
 
+export interface LatencyStage {
+  value_ms: number
+  stale: boolean
+  ok: boolean
+  hz?: number
+  expected_hz?: number
+}
+
+export interface LatencySummary {
+  stages: Record<string, LatencyStage>
+}
+
 export interface VideoGateState {
   push_enabled: boolean
   configured: string[]
@@ -41,6 +53,7 @@ export interface UiState {
   rates_hz: Record<string, number>
   state_rates_hz?: Record<string, number>
   health?: HealthSummary
+  latency?: LatencySummary
   video_gate?: VideoGateState | null
   log_tail: string[]
 }
