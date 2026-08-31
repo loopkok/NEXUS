@@ -13,10 +13,14 @@ loop: a blocking webcam read would starve the other (e.g. D435i) tracks.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
+import time
 from typing import Any
 
 from quest3_video_streamer.source_base import VideoFormat, VideoSourceAdapter
+
+_LOG = logging.getLogger("quest3_video_streamer.capture")
 
 
 class WebcamSourceAdapter(VideoSourceAdapter):
@@ -117,6 +121,10 @@ class WebcamSourceAdapter(VideoSourceAdapter):
     def _capture_loop(self) -> None:
         import cv2
 
+        # 驱动侧实率插桩：5s 窗口 INFO 日志。定位"采集帧率低"时分界用——
+        # 这里低 = 捕获线程慢（驱动/CPU）；这里满 30 而 tap 低 = 抽头/发布段慢。
+        frames = 0
+        window_t0 = time.monotonic()
         while not self._stop.is_set():
             if self._capture is None:
                 break
@@ -124,6 +132,15 @@ class WebcamSourceAdapter(VideoSourceAdapter):
             if not ok or bgr is None:
                 # Brief retry on transient read failure.
                 continue
+            frames += 1
+            now = time.monotonic()
+            if now - window_t0 >= 5.0:
+                _LOG.info(
+                    "[capture %s] driver-side %.1f fps",
+                    self._format.label, frames / (now - window_t0),
+                )
+                frames = 0
+                window_t0 = now
             hook = self.preview_hook
             if hook is not None:
                 try:

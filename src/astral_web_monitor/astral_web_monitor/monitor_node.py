@@ -330,6 +330,12 @@ class MonitorNode(Node):
         except (ValueError, TypeError):
             return
         if isinstance(data, dict):
+            # 多节点检测：/data_collect/state 的发布者 >1 即有残留/双开节点
+            # （老进程不持单例锁，只能靠图查询发现）。消息驱动，~1Hz。
+            try:
+                data["node_count"] = self.count_publishers(DC_TOPIC_STATE)
+            except Exception:
+                pass
             with self._lock:
                 self._dc_state = data
                 self._dc_state_ts = time.time()

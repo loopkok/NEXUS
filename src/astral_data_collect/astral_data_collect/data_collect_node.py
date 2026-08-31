@@ -17,9 +17,11 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
+import tempfile
 import threading
 import time
 from collections import deque
@@ -113,6 +115,25 @@ def _to_bool(v: Any) -> bool:
     return bool(v)
 
 
+def _low_fps_warning(state: str, rates: dict[str, float], schema: CollectSchema) -> str | None:
+    """录制期参考相机实率低于 dataset_fps 一半时给出告警文案，否则 None。
+
+    对齐以 cameras[0] 为参考时钟——它塌了整段的有效帧率就跟着塌
+    （实测 d435i 走未压缩 YUYV 时 30fps 目标只剩 3.3fps）。
+    """
+    if state != STATE_RECORDING or not schema.cameras:
+        return None
+    ref = schema.cameras[0]
+    floor = schema.dataset_fps * 0.5
+    ref_rate = float(rates.get(f"cam:{ref}", 0.0))
+    if ref_rate >= floor:
+        return None
+    return (
+        f"参考相机 {ref} 实率 {ref_rate:.0f}fps < {floor:.0f}fps"
+        f"（目标 {schema.dataset_fps}fps 的一半）——检查相机格式/总线带宽"
+    )
+
+
 class DataCollectNode(Node):
     def __init__(self, **node_kwargs: Any) -> None:
         super().__init__(
@@ -131,19 +152,30 @@ class DataCollectNode(Node):
         if isinstance(arms_param, str):
             # launch 传入逗号字符串（"left,right"），yaml 传入字符串数组
             arms_param = [s.strip() for s in arms_param.split(",") if s.strip()]
+        cameras_param = p("cameras", ["d435i", "wrist_left", "wrist_right"])
+        if isinstance(cameras_param, str):
+            # 同 arms：launch 逗号字符串需拆分，否则被逐字符拆解
+            cameras_param = [s.strip() for s in cameras_param.split(",") if s.strip()]
         self._schema = CollectSchema(
             arms=[str(s) for s in arms_param],
             end_effector_left=str(p("end_effector_left", "gripper")),
             end_effector_right=str(p("end_effector_right", "gripper")),
             include_waist=_to_bool(p("include_waist", False)),
             include_head=_to_bool(p("include_head", False)),
-            cameras=[str(c) for c in p("cameras", ["wrist_left", "wrist_right"])],
+            cameras=[str(c) for c in cameras_param],
             dataset_fps=int(p("dataset_fps", 30)),
             action_source=str(p("action_source", "next_state")),
             hold_frames=int(p("hold_frames", 10)),
             max_gap_ms=float(p("max_gap_ms", 100.0)),
+            jpeg_quality=int(p("jpeg_quality", 90)),
         )
         self._streams = self._schema.required_streams()
+
+        # 单例锁：/data_collect/control 是全局单例控制面——任何第二个采集
+        # 节点（哪怕 session 不同）都会响应同一条 start 各录一份。锁按
+        # ROS_DOMAIN_ID 落在 tmp，随进程退出自动释放。段目录完整性另由
+        # _claim_episode_dir 的原子 mkdir 兜底（对无锁的老残留节点也互斥）。
+        self._singleton_lock_fd = self._acquire_singleton_lock()
 
         self._state = STATE_IDLE
         self._state_lock = threading.Lock()
@@ -188,6 +220,31 @@ class DataCollectNode(Node):
             f"schema={self._schema.to_json()}"
         )
         self._publish_state()
+
+    @staticmethod
+    def _singleton_lock_path() -> str:
+        domain = os.environ.get("ROS_DOMAIN_ID", "0").strip() or "0"
+        return os.path.join(
+            tempfile.gettempdir(), f"astral_data_collect_domain{domain}.lock"
+        )
+
+    def _acquire_singleton_lock(self) -> int:
+        """对 domain 级锁文件取非阻塞排他锁；拿到即本 domain 唯一采集节点。"""
+        fd = os.open(
+            self._singleton_lock_path(), os.O_CREAT | os.O_RDWR, 0o644
+        )
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            os.close(fd)
+            msg = (
+                "另一个 data_collect 节点已在运行（/data_collect/control 是单例"
+                "控制面，双开会把每段录成两份）——请先停止残留节点："
+                "ros2 node list 检查 /data_collect 数量，多余者 kill"
+            )
+            self.get_logger().fatal(msg)
+            raise RuntimeError(msg) from exc
+        return fd
 
     # -- 参数与订阅 ------------------------------------------------------------
 
@@ -356,12 +413,25 @@ class DataCollectNode(Node):
                 best = max(best, int(name[len("episode"):]))
         return best + 1
 
-    def _begin_episode(self) -> None:
+    def _claim_episode_dir(self) -> tuple[int, str]:
+        """原子占位段号：扫目录给起点，mkdir 成功才占有该号。
+
+        scan-then-create 不是原子的——残留/并发节点会撞号互写（实测一个
+        start 在两个节点里分别写出 episode000000 和 episode000001）。
+        mkdir 是原子操作，撞号即让位到下一号。
+        """
         os.makedirs(self._session_dir, exist_ok=True)
-        self._episode_index = self._next_episode_index()
-        self._episode_dir = os.path.join(
-            self._session_dir, f"episode{self._episode_index:06d}"
-        )
+        idx = self._next_episode_index()
+        while True:
+            ep_dir = os.path.join(self._session_dir, f"episode{idx:06d}")
+            try:
+                os.mkdir(ep_dir)
+                return idx, ep_dir
+            except FileExistsError:
+                idx += 1
+
+    def _begin_episode(self) -> None:
+        self._episode_index, self._episode_dir = self._claim_episode_dir()
         # 防御性清空（回调已被 _accepting 门控，此处防状态竞态残留）；
         # 丢弃计数按段归零（meta.json 的 dropped 是段级 provenance）
         with self._buf_lock:
@@ -502,6 +572,7 @@ class DataCollectNode(Node):
             **{k: v for k, v in stream_counts.items()},
             **{f"cam:{k}": v for k, v in cam_counts.items()},
         }
+        low_fps = _low_fps_warning(st, rates, self._schema)
         payload = {
             "state": st,
             "session": self._session,
@@ -511,7 +582,12 @@ class DataCollectNode(Node):
             "samples_per_s": rates,
             "dropped": dict(self._drop_counts),
             "schema": self._schema.to_dict(),
+            "low_fps_warning": low_fps,
         }
+        if low_fps:
+            self.get_logger().warning(
+                f"LOW-FPS {low_fps}", throttle_duration_sec=5.0
+            )
         msg = String()
         msg.data = json.dumps(payload, ensure_ascii=False)
         self._state_pub.publish(msg)
@@ -525,6 +601,10 @@ class DataCollectNode(Node):
                 self._end_episode(save=False)
         self._writer_stop.set()
         self._writer_thread.join(timeout=2.0)
+        lock_fd = getattr(self, "_singleton_lock_fd", None)
+        if lock_fd is not None:
+            os.close(lock_fd)
+            self._singleton_lock_fd = None
         return super().destroy_node()
 
 

@@ -35,6 +35,11 @@ _COLOR_FOURCC = frozenset({
     "YUYV", "YUY2", "UYVY", "MJPG", "JPEG", "RGB3", "BGR3", "RGBP",
     "NV12", "NV21", "YU12", "I420",
 })
+# 压缩彩色格式单独成档：MJPG/JPEG 与 YUYV 同为彩色（100 分），但 UVC 恒把
+# 未压缩格式枚举在前，同分稳定排序会让 YUYV 胜出 —— D435i 1080p30 YUYV 需
+# ~995Mbps，直接打满共享 USB2 总线（实测采集只剩 3.3fps）。MJPG ~40Mbps，
+# 同分辨率帧率下是唯一可行项；cv2 端解码开销可忽略。
+_MJPEG_FOURCC = frozenset({"MJPG", "JPEG"})
 _IR_FOURCC = frozenset({
     "GREY", "GRAY", "Y8", "Y8I", "Y10", "Y10I", "Y12", "Y12I", "Y16", "Y16I",
     "W10", "MONO",
@@ -162,6 +167,8 @@ def _current_fourcc(path: str) -> str:
 def _fourcc_score(fourcc: str) -> int:
     """Higher = better for RGB webcam streaming."""
     key = fourcc.strip()
+    if key in _MJPEG_FOURCC or fourcc in _MJPEG_FOURCC:
+        return 110
     if key in _COLOR_FOURCC or fourcc in _COLOR_FOURCC:
         return 100
     if key in _IR_FOURCC or fourcc in _IR_FOURCC:

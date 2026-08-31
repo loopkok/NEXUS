@@ -23,7 +23,14 @@ streamer 抽头 ┘     ▲                    robot_data.h5 + camera_data.h5 + 
 
 ## 2. 采集前必查（schema 冻结进每段 meta.json）
 
-`config/data_collect.yaml` 或 launch 参数：
+**参数来源约定**：`config/data_collect.yaml` 是所有参数的唯一默认值来源。
+launch 参数默认空串，**只在显式传入时**（CLI `xxx:=` 或 web 预设 args）
+覆盖 yaml 同名字段——改 schema 一律改 yaml，改完重启节点生效
+（web 卡片「重启节点」或重 launch）。
+
+> 旧版 launch 曾用自身默认值静默盖掉 yaml（改了 yaml 却采出旧 schema），已修复。
+
+可配项：
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
@@ -56,10 +63,24 @@ ros2 launch astral_data_collect data_collect.launch.py \
 ros2 run astral_data_collect keyboard_controller
 ```
 
-**web 端操作（推荐）**：`astral_web_monitor`「系统」tab 启动 **Data collect** 预设
-（或 CLI 启动节点均可），「监控」tab 顶部的**数据采集卡片**提供完整控制：
-开始/停止保存/下一段/暂停继续/丢弃按钮 + 下一段任务文本 + 实时状态徽标与流率。
+**web 端操作（推荐）**：「监控」tab 顶部数据采集卡片右上角**启动/重启/停止节点**
+（独立泳道，与遥操预设解耦可并存；CLI 启动的节点同样受控），卡片本体提供
+开始/停止保存/下一段/暂停继续/丢弃 + 下一段任务文本 + 实时状态徽标与流率。
 三种控制面（web 卡片 / 键盘 / 话题）完全等价，可混用。
+
+**防护**（对应实测双开事故的三层根因）：
+- **单例锁**：`/data_collect/control` 是全局控制面，谁订阅谁开录。节点启动时
+  对 `/tmp/astral_data_collect_domain{ROS_DOMAIN_ID}.lock` 取排他锁，第二个
+  节点（**哪怕 session 不同**）构造即拒绝。注意：老版本残留进程不持锁，
+  锁管不住它——靠下两条兜底。
+- **段号原子占位**：`mkdir` 抢号，撞号让位——即使残留老节点在写，新节点也
+  不会和它撞 episode 编号互写（此前一个 start 在两个节点分别写出
+  000000/000001）。
+- **多节点检测**：web 后端按 `/data_collect/state` 发布者计数，>1 时数采卡片
+  红条提示有残留节点（这是发现老进程的手段）。
+- **低帧率告警**：录制中参考相机（`cameras[0]`）实率低于 `dataset_fps` 一半时，
+  state JSON 带 `low_fps_warning`、节点日志 5s 节流 WARN、web 卡片红条提示——
+  开录后瞄一眼卡片即可发现相机链路异常。
 
 热键：`s` 开始 / `q` 停止保存 / `d` 丢弃当前段 / `n` 保存并开新段 /
 `p` 暂停继续 / `t` 输入下一段任务文本 / `ESC` 退出键盘（不影响采集）。

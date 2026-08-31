@@ -175,6 +175,17 @@ ros2 topic echo --once /quest3_video_streamer/gate_state std_msgs/msg/String
 
 关闭：`collect_tap: false`。
 
+### 帧率排障插桩
+
+采集激活时每 5 秒打两类 INFO 日志，定位帧丢在管线哪一段：
+
+- `[capture <label>] driver-side N fps`——捕获线程从驱动读帧的实际速率。
+  这里低 = 捕获段慢；这里满 30 而下方 published 低 = 抽头/发布段慢。
+- `[tap <label>] submit=N/s rate_skip=.. queue_full=.. encoded=N/s
+  published=N/s encode=Xms publish=Xms`——`queue_full` 高 = 编码/发布
+  跟不上（看 `encode` 大还是 `publish` 大区分 JPEG 编码瓶颈与 DDS
+  发布阻塞）。
+
 ### 每相机字段含义
 
 | 字段 | 作用 |

@@ -59,6 +59,10 @@ export interface DataCollectState {
   task_next: string
   samples_per_s: Record<string, number>
   dropped: Record<string, number>
+  // 录制期参考相机实率低于 dataset_fps 一半时的告警文案（无告警为 null）
+  low_fps_warning?: string | null
+  // monitor 后端加注：/data_collect/state 发布者数量（>1 = 有残留/双开节点）
+  node_count?: number
   schema?: Record<string, unknown>
   stale?: boolean
 }

@@ -24,10 +24,12 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 from . import config
+from .config import STOP_SIGINT_TIMEOUT_S
 from .launch_manager import (
     LaunchManager,
     PAUSED,
     RUNNING,
+    STOPPED,
     load_presets,
 )
 from .monitor_node import get_node, init_node, shutdown_node
@@ -533,14 +535,22 @@ async def collect_launch_stop() -> ApiEnvelope:
 
 @app.post("/api/v1/collect/launch/restart")
 async def collect_launch_restart() -> ApiEnvelope:
-    """重启数采节点——改了 data_collect.yaml 的 schema 配置后用它生效。"""
+    """重启数采节点——改了 data_collect.yaml 的 schema 配置后用它生效。
+
+    必须等旧进程真正退出再启动：采集节点持 domain 级单例锁，旧进程没死透
+    时新节点会拒绝启动（SIGINT 优雅期最长 30s）。
+    """
     preset = _collect_preset()
     if preset is None:
         raise HTTPException(
             status_code=404, detail="presets.yaml 中没有 package=astral_data_collect 的预设"
         )
     _collect_mgr.stop()
-    await asyncio.sleep(1.0)
+    deadline = time.monotonic() + STOP_SIGINT_TIMEOUT_S + 5.0
+    while _collect_mgr.state != STOPPED:
+        if time.monotonic() > deadline:
+            raise HTTPException(status_code=409, detail="旧数采进程未能在超时内退出")
+        await asyncio.sleep(0.5)
     ok, msg = _collect_mgr.start(preset, check_orphan=False)
     if not ok:
         raise HTTPException(status_code=409, detail=msg)

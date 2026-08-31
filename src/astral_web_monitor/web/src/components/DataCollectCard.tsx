@@ -108,6 +108,20 @@ export function DataCollectCard({ dc, launch }: Props) {
         </div>
       )}
 
+      {online && dc?.low_fps_warning && (
+        <div style={offlineStyle}>
+          {dc.low_fps_warning}
+        </div>
+      )}
+
+      {online && (dc?.node_count ?? 1) > 1 && (
+        <div style={offlineStyle}>
+          检测到 {dc!.node_count} 个采集节点同时在线——同一条指令会被各录一份
+          （段数据重复）。请停止残留节点：<code style={codeStyle}>ros2 node list</code>
+          {' '}确认 /data_collect 数量，多余进程 kill 后刷新。
+        </div>
+      )}
+
       <div style={rowStyle}>
         <button
           style={btn('#22c55e')}
