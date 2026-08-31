@@ -36,7 +36,8 @@ _COLOR_FOURCC = frozenset({
     "NV12", "NV21", "YU12", "I420",
 })
 _IR_FOURCC = frozenset({
-    "GREY", "GRAY", "Y8", "Y8I", "Y10", "Y12", "Y16", "Y16I", "W10", "MONO",
+    "GREY", "GRAY", "Y8", "Y8I", "Y10", "Y10I", "Y12", "Y12I", "Y16", "Y16I",
+    "W10", "MONO",
 })
 _DEPTH_FOURCC = frozenset({"Z16", "Z16H", "INVZ", "INZI"})
 
@@ -183,10 +184,24 @@ def _name_score(name: str) -> int:
 
 
 def _best_score(fourccs: list[str], current: str, sysfs: str) -> tuple[int, str]:
-    """Return (score, representative fourcc) for ranking this node."""
-    scored = [( _fourcc_score(f), f) for f in fourccs]
-    if current:
-        scored.append((_fourcc_score(current), current))
+    """Return (score, representative fourcc) for ranking this node.
+
+    D435i IR stereo advertises UYVY next to GREY/Y8I/Y12I. That UYVY is packed
+    infrared, not RGB. Any IR fourcc classifies the node as IR (score 10) so it
+    cannot tie with the color node and win on lower /dev/video index.
+    """
+    seen: list[str] = []
+    for f in list(fourccs) + ([current] if current else []):
+        key = f.strip()
+        if key and key not in seen:
+            seen.append(key)
+    ir = [f for f in seen if f in _IR_FOURCC]
+    if ir:
+        return 10, ir[0]
+    depth = [f for f in seen if f in _DEPTH_FOURCC]
+    if depth:
+        return 0, depth[0]
+    scored = [(_fourcc_score(f), f) for f in seen]
     if scored:
         scored.sort(key=lambda x: -x[0])
         return scored[0]

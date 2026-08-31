@@ -602,7 +602,12 @@ def solve_pose_continuous_with_state(
     instead of ``theta0_prev`` and the branch score gains
     ``w_psi_ref * |theta0 - psi_ref|`` — the elbow plane follows the human arm
     while w_vel/w_theta0/hysteresis still smooth out tracking noise.
-    Fallback chain: psi_ref window -> theta0_prev window -> global scan.
+    Fallback chain: psi_ref window -> theta0_prev window -> global scan, with
+    escape hysteresis: the local windows must stay empty for
+    ``continuity.escape_after_frames`` before going global, and once escaped
+    the home window must stay feasible for ``continuity.return_after_frames``
+    before returning (prevents shoulder twitch at the wrist-limit boundary
+    during big end-effector rolls).
     """
     if continuity is None:
         continuity = ContinuityParams()
@@ -630,61 +635,123 @@ def solve_pose_continuous_with_state(
     else:
         singular = True
 
-    all_solutions: List[np.ndarray] = []
-    method = "continuous_local_theta0" if psi_ref is None else "continuous_local_psi_ref"
-    if singular and q4_list:
-        hold = theta0_prev if theta0_prev is not None else 0.0
-        psi_grid = np.array([hold])
-        all_solutions = _collect_solutions(T, g, S, W, q4_list, psi_grid)
-        method = "continuous_singular_hold"
-    center = psi_ref if psi_ref is not None else theta0_prev
-    if not singular and center is not None and q4_list:
-        psi_grid = np.linspace(
-            center - continuity.local_theta0_window,
-            center + continuity.local_theta0_window,
+    def _window_sols(center_psi: float, exact: Optional[float] = None) -> List[np.ndarray]:
+        grid = np.linspace(
+            center_psi - continuity.local_theta0_window,
+            center_psi + continuity.local_theta0_window,
             max(5, continuity.local_theta0_count),
             endpoint=True,
         )
-        if psi_ref is not None:
+        if exact is not None:
             # Exact-psi candidate: w_psi_ref makes it win, so the elbow lands
             # on the human prior without grid quantization error.
-            psi_grid = np.append(psi_grid, psi_ref)
-        all_solutions = _collect_solutions(T, g, S, W, q4_list, psi_grid)
+            grid = np.append(grid, exact)
+        return _collect_solutions(T, g, S, W, q4_list, grid)
 
-    # psi_ref window came up empty (human arm angle infeasible for the current
-    # orientation demand): try the continuity window around theta0_prev before
-    # going global, so the arm holds its pose instead of jumping branches.
-    if (
-        not all_solutions
-        and not singular
-        and psi_ref is not None
-        and theta0_prev is not None
-        and q4_list
-        and abs(float(wrap_to_pi(np.array([psi_ref - theta0_prev]))[0]))
-        > 0.5 * continuity.local_theta0_window
-    ):
-        psi_grid = np.linspace(
-            theta0_prev - continuity.local_theta0_window,
-            theta0_prev + continuity.local_theta0_window,
-            max(5, continuity.local_theta0_count),
-            endpoint=True,
-        )
-        all_solutions = _collect_solutions(T, g, S, W, q4_list, psi_grid)
-        method = "continuous_local_theta0"
-
-    if not all_solutions and continuity.enable_global_fallback and q4_list:
+    def _global_sols() -> List[np.ndarray]:
         step = min(0.03, 2.0 * math.pi / max(1, n_psi))
         psi_grid = np.arange(-math.pi, math.pi, step)
-        all_solutions = _collect_solutions(T, g, S, W, q4_list, psi_grid)
-        method = "continuous_global_fallback"
+        return _collect_solutions(T, g, S, W, q4_list, psi_grid)
 
-    if not all_solutions:
+    def _failed(m: str):
         return (
             None,
-            {"method": method, "candidate_count": 0,
+            {"method": m, "candidate_count": 0,
              "selected_by": "failed", "pose_err_best": None},
-            state,
+            ContinuityRuntimeState(
+                q_prev=state.q_prev,
+                q_prev2=state.q_prev2,
+                theta0_prev=state.theta0_prev,
+                q_lock=state.q_lock,
+                esc_active=esc_active,
+                esc_home_psi=esc_home,
+                local_fail_streak=fail_streak,
+                home_ok_streak=ok_streak,
+            ),
         )
+
+    all_solutions: List[np.ndarray] = []
+    method = "continuous_local_theta0" if psi_ref is None else "continuous_local_psi_ref"
+    esc_active = state.esc_active
+    esc_home = state.esc_home_psi
+    fail_streak = state.local_fail_streak
+    ok_streak = state.home_ok_streak
+
+    if singular and q4_list:
+        hold = theta0_prev if theta0_prev is not None else 0.0
+        all_solutions = _collect_solutions(T, g, S, W, q4_list, np.array([hold]))
+        method = "continuous_singular_hold"
+        # psi is meaningless here; escapes neither help nor hurt. Keep state.
+    elif esc_active:
+        # Parked in a globally-escaped arm-angle region (the wrist-limit
+        # boundary swallowed the local window, e.g. big end-effector roll).
+        # Stay on the continuity window around theta0_prev and probe home
+        # (psi_ref, else pre-escape theta0); return only after home stays
+        # feasible for return_after_frames — prevents twitch-back oscillation.
+        home = psi_ref if psi_ref is not None else esc_home
+        probe: List[np.ndarray] = []
+        if home is not None and q4_list:
+            probe = _window_sols(
+                home, exact=psi_ref if psi_ref is not None else None
+            )
+        ok_streak = ok_streak + 1 if probe else 0
+        if probe and ok_streak >= continuity.return_after_frames:
+            all_solutions = probe
+            method = (
+                "continuous_local_psi_ref"
+                if psi_ref is not None
+                else "continuous_local_theta0"
+            )
+            esc_active, esc_home, fail_streak, ok_streak = False, None, 0, 0
+        else:
+            if theta0_prev is not None and q4_list:
+                all_solutions = _window_sols(theta0_prev)
+                method = "continuous_escaped_hold"
+            if not all_solutions and continuity.enable_global_fallback and q4_list:
+                all_solutions = _global_sols()
+                method = "continuous_global_fallback"
+            if not all_solutions:
+                return _failed(method)
+    else:
+        # Normal path: psi_ref window, then the theta0_prev continuity window.
+        if psi_ref is not None and q4_list:
+            all_solutions = _window_sols(psi_ref, exact=psi_ref)
+        if (
+            not all_solutions
+            and theta0_prev is not None
+            and q4_list
+            and (
+                psi_ref is None
+                or abs(float(wrap_to_pi(np.array([psi_ref - theta0_prev]))[0]))
+                > 0.5 * continuity.local_theta0_window
+            )
+        ):
+            all_solutions = _window_sols(theta0_prev)
+            method = "continuous_local_theta0"
+        if all_solutions:
+            fail_streak = 0
+        else:
+            fail_streak += 1
+            ok_streak = 0
+            # Escape to the global scan only after the local windows stay
+            # empty for escape_after_frames (debounce against boundary
+            # flicker). Cold start (no theta0_prev) escapes immediately.
+            if (
+                q4_list
+                and continuity.enable_global_fallback
+                and (theta0_prev is None or fail_streak >= continuity.escape_after_frames)
+            ):
+                all_solutions = _global_sols()
+                method = "continuous_global_fallback"
+                if all_solutions:
+                    esc_active = True
+                    esc_home = psi_ref if psi_ref is not None else theta0_prev
+                    ok_streak = 0
+            if not all_solutions:
+                return _failed(method)
+
+    if not all_solutions:
+        return _failed(method)
 
     scored = []
     for cand in all_solutions:
@@ -742,6 +809,10 @@ def solve_pose_continuous_with_state(
         q_prev2=q_prev.copy(),
         theta0_prev=theta0_best,
         q_lock=q_best,
+        esc_active=esc_active,
+        esc_home_psi=esc_home,
+        local_fail_streak=fail_streak,
+        home_ok_streak=ok_streak,
     )
     report = {
         "method": f"{method}+1DQP" if not skip_qp else method,
@@ -834,6 +905,12 @@ class GeometricIKSolver:
             psi_ref=psi_ref,
         )
         if q_best is None:
+            # Keep the escape-hysteresis counters across failed frames (they
+            # are the whole point of the debounce); pose/branch state stays.
+            state_prev.esc_active = new_state.esc_active
+            state_prev.esc_home_psi = new_state.esc_home_psi
+            state_prev.local_fail_streak = new_state.local_fail_streak
+            state_prev.home_ok_streak = new_state.home_ok_streak
             self._state = state_prev
             return None
         self._state = new_state
@@ -903,6 +980,10 @@ class GeometricIKSolver:
         if reset_branch:
             self._state.theta0_prev = None
             self._state.q_lock = None
+            self._state.esc_active = False
+            self._state.esc_home_psi = None
+            self._state.local_fail_streak = 0
+            self._state.home_ok_streak = 0
 
     def check_self_collision(self, q: np.ndarray) -> bool:
         """Stub: no collision geometry model in the geometric solver."""

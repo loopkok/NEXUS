@@ -18,6 +18,7 @@ import time
 
 import numpy as np
 
+from astral_arm_teleop.ik.analytic import ContinuityParams
 from astral_arm_teleop.ik.factory import (
     default_astral_urdf_path,
     make_ik_solver,
@@ -26,6 +27,7 @@ from astral_arm_teleop.ik.factory import (
 from astral_arm_teleop.ik.geometric import (
     GeometricIKSolver,
     _axis_angle_rot,
+    _collect_solutions,
     _compute_sw,
     _elbow_point,
     psi_from_elbow_dir,
@@ -402,6 +404,7 @@ def main() -> None:
         "single_arm_factory": test_single_arm_factory(),
         "psi_ref_prior": test_psi_ref_prior(),
         "full_extension": test_full_extension(),
+        "roll_escape_hysteresis": test_roll_escape_hysteresis(),
     }
     print("\n  SUMMARY:")
     for k, v in results.items():
@@ -524,6 +527,125 @@ def test_full_extension() -> bool:
     print(
         f"  raw fails={raw_failed}/{len(radii)}, clamped max step "
         f"{np.degrees(max_step):.2f} deg -> {'PASS' if ok else 'FAIL'}"
+    )
+    return ok
+
+
+def _find_roll_case(solver):
+    """(seed T, rolled T, home psi): rolled target infeasible near home psi
+    but feasible globally — the real-machine shoulder-twitch trigger."""
+    g = solver.geom
+    rng = np.random.default_rng(11)
+    for cand in _sample_q(rng, solver.lower_limits, solver.upper_limits, 80):
+        if abs(float(cand[3])) < 0.8:  # want a well-bent elbow
+            continue
+        T0 = solver.fk(cand)
+        solver.sync_state(cand, reset_branch=True)
+        q0 = solver.solve(T0)
+        if q0 is None or solver._state.theta0_prev is None:
+            continue
+        psi_home = float(solver._state.theta0_prev)
+        for phi in (1.2, 1.6, 2.0, 2.4, 2.8, -1.2, -1.6, -2.0, -2.4, -2.8):
+            T1 = T0.copy()
+            T1[:3, :3] = T0[:3, :3] @ _axis_angle_rot(np.array([0.0, 0.0, 1.0]), phi)
+            S, W, q4l = _compute_sw(T1, g)
+            if not q4l:
+                continue
+            local = _collect_solutions(
+                T1, g, S, W, q4l, np.linspace(psi_home - 0.15, psi_home + 0.15, 5)
+            )
+            if local:
+                continue
+            glob = _collect_solutions(
+                T1, g, S, W, q4l, np.arange(-math.pi, math.pi, 0.03)
+            )
+            if not glob:
+                continue
+            # Require the nearest global escape to be FAR from home — a nearby
+            # escape is invisible; the real shoulder twitch is a large swing.
+            d_esc = min(
+                abs(float(_wrap(np.array([float(c[7]) - psi_home]))[0]))
+                for c in glob
+            )
+            if d_esc > 0.5:
+                return T0, T1, psi_home
+    return None
+
+
+def _theta0_jumps(traj, thresh=0.3):
+    return sum(
+        1
+        for a, b in zip(traj, traj[1:])
+        if a is not None and b is not None
+        and abs(float(_wrap(np.array([b - a]))[0])) > thresh
+    )
+
+
+def test_roll_escape_hysteresis() -> bool:
+    """Big end-effector roll: local window goes empty at the wrist-limit
+    boundary. Without hysteresis the arm angle escapes and snaps back
+    frame-to-frame (shoulder twitch); with it, transitions are debounced."""
+    print("\n  --- Roll escape hysteresis (shoulder twitch) ---")
+    solver = _make("R")
+    found = _find_roll_case(solver)
+    if found is None:
+        print("  FAIL no roll case found (locally infeasible, globally feasible)")
+        return False
+    T0, T1, psi_home = found
+    ok = True
+
+    def run(cont, frames):
+        # psi_ref pinned at home: reproduces the real-machine setup
+        # (use_human_elbow=true) where the window cannot drift with theta0_prev.
+        solver.continuity = cont
+        solver.sync_state(np.zeros(7), reset_branch=True)
+        q = solver.solve(T0, psi_ref=psi_home)  # establish home branch
+        if q is None:
+            return None
+        traj = []
+        for T in frames:
+            q = solver.solve(T, psi_ref=psi_home)
+            traj.append(None if q is None else float(solver._state.theta0_prev))
+        return traj
+
+    # Sustained roll then sustained normal: new params -> exactly one escape
+    # and one return; old params (1/1) may also pass here but must not regress.
+    seq = [T1] * 30 + [T0] * 30
+    traj_new = run(ContinuityParams(), seq)
+    if traj_new is None:
+        print("  FAIL could not establish home pose")
+        return False
+    jumps_new = _theta0_jumps(traj_new)
+    holds = sum(1 for t in traj_new[:4] if t is None)
+    if holds == 0:
+        print("  FAIL debounce never held (expected None frames before escape)")
+        ok = False
+    if jumps_new > 2:
+        print(f"  FAIL sustained case jumps={jumps_new} (>2)")
+        ok = False
+    final = traj_new[-1]
+    if final is None or abs(float(_wrap(np.array([final - psi_home]))[0])) > 0.2:
+        print(f"  FAIL did not return home (final={final}, home={psi_home:.3f})")
+        ok = False
+
+    # Boundary flicker: alternating feasible/infeasible every frame. Old
+    # behavior oscillates (twitch); new behavior holds at home, zero jumps.
+    flicker = [T1 if i % 2 else T0 for i in range(40)]
+    traj_old = run(ContinuityParams(escape_after_frames=1, return_after_frames=1), flicker)
+    traj_new2 = run(ContinuityParams(), flicker)
+    jumps_old = _theta0_jumps(traj_old)
+    jumps_new2 = _theta0_jumps(traj_new2)
+    if jumps_new2 > 2:
+        print(f"  FAIL flicker case jumps={jumps_new2} (>2)")
+        ok = False
+    if jumps_old < 4:
+        # Without oscillation in the old behavior the test reproduces nothing.
+        print(f"  FAIL old behavior did not oscillate (jumps={jumps_old})")
+        ok = False
+
+    print(
+        f"  sustained jumps={jumps_new}, flicker jumps old={jumps_old} "
+        f"new={jumps_new2}, returned home -> {'PASS' if ok else 'FAIL'}"
     )
     return ok
 

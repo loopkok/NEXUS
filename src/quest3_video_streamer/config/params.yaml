@@ -46,9 +46,11 @@ quest3_video_streamer:
       label: "d435i"
       force_mjpg: false
       layout:
-        position: [0.05, 0.0, 1.8]
+        # 居中放大(x=0.05, size=0.88)会把左侧腕部面板挡住一半；
+        # 半宽≈1.09 m vs 腕部右缘≈-0.66 m。靠右、缩回 0.6 与腕部错开。
+        position: [0.50, 0.0, 1.8]
         distance: 1.8
-        size_multiplier: 0.88
+        size_multiplier: 0.60
 
     wrist_left:
       source: "webcam"
@@ -77,7 +79,7 @@ quest3_video_streamer:
         size_multiplier: 0.28
 
     # --- auto_scan 覆盖块：label = 节点名。换口后编号变了会走代码里按
-    # fourcc 的默认（腕部左侧缩小上下叠，YUYV RealSense 居中放大）。
+    # fourcc 的默认（腕部左侧缩小上下叠，YUYV RealSense 靠右 size=0.60）。
     video0:
       preset: "720p30"
       fov_h_deg: 60.0
@@ -102,9 +104,9 @@ quest3_video_streamer:
       fov_h_deg: 69.0
       force_mjpg: false
       layout:
-        position: [0.05, 0.0, 1.8]
+        position: [0.50, 0.0, 1.8]
         distance: 1.8
-        size_multiplier: 0.88
+        size_multiplier: 0.60
 
     # --- 公共参数 ---
     # WebSocket 信令服务器（Quest 连这里）。

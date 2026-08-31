@@ -182,14 +182,14 @@ def _is_realsense_color(dev: dict[str, Any]) -> bool:
 
 
 def _scan_role_defaults(dev: dict[str, Any], found: list[dict[str, Any]]) -> dict[str, Any]:
-    """Layout/preset when yaml has no per-label override. Wrist left stack, RS center."""
+    """Layout/preset when yaml has no per-label override. Wrist left stack, RS right."""
     if _is_realsense_color(dev):
         return {
             "preset": "1080p30",
             "fov_h_deg": 69.0,
             "force_mjpg": False,
-            "position": [0.05, 0.0, 1.8],
-            "size_multiplier": 0.88,
+            "position": [0.50, 0.0, 1.8],
+            "size_multiplier": 0.60,
         }
     wrists = [d for d in found if not _is_realsense_color(d)]
     idx = next((i for i, d in enumerate(wrists) if d.get("label") == dev.get("label")), 0)

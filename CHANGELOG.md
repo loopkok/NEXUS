@@ -6,6 +6,16 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-08-31
 
+**Quest 面板：D435i 缩回、勿挡左侧腕部**——`quest3_video_streamer`。分辨率仍是 1080p30，未改。
+
+- 8/28 `x=0.05` / `size=0.88` 半宽 ≈1.09 m，盖住左上/左下腕部约一半。改回 `x=0.50` / `size=0.60`（间隙约 0.42 m）。腕部左侧叠放不动。重启 streamer 并让 Quest 重连。
+
+**D435i IR 节点带 UYVY 也不当彩色**——`scan.py`。红外立体旁路常挂 UYVY（packed IR 不是 RGB），旧打分会当彩色、靠更低 video 号赢过 RGB 节点。节点上只要有 GREY/Y8I 等 IR fourcc 就打 10 分丢掉。
+
+**大幅 roll 逃逸迟滞**——`geometric`。末端 roll 超腕行程时局部 ψ 窗闪空，旧行为同帧全局逃逸再被 `psi_ref` 拉回，肩部抽搐。
+
+- 局部窗连续空 **4** 帧才允许全局逃逸；逃逸后驻留，home 窗连续可行 **20** 帧才返回（~150 Hz 下约 27 / 133 ms）。冷启动立即全局。`test_geometric_ik` 加 `roll_escape_hysteresis`。
+
 **geometric 默认 + 人臂肘先验**——`astral_arm_teleop`。左右 yaml / 节点默认 `solver_type: geometric`，`use_human_elbow: true`。
 
 - 现象：只跟腕 6D 时冗余臂角由连续性随便锁一支，人转肘平面机器人肘不动；人臂伸直时 IOBT 肘偏置会被当成满权重 ψ，放下手臂肘拧到固定错角。

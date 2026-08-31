@@ -328,6 +328,7 @@ Quest 端：在 astral-tracking app 里填 PC 的信令地址（WiFi 或 `adb re
 
 ## 常见问题
 
+- **中间 D435i 挡住左侧两个腕部画面**：`size_multiplier` 太大且太居中。默认 `x=0.50` / `size=0.60`。改 yaml 后须重启 streamer 并让 Quest 重连。
 - **画面放大像放大镜**：`fov_h_deg` 没设对。D435i 彩色 ~69°，USB 相机 ~60°，设成相机真实视场角即可。
 - **D435i 多路时卡、单路不卡**：已由源端节流 + v4l2 直连解决；若仍卡，检查是否用了旧版（webcam `next_frame` 不节流）。
 - **stats 里 fps=0 但有画面**：升级到按 track 自计帧的版本（早期版本误读 aiortc 的 `framesSent`）。
@@ -335,6 +336,9 @@ Quest 端：在 astral-tracking app 里填 PC 的信令地址（WiFi 或 `adb re
 - **v4l2 模式 D435i 打不开**：确认 `/dev/video8` 存在且用户在 `video` 组；D435i 彩色是 YUYV，`force_mjpg` 必须为 `false`。
 
 ## 更新日志
+
+### v0.7 — D435i 勿挡腕部
+- RealSense 布局从 `x=0.05` / `size=0.88` 改回 `x=0.50` / `size=0.60`，与左侧腕部叠放错开。分辨率仍 1080p30。
 
 ### v0.6 — Web 实时预览（JPEG 抽帧 + MJPEG 转发）
 - **`~/preview/{label}`**（`sensor_msgs/CompressedImage`，BEST_EFFORT）：每路相机的低成本 web 预览流。捕获线程只 `put_nowait` 到 maxsize=1 队列，JPEG 编码在**独立线程**（不进捕获线程/asyncio 循环，Quest RTP 节奏不受影响）；跟随门控——被静音的路不发。参数：`web_preview`（默认 true）/ `web_preview_fps`(10) / `web_preview_width`(640) / `web_preview_quality`(65)。

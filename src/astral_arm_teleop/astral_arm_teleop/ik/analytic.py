@@ -217,6 +217,15 @@ class ContinuityParams:
     hysteresis_margin: float = 0.03
     # Fallback to global scan when local window fails.
     enable_global_fallback: bool = True
+    # Escape hysteresis (geometric solver): the local window can flicker empty
+    # at the wrist-limit boundary during big end-effector rolls, making the
+    # arm angle jump to a far feasible psi and snap back frame-to-frame
+    # (visible shoulder twitch). Require the local windows to be empty for
+    # this many consecutive frames before escaping to the global scan, and
+    # (once escaped) the home window to stay feasible for this many frames
+    # before returning. 1/1 reproduces the old immediate behavior.
+    escape_after_frames: int = 4
+    return_after_frames: int = 20
     # 1D QP weights
     w_qp_joint_inc: float = 1.0
     w_qp_pose_err: float = 0.5
@@ -228,6 +237,13 @@ class ContinuityRuntimeState:
     q_prev2: Optional[np.ndarray] = None
     theta0_prev: Optional[float] = None
     q_lock: Optional[np.ndarray] = None
+    # Escape-hysteresis state (geometric solver): whether the arm angle is
+    # currently parked in a globally-escaped region, the "home" psi to probe
+    # for return, and the debounce streaks.
+    esc_active: bool = False
+    esc_home_psi: Optional[float] = None
+    local_fail_streak: int = 0
+    home_ok_streak: int = 0
 
 
 # ==============================================================================
