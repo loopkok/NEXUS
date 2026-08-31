@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 from . import config
-from .config import STOP_SIGINT_TIMEOUT_S
+from .config import STOP_SIGINT_TIMEOUT_S, log_tail_for_push
 from .launch_manager import (
     LaunchManager,
     PAUSED,
@@ -79,9 +79,9 @@ def _build_ui_state() -> dict[str, Any]:
             "preset": _collect_mgr.preset,
             "uptime_s": _collect_mgr.uptime_s(),
             "pid": _collect_mgr.pid,
-            "log_tail": _collect_mgr.log_tail()[-50:],
+            "log_tail": log_tail_for_push(_collect_mgr.log_tail()),
         },
-        "log_tail": _launch_mgr.log_tail()[-50:],
+        "log_tail": log_tail_for_push(_launch_mgr.log_tail()),
     }
 
 
@@ -179,6 +179,18 @@ async def list_presets() -> ApiEnvelope:
 @app.get("/api/v1/state")
 async def get_state() -> ApiEnvelope:
     return ApiEnvelope(ok=True, data=_build_ui_state())
+
+
+@app.get("/api/v1/logs")
+async def get_logs() -> ApiEnvelope:
+    """全量环形缓冲（默认 8000 行），供系统页复制/下载；WS 只推尾 800。"""
+    return ApiEnvelope(
+        ok=True,
+        data={
+            "teleop": _launch_mgr.log_tail(),
+            "collect": _collect_mgr.log_tail(),
+        },
+    )
 
 
 @app.post("/api/v1/start")

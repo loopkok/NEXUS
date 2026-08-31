@@ -128,6 +128,18 @@ quest3_video_streamer:
     push_enabled: true
     active_cameras: ""
 
+    # --- 回传降载（WebRTC 软编码是嵌入式 CPU 最大负载，实测会把同进程的
+    # 采集抽头/捕获线程挤到个位数 fps）。只影响 Quest 看到的画面；
+    # 采集抽头（collect tap）仍在捕获线程侧拿全帧全速，录进数据集的内容不变。
+    # push_max_width: 回传分辨率宽度上限（等比缩放，0 = 不降载）。
+    #   1080p→960 宽(540p) ≈ 编码像素 -59%；→1280(720p) ≈ -27%（腕部两路
+    #   本来就是 720p，只降主相机收益有限）。
+    # push_fps: 回传帧率上限（0 = 不降载）。30→15 再省一半编码。
+    # 遥操建议流畅度优先：先 960/30，不够再 960/15。
+    # 另：x264 preset 已固定打补丁为 veryfast（aiortc 默认 medium，ARM 上过重）。
+    push_max_width: 960
+    push_fps: 30
+
     # --- Web 实时预览（astral_web_monitor 视频卡片画面）---
     # 抽帧 → 独立线程 JPEG 编码 → ~/preview/{label}（CompressedImage, BEST_EFFORT）。
     # 跟随门控：被静音的路不发。编码不在捕获线程/asyncio 循环里，不影响 Quest 链路。

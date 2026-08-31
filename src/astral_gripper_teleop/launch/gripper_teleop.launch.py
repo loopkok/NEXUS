@@ -14,6 +14,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -37,6 +38,11 @@ def generate_launch_description() -> LaunchDescription:
                     "quest3/left_controller_joy."
                 ),
             ),
+            DeclareLaunchArgument(
+                "log_interval_s",
+                default_value="0.0",
+                description="状态日志间隔秒；0 = 关闭（避免 2s 一条刷屏）",
+            ),
             Node(
                 package="astral_gripper_teleop",
                 executable="pinch_gripper_node",
@@ -49,6 +55,9 @@ def generate_launch_description() -> LaunchDescription:
                         "hand_side": LaunchConfiguration("hand_side"),
                         "controller_joy_topic": LaunchConfiguration(
                             "controller_joy_topic"
+                        ),
+                        "log_interval_s": ParameterValue(
+                            LaunchConfiguration("log_interval_s"), value_type=float
                         ),
                     },
                 ],

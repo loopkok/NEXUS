@@ -335,6 +335,10 @@ def _declare_params(node: Node) -> None:
     # Runtime push gate (see gate.py): master switch + initial active subset.
     _safe_declare(node, "push_enabled", True)
     _safe_declare(node, "active_cameras", "")  # comma labels; "" = all
+    # Push throttle: WebRTC 回传降载（软编码是嵌入式 CPU 最大负载）；
+    # 0 = 不降载。采集抽头走全帧全速，不受影响。
+    _safe_declare(node, "push_max_width", 0)
+    _safe_declare(node, "push_fps", 0)
     # Auto-scan host capture devices instead of the fixed `cameras` list.
     _safe_declare(node, "auto_scan", False)
     # Web preview (JPEG over CompressedImage on ~/preview/{label}).
@@ -377,6 +381,7 @@ def main() -> None:
         "signaling_host", "signaling_port", "mocap_tcp_host",
         "mocap_tcp_port", "enable_mocap_tcp", "verbose",
         "preset", "push_enabled", "active_cameras",
+        "push_max_width", "push_fps",
         "web_preview", "web_preview_fps", "web_preview_width",
         "web_preview_quality",
         "collect_tap", "collect_tap_fps", "collect_tap_quality",
@@ -402,6 +407,8 @@ def main() -> None:
         preset=str(params["preset"]),
         verbose=verbose,
         log_hook=lambda msg: _LOG.info(msg),
+        push_max_width=int(params["push_max_width"] or 0),
+        push_fps=int(params["push_fps"] or 0),
     )
 
     try:

@@ -28,6 +28,10 @@ class VideoServiceConfig:
     server_version: str = "0.1.0"
     verbose: bool = False
     log_hook: Callable[[str], None] | None = None
+    # 回传降载：0 = 不降载。push_max_width 等比缩分辨率（偶数取整），
+    # push_fps 降发送帧率；只影响 WebRTC 软编码负载，采集抽头不受影响。
+    push_max_width: int = 0
+    push_fps: int = 0
 
 
 _PRESET_MAP: dict[str, tuple[int, int, int]] = {
@@ -214,6 +218,8 @@ class Quest3VideoService:
                     on_local_ice_candidate=self._make_ice_callback(session_id),
                     log_hook=lambda msg: self._log(f"[sender] {msg}"),
                     gate=self._gate,
+                    push_fps=self._config.push_fps,
+                    push_max_width=self._config.push_max_width,
                 )
                 await self._sender.start()
                 self._log(f"sender started sources={len(self._sources)} preset={self._config.preset}")

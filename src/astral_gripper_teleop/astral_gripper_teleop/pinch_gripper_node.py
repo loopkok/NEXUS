@@ -33,7 +33,7 @@ def _sensor_qos() -> QoSProfile:
     return QoSProfile(
         reliability=ReliabilityPolicy.BEST_EFFORT,
         history=HistoryPolicy.KEEP_LAST,
-        depth=10,
+        depth=1,
     )
 
 
@@ -52,7 +52,7 @@ class PinchGripperNode(Node):
         self.declare_parameter("input_timeout_s", 0.4)
         # hold = keep last ratio; open = force 0 on timeout
         self.declare_parameter("on_timeout", "hold")
-        self.declare_parameter("log_interval_s", 2.0)
+        self.declare_parameter("log_interval_s", 0.0)
         # Auto-range: track the user's real pinch-distance envelope so the
         # gripper uses the full stroke even if open_dist_m/close_dist_m don't
         # match the actual hand range. open_dist_m/close_dist_m become priors.

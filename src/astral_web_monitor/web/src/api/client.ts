@@ -59,4 +59,5 @@ export const api = {
   collectLaunchStart: () => post<unknown>('/api/v1/collect/launch/start'),
   collectLaunchStop: () => post<unknown>('/api/v1/collect/launch/stop'),
   collectLaunchRestart: () => post<unknown>('/api/v1/collect/launch/restart'),
+  logs: () => get<{ teleop: string[]; collect: string[] }>('/api/v1/logs'),
 }

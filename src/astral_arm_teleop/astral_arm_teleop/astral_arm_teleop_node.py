@@ -83,10 +83,11 @@ _R_BASE_T = np.array(
 
 
 def _sensor_qos() -> QoSProfile:
+    """腕位 / 关节 / 指令：只留最新一帧，避免 IK 跟不上时把旧样本排队。"""
     return QoSProfile(
         reliability=ReliabilityPolicy.BEST_EFFORT,
         history=HistoryPolicy.KEEP_LAST,
-        depth=20,
+        depth=1,
         durability=DurabilityPolicy.VOLATILE,
     )
 
@@ -320,7 +321,7 @@ class AstralTeleopArmNode(Node):
                 f"tune topics: /teleop/{self.side}/tune/ee_{{vr,filt,cmd}} + xyz"
             )
         self.create_subscription(
-            PoseStamped, f"quest3/{self.side}_wrist_pose", self._on_wrist, 10
+            PoseStamped, f"quest3/{self.side}_wrist_pose", self._on_wrist, qos
         )
         self._ensure_body_subs()
         if self._homing or bool(self.get_parameter("use_joint_state_seed").value):

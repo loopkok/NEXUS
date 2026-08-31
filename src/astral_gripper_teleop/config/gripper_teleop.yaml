@@ -17,7 +17,7 @@ pinch_gripper_node:
     publish_rate: 50.0
     input_timeout_s: 0.4
     on_timeout: "hold"
-    log_interval_s: 2.0
+    log_interval_s: 0.0  # 0=关状态日志；>0 每 N 秒一条 dist/close
     # 自适应量程：跟踪真实捏合距离的 min/max（带遗忘），用满夹爪行程。
     # open_dist_m/close_dist_m 退化为先验/回退。关掉则用固定 open/close 映射。
     auto_range: true

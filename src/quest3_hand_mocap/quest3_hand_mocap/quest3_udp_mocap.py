@@ -7,7 +7,7 @@ from geometry_msgs.msg import Pose, Point, Quaternion, PoseStamped, PoseArray
 from sensor_msgs.msg import Joy
 from visualization_msgs.msg import Marker, MarkerArray
 from builtin_interfaces.msg import Time as RosTime
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
 import json
@@ -30,6 +30,16 @@ _IOBT_TIMEOUT_S = 0.4
 # capture its zero point in world then receive body-frame poses → cross-frame
 # delta). Landmarks are wrist-local and not gated.
 _WRIST_SETTLE_S = 1.0
+
+
+def _stream_qos() -> QoSProfile:
+    """腕/头/身体/Joy：只留最新一帧，避免下游 IK 吃到排队旧样本。"""
+    return QoSProfile(
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+        durability=DurabilityPolicy.VOLATILE,
+    )
 
 
 class FPSCounter:
@@ -367,33 +377,50 @@ class Quest3UDPMocap(Node):
         #   robot_world|vr_world ── hips
         #   robot_body|vr_body   ── head / wrist|controller / body_joints
         #                                └── landmarks (wrist-local, unchanged)
-        self.mocap_pub_right = self.create_publisher(PoseArray, "hand_landmarks/right", 10)
-        self.mocap_pub_left = self.create_publisher(PoseArray, "hand_landmarks/left", 10)
-        self.wrist_pub_right = self.create_publisher(PoseStamped, "quest3/right_wrist_pose", 10)
-        self.wrist_pub_left = self.create_publisher(PoseStamped, "quest3/left_wrist_pose", 10)
+        stream_qos = _stream_qos()
+        self.mocap_pub_right = self.create_publisher(
+            PoseArray, "hand_landmarks/right", stream_qos
+        )
+        self.mocap_pub_left = self.create_publisher(
+            PoseArray, "hand_landmarks/left", stream_qos
+        )
+        self.wrist_pub_right = self.create_publisher(
+            PoseStamped, "quest3/right_wrist_pose", stream_qos
+        )
+        self.wrist_pub_left = self.create_publisher(
+            PoseStamped, "quest3/left_wrist_pose", stream_qos
+        )
         self.ctrl_pub_right = self.create_publisher(
-            PoseStamped, "quest3/right_controller_pose", 10
+            PoseStamped, "quest3/right_controller_pose", stream_qos
         )
         self.ctrl_pub_left = self.create_publisher(
-            PoseStamped, "quest3/left_controller_pose", 10
+            PoseStamped, "quest3/left_controller_pose", stream_qos
         )
-        self.head_pub = self.create_publisher(PoseStamped, "quest3/head_pose", 10)
+        self.head_pub = self.create_publisher(PoseStamped, "quest3/head_pose", stream_qos)
         latch_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             history=HistoryPolicy.KEEP_LAST,
         )
-        self.body_pub = self.create_publisher(PoseArray, "quest3/body_joints", 10)
+        self.body_pub = self.create_publisher(
+            PoseArray, "quest3/body_joints", stream_qos
+        )
         self.body_names_pub = self.create_publisher(
             String, "quest3/body_joint_names", latch_qos
         )
-        self.hips_pub = self.create_publisher(PoseStamped, "quest3/hips_pose", 10)
+        self.hips_pub = self.create_publisher(
+            PoseStamped, "quest3/hips_pose", stream_qos
+        )
         self.mix_pub = self.create_publisher(String, "quest3/input_mix", latch_qos)
         # Touch controller button/thumbstick state (sensor_msgs/Joy).
         # axes = [trigger, grip, stickX, stickY]; buttons = [primary, secondary,
         # stickPress, menu, triggerClick, gripClick].
-        self.joy_pub_right = self.create_publisher(Joy, "quest3/right_controller_joy", 10)
-        self.joy_pub_left = self.create_publisher(Joy, "quest3/left_controller_joy", 10)
+        self.joy_pub_right = self.create_publisher(
+            Joy, "quest3/right_controller_joy", stream_qos
+        )
+        self.joy_pub_left = self.create_publisher(
+            Joy, "quest3/left_controller_joy", stream_qos
+        )
         
         # 新增：RViz 可视化发布者
         if self.viz:

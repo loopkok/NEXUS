@@ -16,7 +16,17 @@ WEB_PORT = int(os.environ.get("ASTRAL_WEB_MONITOR_PORT", "8080"))
 
 # --- WebSocket push ---------------------------------------------------------
 WS_PUSH_HZ = float(os.environ.get("ASTRAL_WEB_MONITOR_PUSH_HZ", "30"))
-WS_LOG_TAIL_LINES = int(os.environ.get("ASTRAL_WEB_MONITOR_LOG_TAIL", "500"))
+# 环形缓冲（全量，供 GET /api/v1/logs 下载）；WS ui_state 只推尾部以免撑爆帧。
+WS_LOG_TAIL_LINES = int(os.environ.get("ASTRAL_WEB_MONITOR_LOG_TAIL", "8000"))
+WS_LOG_PUSH_LINES = int(os.environ.get("ASTRAL_WEB_MONITOR_LOG_PUSH", "800"))
+
+
+def log_tail_for_push(lines: list[str], n: int | None = None) -> list[str]:
+    """WS 实时推送切片：只带环形缓冲的最后 n 行。"""
+    keep = WS_LOG_PUSH_LINES if n is None else n
+    if keep <= 0:
+        return []
+    return lines[-keep:]
 
 # --- Stale detection --------------------------------------------------------
 STALE_THRESHOLD_S = float(os.environ.get("ASTRAL_WEB_MONITOR_STALE_S", "2.0"))

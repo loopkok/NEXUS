@@ -26,6 +26,6 @@ ros2 launch astral_gripper_teleop gripper_teleop.launch.py hand_side:=right
 
 调参：本包 `config/gripper_teleop.yaml` 只管**手部距离**（`open_dist_m`/`close_dist_m`，米）与滤波/超时；夹爪**电机角度**只改 driver 的 `astral_robot.yaml`（当前 2.5 全开 / 0.0 合拢）。真机方向：捏合→合、张开→开。
 
-**自适应量程**（`auto_range:=true`，默认开）：跟踪你实际捏合距离的 min/max（带 `auto_range_forget_s` 遗忘，双向适应），把当前距离映射到这个真实范围，用满夹爪行程——避免 `open_dist_m/close_dist_m` 与你实际手部范围不符时夹爪只动一小段。`open_dist_m/close_dist_m` 退化为先验/回退；关掉则用固定 open/close 映射。日志会打印 `dist=Xmm range=[lo,hi]mm close=ratio`，可直接观察你的真实范围。
+**自适应量程**（`auto_range:=true`，默认开）：跟踪你实际捏合距离的 min/max（带 `auto_range_forget_s` 遗忘，双向适应），把当前距离映射到这个真实范围，用满夹爪行程——避免 `open_dist_m/close_dist_m` 与你实际手部范围不符时夹爪只动一小段。`open_dist_m/close_dist_m` 退化为先验/回退；关掉则用固定 open/close 映射。`log_interval_s` 默认 **0**（关）：不再每 2 秒打 `dist=… close=…` 状态行；需要时 `log_interval_s:=2.0`。
 
 **手柄 trigger 模拟量**（`controller_joy_topic` 非空时启用，`full_teleop` 默认设为 `quest3/{side}_controller_joy`）：订阅 Touch 手柄 `Joy`，取 `axes[trigger_axis]`（0=松开/张开 … 1=按下/合拢）作为夹爪闭合比。手柄 Joy 新鲜时优先用 trigger，否则回退到 pinch——同侧 Quest 手柄与裸手互斥，二者互补：握手柄时 trigger 控夹爪、裸手时捏合控夹爪。参数：`trigger_axis`(0)、`trigger_deadzone`(0.05)、`trigger_invert`(false)。日志 `src=trigger|pinch` 标明当前来源。

@@ -43,7 +43,7 @@ def _sensor_qos() -> QoSProfile:
     return QoSProfile(
         reliability=ReliabilityPolicy.BEST_EFFORT,
         history=HistoryPolicy.KEEP_LAST,
-        depth=50,
+        depth=1,
     )
 
 

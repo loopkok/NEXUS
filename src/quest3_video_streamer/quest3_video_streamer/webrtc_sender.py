@@ -46,6 +46,50 @@ except Exception:
     pass
 
 
+# ---------------------------------------------------------------------------
+# x264 preset patch.
+#
+# aiortc's H264Encoder sets tune=zerolatency but never sets x264 `preset`,
+# so libx264 runs its default "medium" — on Jetson-class ARM CPUs three
+# tracks at medium starve the whole process (实测：采集抽头被挤到个位数 fps，
+# 相机捕获线程同步掉速）。preset 只影响 CPU/压缩率权衡，不影响解码兼容性；
+# LAN + 3-12 Mbps 码率下 veryfast 与 medium 画质差异不可察觉。
+# 做法与上面的码率补丁一致：包一层 _encode_frame，codec 未建时先按
+# aiortc 原逻辑建 codec 但追加 preset。aiortc 内部结构若变则静默回退。
+# ---------------------------------------------------------------------------
+_X264_PRESET = "veryfast"
+
+try:
+    import aiortc.codecs.h264 as _h264_pres
+
+    _orig_h264_encode_frame = _h264_pres.H264Encoder._encode_frame
+
+    def _h264_encode_frame_with_preset(self, frame, force_keyframe=False):
+        if self.codec is None:
+            import fractions as _fractions
+
+            import av as _av
+
+            self.codec = _av.CodecContext.create("libx264", "w")
+            self.codec.width = frame.width
+            self.codec.height = frame.height
+            self.codec.bit_rate = self.target_bitrate
+            self.codec.pix_fmt = "yuv420p"
+            self.codec.framerate = _fractions.Fraction(_h264_pres.MAX_FRAME_RATE, 1)
+            self.codec.time_base = _fractions.Fraction(1, _h264_pres.MAX_FRAME_RATE)
+            self.codec.options = {
+                "level": "31",
+                "tune": "zerolatency",
+                "preset": _X264_PRESET,
+            }
+            self.codec.profile = "Baseline"
+        return _orig_h264_encode_frame(self, frame, force_keyframe)
+
+    _h264_pres.H264Encoder._encode_frame = _h264_encode_frame_with_preset
+except Exception:
+    pass
+
+
 def install_bitrate_diagnostics(verbose: bool = False) -> None:
     """Optionally log encoder target_bitrate changes and the first codec.bit_rate.
 
@@ -117,6 +161,16 @@ class VideoSenderStats:
     tracks: list[TrackStats] = None  # type: ignore[assignment]
 
 
+def scaled_size(src_w: int, src_h: int, max_width: int) -> tuple[int, int]:
+    """按 max_width 等比缩到偶数尺寸（yuv420p 要求）；不放大、不升级。"""
+    if max_width <= 0 or src_w <= max_width:
+        return src_w, src_h
+    w = max_width - (max_width % 2)
+    h = int(round(src_h * (w / src_w)))
+    h -= h % 2
+    return w, max(2, h)
+
+
 class _AdapterVideoTrack:
     """Bridges a source adapter into the aiortc track API.
 
@@ -124,6 +178,12 @@ class _AdapterVideoTrack:
     sends 2 fps black frames instead of camera frames.  This keeps the RTP
     stream (and the Quest panel) alive at negligible bandwidth without SDP
     renegotiation, and un-muting resumes the live feed instantly.
+
+    Optional push throttle (``push_fps`` / ``push_max_width``): 回传规格与
+    采集规格解耦——采集（collect tap）在 capture 线程侧拿全帧全速，而
+    WebRTC 软编码是 Jetson 上最大的 CPU 负载；给 Quest 看的画面可以降
+    分辨率/帧率而不影响录进数据集的内容。黑帧同样按降载尺寸生成，
+    保证整轨分辨率恒定（x264 context 不重建）。
 
     Sources are opened lazily: a track only calls ``source.start()`` on its
     first un-muted frame, so cameras that are gated off (or whose device is
@@ -143,12 +203,16 @@ class _AdapterVideoTrack:
         gate: Any = None,
         label: str = "",
         log: Callable[[str], None] | None = None,
+        push_fps: int = 0,
+        push_max_width: int = 0,
     ) -> None:
         self._source = source
-        self._fps = max(1, fps)
+        self._fps = max(1, min(fps, push_fps) if push_fps > 0 else fps)
         self._gate = gate
         self._label = label
         self._log = log or (lambda _msg: None)
+        fmt = source.get_format()
+        self._push_w, self._push_h = scaled_size(fmt.width, fmt.height, push_max_width)
         self._pts = 0
         self._time_base = fractions.Fraction(1, self._fps)
         self._started = False
@@ -178,7 +242,10 @@ class _AdapterVideoTrack:
                 await asyncio.sleep(self._RETRY_BACKOFF_S)
                 return self._new_black_frame()
         try:
-            return await self._source.next_frame()
+            frame = await self._source.next_frame()
+            if (frame.width, frame.height) != (self._push_w, self._push_h):
+                frame = frame.reformat(width=self._push_w, height=self._push_h)
+            return frame
         except Exception as exc:
             self._log(f"[track {self._label}] next_frame failed: {exc}; sending black")
             try:
@@ -190,14 +257,13 @@ class _AdapterVideoTrack:
             return self._new_black_frame()
 
     def _new_black_frame(self) -> Any:
-        """Fresh black frame at the source resolution (2 fps → cheap)."""
+        """Fresh black frame at the push resolution (2 fps → cheap)."""
         import av  # lazy: only needed once a track is actually muted
 
-        fmt = self._source.get_format()
-        frame = av.VideoFrame(fmt.width, fmt.height, "yuv420p")
+        frame = av.VideoFrame(self._push_w, self._push_h, "yuv420p")
         # Limited-range black: Y=16, U=V=128.
-        frame.planes[0].update(bytes([16]) * (fmt.width * fmt.height))
-        cw, ch = fmt.width // 2, fmt.height // 2
+        frame.planes[0].update(bytes([16]) * (self._push_w * self._push_h))
+        cw, ch = self._push_w // 2, self._push_h // 2
         frame.planes[1].update(bytes([128]) * (cw * ch))
         frame.planes[2].update(bytes([128]) * (cw * ch))
         return frame
@@ -219,6 +285,8 @@ class VideoWebRTCSender:
         on_local_ice_candidate: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         log_hook: Callable[[str], None] | None = None,
         gate: Any = None,
+        push_fps: int = 0,
+        push_max_width: int = 0,
     ) -> None:
         if not sources:
             raise ValueError("At least one video source is required.")
@@ -227,6 +295,9 @@ class VideoWebRTCSender:
         self._log_hook = log_hook
         # Optional runtime gate (StreamGate): muted tracks send 2 fps black.
         self._gate = gate
+        # 回传降载旋钮：0 = 不降载（保持源分辨率/帧率）。
+        self._push_fps = int(push_fps)
+        self._push_max_width = int(push_max_width)
         self._pc: Any = None
         self._created_at = monotonic()
         self._frames_sent = 0
@@ -432,19 +503,19 @@ class VideoWebRTCSender:
         self._track_frame_counts = [0] * len(self._sources)
         for idx, source in enumerate(self._sources):
             video_format = source.get_format()
-            track = AdapterTrack(
-                _AdapterVideoTrack(
-                    source, fps=video_format.fps,
-                    gate=self._gate, label=video_format.label,
-                    log=self._log,
-                ),
-                self, idx,
+            adapter = _AdapterVideoTrack(
+                source, fps=video_format.fps,
+                gate=self._gate, label=video_format.label,
+                log=self._log,
+                push_fps=self._push_fps, push_max_width=self._push_max_width,
             )
+            track = AdapterTrack(adapter, self, idx)
             self._pc.addTrack(track)
             self._track_info.append({"index": idx, "label": video_format.label, "id": getattr(track, "id", str(idx))})
             self._log(
                 f"added video track #{idx} label={video_format.label} "
                 f"{video_format.width}x{video_format.height}@{video_format.fps} "
+                f"-> push {adapter._push_w}x{adapter._push_h}@{adapter._fps} "
                 f"fov_h={video_format.fov_h_deg}"
             )
 

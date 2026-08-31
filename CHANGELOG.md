@@ -6,9 +6,21 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-08-31
 
+**E2E 延迟：QoS 只留最新帧**——腕位 / body / 关节状态 / 指令流改为 `BEST_EFFORT` `KEEP_LAST` **depth=1**。mocap 发布、teleop 订阅、driver/monitor 指令订阅对齐。旧 depth 10/20 会在 IK 跟不上时把旧腕位排队，表现为「手已经停了臂还在走」。Joy/头/hips/landmarks 同步改，避免 BEST_EFFORT 发布对不上 RELIABLE 订阅。
+
+**Web Launch 日志**——环形缓冲 500→**8000**，WS 实时推尾 **800** 行；新增 `GET /api/v1/logs` 拉全量。系统 tab 日志窗 240px→**70vh**，复制/下载。
+
+**运维清场 + 夹爪刷屏**——`jetson_teleop_start.sh` 强清补 `controller_start_gate`、`data_collect`、`keyboard_controller`、`ik_solver`。夹爪 `log_interval_s` 默认/yaml/launch 均 **0.0**，关掉每 2 秒一条的状态日志。
+
+**左臂 TCP 偏置撤回**——`tcp_offset` Y **−0.147 → 0**（与右腕一致）。此前为贴 Quest 左手视觉中心，实测不必。
+
+**数采段边界速率不为负**——writer 每段新建计数归零；`_prev_counts` 随段清零，delta 再 `max(0, …)`，避免下一段第一秒打出负 Hz。
+
 **数采防护体系 + launch 参数优先级修复**——`astral_data_collect` / `astral_web_monitor`。①launch 参数改空串默认 + OpaqueFunction：**yaml 成为唯一默认来源**，此前 launch 默认值（如 `arms` 默认 `left,right`）静默盖掉 yaml——"改了 yaml 却采出旧 schema"即此机制；CLI/预设显式传参仍可覆盖。②**domain 单例锁**：`/data_collect/control` 谁订阅谁开录是双份数据的根因（残留节点 + 再启动 = 双开同录）；节点对 `/tmp/astral_data_collect_domain{N}.lock` 取排他锁，第二个节点构造即拒绝，session 不同也不放过。③**段号原子占位**：mkdir 抢号撞号让位——老残留进程不持锁，段号互斥由文件系统原子性兜底（此前一个 start 双节点各写 000000/000001）。④**多节点红条**：web 按 `/data_collect/state` 发布者计数 >1 即提示残留。⑤**低帧率告警**：录制中参考相机实率 < dataset_fps/2 → state `low_fps_warning` + 日志节流 WARN + 卡片红条。⑥web 重启端点等旧进程真退出再启（单例锁窗口）。另修：cameras 逗号字符串曾被逐字符拆解；jpeg_quality 参数此前被静默忽略。
 
-**auto_scan MJPG 确定性优先（非帧率根因，实机已证伪带宽假设）**——`quest3_video_streamer`。MJPG/JPEG 提至 110 分消除平票依赖枚举序的不确定性。**实机验证**：d435i 彩色节点仅播 YUYV（无 MJPG 可优先）、三相机分属不同总线且 1080p YUYV 单跑满 30fps——采集低帧率非带宽问题；双订阅者收到完全相同帧集合证明丢失在 streamer 进程内部（抽头总共只发了那么多），根因定位中（已加捕获/tap 计数插桩）。`test_scan_mjpg.py` 保留作为确定性回归。
+**auto_scan MJPG 确定性优先（非帧率根因，实机已证伪带宽假设）**——`quest3_video_streamer`。MJPG/JPEG 提至 110 分消除平票依赖枚举序的不确定性。**实机验证**：d435i 彩色节点仅播 YUYV（无 MJPG 可优先）、三相机分属不同总线且 1080p YUYV 单跑满 30fps——采集低帧率非带宽问题；双订阅者收到完全相同帧集合证明丢失在 streamer 进程内部（抽头总共只发了那么多）。`test_scan_mjpg.py` 保留作为确定性回归。
+
+**低帧率根因定案与修复：WebRTC 软编码挤爆嵌入式 CPU**——`quest3_video_streamer`。插桩证据链：tap `publish=3.4ms`（DDS 无罪）、`encode=22.9ms@720p` 但吞吐仅 7.5/s 且 queue_full 43%（编码线程有活跑不动）、捕获线程进程内仅 19.5/16fps（单跑 30）——同进程三线程组互相饿死，主负载是 aiortc 三路 libx264 软编码（默认 medium preset）。修复两件套：① **x264 preset 补丁 veryfast**（aiortc 未设 preset 落 medium；veryfast 省 ~50-70% 编码 CPU，画质差异在 LAN 码率下不可察觉，解码兼容性不变）；② **回传降载旋钮** `push_max_width`/`push_fps`（yaml 默认 960/30 ≈ 编码像素 -59%）：track 级等比缩放到偶数尺寸 + 发送帧率上限，黑帧同尺寸保 x264 context 不重建；采集抽头走 capture 线程侧全帧全速不受影响——回传画质与数据集内容从此解耦。新增 `test_push_throttle.py`（8 例）。调参阶梯：960/30 → 960/15 → 采集时 mute 腕部轨（web 卡片，2fps 黑帧几乎免费）。
 
 **Web 数据采集卡片 + 独立泳道**——监控页顶部录制控制（开始/停/下一段/暂停/丢弃 + 任务文本）；数采 `LaunchManager` 与遥操预设解耦，互不挡启动。`/teleop/start` 订阅改 VOLATILE 才能收到 web 一次性触发。详见 8/28 VLA 条目补记。
 

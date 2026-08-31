@@ -56,10 +56,11 @@ from .rate_counter import RateRegistry, RateCounter
 
 
 def _qos_best_effort() -> QoSProfile:
+    """监控订阅：只留最新一帧，不在 DDS 队列里堆旧指令/腕位。"""
     return QoSProfile(
         reliability=ReliabilityPolicy.BEST_EFFORT,
         history=HistoryPolicy.KEEP_LAST,
-        depth=10,
+        depth=1,
     )
 
 

@@ -28,7 +28,7 @@ astral_arm_teleop_{left|right}                 # 进程并行
       urdf_numerical: 硬件约定 q_hw（Pinocchio LM）
   → SafetyFilter（关节限位 / 速度；与求解器同一约定）
   → flip_q（仅 analytic_dh）→ q_hw
-  → /{side}_arm/joint_commands             # 始终旧约定
+  → /{side}_arm/joint_commands             # 始终旧约定；BEST_EFFORT depth=1（只留最新帧）
       → 真机 astral_robot_control
       → 或仿真 astral_mujoco_sim（旧 MJCF，无 flip）
 ```

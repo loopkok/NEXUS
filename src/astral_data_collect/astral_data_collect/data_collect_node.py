@@ -438,6 +438,7 @@ class DataCollectNode(Node):
             for dq in (*self._stream_buf.values(), *self._cam_buf.values()):
                 dq.clear()
             self._drop_counts = {}
+        self._prev_counts = {}
         self._robot_writer = StreamDataWriter(
             os.path.join(self._episode_dir, ROBOT_H5), self._streams
         ).open()
@@ -562,12 +563,13 @@ class DataCollectNode(Node):
             cam_counts = (
                 self._camera_writer.counts() if self._camera_writer else {}
             )
+        # writer 每段新建（计数归零），delta 对段边界取 max(0,..) 防负速率
         prev = getattr(self, "_prev_counts", {})
         rates = {}
         for name, c in stream_counts.items():
-            rates[name] = round(c - prev.get(name, 0), 1)
+            rates[name] = round(max(0.0, c - prev.get(name, 0)), 1)
         for cam, c in cam_counts.items():
-            rates[f"cam:{cam}"] = round(c - prev.get(f"cam:{cam}", 0), 1)
+            rates[f"cam:{cam}"] = round(max(0.0, c - prev.get(f"cam:{cam}", 0)), 1)
         self._prev_counts = {
             **{k: v for k, v in stream_counts.items()},
             **{f"cam:{k}": v for k, v in cam_counts.items()},

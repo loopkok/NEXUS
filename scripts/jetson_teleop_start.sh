@@ -66,10 +66,14 @@ if [[ -n "$NODES" ]]; then
     echo "$NODES" | sed 's/^/      /'
     if confirm "强制清理这些节点进程？（No = 退出，手动排查后再启动）"; then
         pkill -f "astral_arm_teleop"      2>/dev/null || true
+        pkill -f "ik_solver"              2>/dev/null || true
         pkill -f "quest3_udp_mocap"       2>/dev/null || true
         pkill -f "quest3_video_streamer"  2>/dev/null || true
         pkill -f "pinch_gripper_node"     2>/dev/null || true
         pkill -f "head_teleop_node"       2>/dev/null || true
+        pkill -f "controller_start_gate"  2>/dev/null || true
+        pkill -f "data_collect"           2>/dev/null || true
+        pkill -f "keyboard_controller"    2>/dev/null || true
         pkill -f "wujihand"               2>/dev/null || true
         pkill -f "astral_web_monitor"     2>/dev/null || true
         pkill -f "astral_robot_driver"    2>/dev/null || true

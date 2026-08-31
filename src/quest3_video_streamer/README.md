@@ -175,6 +175,16 @@ ros2 topic echo --once /quest3_video_streamer/gate_state std_msgs/msg/String
 
 关闭：`collect_tap: false`。
 
+### 回传降载（嵌入式 CPU 保命旋钮）
+
+WebRTC 软编码（libx264）是嵌入式平台上本进程最大的 CPU 负载；三路全速全分辨率会把同进程的采集抽头/捕获线程饿死。两个 yaml 旋钮（`params.yaml`）把**给 Quest 看的画面**与**录进数据集的画面**解耦：
+
+- `push_max_width`（默认 960）：回传分辨率宽度上限，等比缩放；0 = 不降载。
+- `push_fps`（默认 30）：回传发送帧率上限；0 = 不降载。
+- x264 `preset` 已打补丁固定 `veryfast`（aiortc 默认 medium，ARM 上过重；只影响 CPU/压缩率，不影响解码兼容）。
+
+采集抽头在捕获线程侧拿**全帧全速原图**，以上降载不影响数据集内容。
+
 ### 帧率排障插桩
 
 采集激活时每 5 秒打两类 INFO 日志，定位帧丢在管线哪一段：

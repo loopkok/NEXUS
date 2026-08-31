@@ -61,11 +61,11 @@ from astral_robot_control.joint_layout import (
 
 
 def _sensor_data_qos() -> QoSProfile:
-    """BEST_EFFORT — match Wuji / teleop joint stream."""
+    """BEST_EFFORT depth=1 — 指令/状态只留最新帧，避免控制环吃到排队旧样本。"""
     return QoSProfile(
         reliability=ReliabilityPolicy.BEST_EFFORT,
         history=HistoryPolicy.KEEP_LAST,
-        depth=10,
+        depth=1,
     )
 
 
