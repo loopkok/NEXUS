@@ -48,6 +48,9 @@ from .config import (
     MOCAP_WRIST_TOPICS,
     IK_STATUS_TOPICS,
     MOCAP_EXPECTED_HZ,
+    DC_TOPIC_CONTROL,
+    DC_TOPIC_TASK,
+    DC_TOPIC_STATE,
 )
 from .rate_counter import RateRegistry, RateCounter
 
@@ -127,6 +130,20 @@ class MonitorNode(Node):
             String, VIDEO_TOPIC_GATE_STATE, self._on_video_gate_state, qos,
         )
         self._video_push_client: Any = None  # SetBool client, created lazily
+
+        # astral_data_collect bridge: control (reliable, volatile) + task text
+        # (latched) publishers, and a latched mirror of the recorder's state
+        # JSON (state/episode/elapsed/rates/dropped). None = recorder offline.
+        dc_ctrl_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        self._pub_dc_control = self.create_publisher(String, DC_TOPIC_CONTROL, dc_ctrl_qos)
+        self._pub_dc_task = self.create_publisher(String, DC_TOPIC_TASK, qos)
+        self._dc_state: dict[str, Any] | None = None
+        self._dc_state_ts: float = 0.0
+        self.create_subscription(String, DC_TOPIC_STATE, self._on_dc_state, qos)
         # Web preview: latest JPEG bytes per camera label + dynamic subscriptions
         # (created when gate_state reports the camera list).
         self._preview_jpeg: dict[str, bytes] = {}
@@ -305,6 +322,24 @@ class MonitorNode(Node):
         """Labels that have a preview subscription (i.e. known cameras)."""
         return list(self._preview_subs.keys())
 
+    # --- astral_data_collect bridge -----------------------------------------
+
+    def _on_dc_state(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if isinstance(data, dict):
+            with self._lock:
+                self._dc_state = data
+                self._dc_state_ts = time.time()
+
+    def publish_dc_control(self, cmd: str) -> None:
+        self._pub_dc_control.publish(String(data=cmd))
+
+    def publish_dc_task(self, text: str) -> None:
+        self._pub_dc_task.publish(String(data=text))
+
     # --- snapshot read (web thread) ---------------------------------------
     def snapshot(self) -> dict[str, Any]:
         now = time.time()
@@ -331,12 +366,18 @@ class MonitorNode(Node):
         mocap_rates = self._mocap_rates.snapshot()
         with self._lock:
             video_gate = dict(self._video_gate_state) if self._video_gate_state else None
+            dc_state = dict(self._dc_state) if self._dc_state else None
+            dc_state_ts = self._dc_state_ts
+        if dc_state is not None:
+            # 采集节点状态龄期：stale 说明节点可能已死（latched 消息会残留）
+            dc_state["stale"] = (now - dc_state_ts) > STALE_THRESHOLD_S
         return {
             "joints": joints,
             "rates_hz": cmd_rates,
             "state_rates_hz": state_rates,
             "health": self._health_summary(joints, cmd_rates, state_rates, now),
             "video_gate": video_gate,
+            "data_collect": dc_state,
             "latency": self._latency_summary(latency_raw, mocap_rates, now),
         }
 

@@ -35,3 +35,13 @@ class VideoPushRequest(BaseModel):
 class VideoCamerasRequest(BaseModel):
     # Active camera label subset; empty list = all configured cameras.
     cameras: list[str] = []
+
+
+class CollectControlRequest(BaseModel):
+    # 录制命令：start/stop/discard/next/pause/resume（白名单在后端校验）
+    cmd: str
+
+
+class CollectTaskRequest(BaseModel):
+    # 任务文本（应用于下一段 episode，latched）
+    text: str

@@ -33,6 +33,8 @@ from .launch_manager import (
 from .monitor_node import get_node, init_node, shutdown_node
 from .schemas import (
     ApiEnvelope,
+    CollectControlRequest,
+    CollectTaskRequest,
     PresetInfo,
     StartRequest,
     VideoCamerasRequest,
@@ -42,6 +44,10 @@ from .schemas import (
 
 # --- globals ---------------------------------------------------------------
 _launch_mgr = LaunchManager()
+# 数采独立泳道：与遥操预设生命周期完全解耦（用户决策：web 单独启停）。
+# 纯订阅者、不抢 joint_commands，start 时跳过孤儿检测；遥操侧孤儿检测
+# 对 astral_data_collect 命令行有对称豁免（launch_manager._find_orphan）。
+_collect_mgr = LaunchManager(lane_name="数采")
 _presets = load_presets()
 _web_dist = Path(os.environ.get("ASTRAL_WEB_MONITOR_DIST", ""))
 
@@ -65,6 +71,14 @@ def _build_ui_state() -> dict[str, Any]:
         "health": ros.get("health", {"overall": "ok", "entities": {}}),
         "latency": ros.get("latency", {"stages": {}}),
         "video_gate": ros.get("video_gate"),
+        "data_collect": ros.get("data_collect"),
+        "collect_launch": {
+            "state": _collect_mgr.state,
+            "preset": _collect_mgr.preset,
+            "uptime_s": _collect_mgr.uptime_s(),
+            "pid": _collect_mgr.pid,
+            "log_tail": _collect_mgr.log_tail()[-50:],
+        },
         "log_tail": _launch_mgr.log_tail()[-50:],
     }
 
@@ -454,6 +468,85 @@ async def video_snapshot(label: str) -> Response:
 
 
 # --- WebSocket -------------------------------------------------------------
+# --- data collection (astral_data_collect) --------------------------------
+# 控制面是纯话题接口：采集节点不在本监控的启动管理内也能工作（CLI 启动同样
+# 收得到命令）；节点离线时命令会无人接收，前端靠 state 徽标提示在线性。
+
+
+@app.post("/api/v1/collect/control")
+async def collect_control(req: CollectControlRequest) -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    cmd = req.cmd.strip().lower()
+    if cmd not in config.DC_COMMANDS:
+        raise HTTPException(
+            status_code=400, detail=f"未知命令 {cmd!r}，可选 {config.DC_COMMANDS}"
+        )
+    node.publish_dc_control(cmd)
+    return ApiEnvelope(ok=True, message=f"已发送录制命令: {cmd}")
+
+
+@app.post("/api/v1/collect/task")
+async def collect_task(req: CollectTaskRequest) -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="任务文本不能为空")
+    node.publish_dc_task(text)
+    return ApiEnvelope(ok=True, message=f"已设置下一段任务: {text}")
+
+
+# 数采节点泳道（独立 LaunchManager，与遥操预设生命周期解耦）。
+# 预设来源：presets.yaml 里 package=astral_data_collect 的条目（单一可调来源）。
+
+
+def _collect_preset():
+    for p in _presets.values():
+        if p.package == "astral_data_collect":
+            return p
+    return None
+
+
+@app.post("/api/v1/collect/launch/start")
+async def collect_launch_start() -> ApiEnvelope:
+    preset = _collect_preset()
+    if preset is None:
+        raise HTTPException(
+            status_code=404, detail="presets.yaml 中没有 package=astral_data_collect 的预设"
+        )
+    ok, msg = _collect_mgr.start(preset, check_orphan=False)
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message=msg)
+
+
+@app.post("/api/v1/collect/launch/stop")
+async def collect_launch_stop() -> ApiEnvelope:
+    ok, msg = _collect_mgr.stop()
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message=msg)
+
+
+@app.post("/api/v1/collect/launch/restart")
+async def collect_launch_restart() -> ApiEnvelope:
+    """重启数采节点——改了 data_collect.yaml 的 schema 配置后用它生效。"""
+    preset = _collect_preset()
+    if preset is None:
+        raise HTTPException(
+            status_code=404, detail="presets.yaml 中没有 package=astral_data_collect 的预设"
+        )
+    _collect_mgr.stop()
+    await asyncio.sleep(1.0)
+    ok, msg = _collect_mgr.start(preset, check_orphan=False)
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message=f"已重启数采节点: {preset.name}")
+
+
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(websocket: WebSocket):
     await _conn.connect(websocket)

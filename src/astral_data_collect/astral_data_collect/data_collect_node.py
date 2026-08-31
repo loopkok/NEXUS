@@ -73,6 +73,16 @@ _LATCHED_QOS = QoSProfile(
     depth=1,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
+# 遥操事件订阅用 VOLATILE：DDS 订阅端 durability 只能 <= 发布端，VOLATILE
+# 订阅可同收 latched 与 volatile 两种发布者（/teleop/start 在 web_monitor 里
+# 是刻意的 volatile 一次性触发，latched 订阅会完全不兼容收不到）。代价仅是
+# 收不到订阅前的历史 latched 值——事件本来就是跃迁语义，影响可忽略。
+_EVENT_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10,
+    durability=DurabilityPolicy.VOLATILE,
+)
 
 # 遥操作事件话题 → 事件名（latched Bool，记录跃迁用于 armed 覆盖率统计）
 _TELEOP_EVENTS = {
@@ -212,7 +222,7 @@ class DataCollectNode(Node):
             )
         for topic, event in _TELEOP_EVENTS.items():
             self.create_subscription(
-                Bool, topic, self._mk_event_cb(event), _LATCHED_QOS
+                Bool, topic, self._mk_event_cb(event), _EVENT_QOS
             )
 
     def _accepting(self) -> bool:

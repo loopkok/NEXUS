@@ -76,7 +76,8 @@ def load_presets() -> dict[str, Preset]:
 class LaunchManager:
     """Owns the single ros2 launch subprocess and its state label."""
 
-    def __init__(self, on_log: Callable[[str], None] | None = None) -> None:
+    def __init__(self, on_log: Callable[[str], None] | None = None, lane_name: str = "遥操作") -> None:
+        self._lane_name = lane_name
         self._lock = threading.Lock()
         self._proc: subprocess.Popen | None = None
         self._state = STOPPED
@@ -118,12 +119,17 @@ class LaunchManager:
             return list(self._log_lines)
 
     # --- control ------------------------------------------------------------
-    def start(self, preset: Preset) -> tuple[bool, str]:
+    def start(self, preset: Preset, *, check_orphan: bool = True) -> tuple[bool, str]:
+        """启动预设进程。
+
+        check_orphan=False 用于数采这类纯订阅者泳道：它不与任何遥操栈抢
+        joint_commands，无需因别的 ros2 launch 在跑而拒绝启动。
+        """
         with self._lock:
             if self._proc and self._proc.poll() is None:
-                return False, "已有遥操作进程在运行"
+                return False, f"已有{self._lane_name}进程在运行"
             # Orphan detection: refuse if a stray ros2 launch matches our backend.
-            if _find_orphan():
+            if check_orphan and _find_orphan():
                 return False, "检测到残留的 ros2 launch 进程，请先停止"
             try:
                 self._proc = subprocess.Popen(
@@ -213,7 +219,11 @@ class LaunchManager:
 
 
 def _find_orphan() -> bool:
-    """Return True if a ros2 launch process exists that we did not start."""
+    """Return True if a ros2 launch process exists that we did not start.
+
+    astral_data_collect 的 launch 是监控自己的数采泳道（纯订阅者，永不与
+    遥操栈冲突），显式豁免——否则数采泳道运行时会反过来挡住遥操预设启动。
+    """
     pattern = re.compile(BACKEND_MATCH)
     try:
         out = subprocess.run(
@@ -223,6 +233,9 @@ def _find_orphan() -> bool:
     except Exception:
         return False
     for line in out.splitlines():
-        if pattern.search(line) and "astral_web_monitor" not in line:
-            return True
+        if not pattern.search(line):
+            continue
+        if "astral_web_monitor" in line or "astral_data_collect" in line:
+            continue
+        return True
     return False

@@ -40,6 +40,29 @@ export interface VideoGateState {
   active: string[]
 }
 
+// 数采节点泳道（独立于遥操预设的 LaunchManager）状态。
+export interface CollectLaunchInfo {
+  state: TeleopState
+  preset: string
+  uptime_s: number
+  pid: number | null
+  log_tail?: string[]
+}
+
+// astral_data_collect 的 /data_collect/state latched JSON 镜像。
+// stale 由 monitor 后端加注：latched 消息在节点死后仍残留，靠龄期判活。
+export interface DataCollectState {
+  state: 'IDLE' | 'RECORDING' | 'PAUSED' | 'SAVING'
+  session: string
+  episode_index: number
+  elapsed_s: number
+  task_next: string
+  samples_per_s: Record<string, number>
+  dropped: Record<string, number>
+  schema?: Record<string, unknown>
+  stale?: boolean
+}
+
 export interface UiState {
   type: 'ui_state'
   ts: number
@@ -55,6 +78,8 @@ export interface UiState {
   health?: HealthSummary
   latency?: LatencySummary
   video_gate?: VideoGateState | null
+  data_collect?: DataCollectState | null
+  collect_launch?: CollectLaunchInfo
   log_tail: string[]
 }
 

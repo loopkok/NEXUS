@@ -52,7 +52,13 @@ def _launch_setup(context, *args, **kwargs):
     if urdf_path:
         teleop_extra["urdf_path"] = urdf_path
 
-    mocap_extra = {"arm_side": "both"}
+    arm_side = _opt(context, "arm_side").lower() or "both"
+    if arm_side not in ("left", "right", "both"):
+        raise RuntimeError("arm_side must be left|right|both")
+    want_l = arm_side in ("left", "both")
+    want_r = arm_side in ("right", "both")
+
+    mocap_extra = {"arm_side": arm_side}
     protocol = _opt(context, "protocol")
     if protocol:
         mocap_extra["protocol"] = protocol
@@ -73,45 +79,53 @@ def _launch_setup(context, *args, **kwargs):
             )
         )
 
-    actions.extend(
-        [
-            Node(
-                package="astral_arm_teleop",
-                executable="ik_solver_node",
-                name="ik_solver_left",
-                output="screen",
-                parameters=[{"arm_side": "left", "solver_type": "analytic_dh"}],
-            ),
-            Node(
-                package="astral_arm_teleop",
-                executable="ik_solver_node",
-                name="ik_solver_right",
-                output="screen",
-                parameters=[{"arm_side": "right", "solver_type": "analytic_dh"}],
-            ),
-            Node(
-                package="astral_arm_teleop",
-                executable="astral_arm_teleop_node",
-                name="astral_arm_teleop_left",
-                output="screen",
-                parameters=[cfg_l, teleop_extra],
-            ),
-            Node(
-                package="astral_arm_teleop",
-                executable="astral_arm_teleop_node",
-                name="astral_arm_teleop_right",
-                output="screen",
-                parameters=[cfg_r, teleop_extra],
-            ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(drivers_launch),
-                condition=IfCondition(LaunchConfiguration("with_driver")),
-                launch_arguments={
-                    "dry_run": LaunchConfiguration("dry_run"),
-                    "control_board_ip": LaunchConfiguration("control_board_ip"),
-                }.items(),
-            ),
-        ]
+    if want_l:
+        actions.extend(
+            [
+                Node(
+                    package="astral_arm_teleop",
+                    executable="ik_solver_node",
+                    name="ik_solver_left",
+                    output="screen",
+                    parameters=[{"arm_side": "left", "solver_type": "analytic_dh"}],
+                ),
+                Node(
+                    package="astral_arm_teleop",
+                    executable="astral_arm_teleop_node",
+                    name="astral_arm_teleop_left",
+                    output="screen",
+                    parameters=[cfg_l, teleop_extra],
+                ),
+            ]
+        )
+    if want_r:
+        actions.extend(
+            [
+                Node(
+                    package="astral_arm_teleop",
+                    executable="ik_solver_node",
+                    name="ik_solver_right",
+                    output="screen",
+                    parameters=[{"arm_side": "right", "solver_type": "analytic_dh"}],
+                ),
+                Node(
+                    package="astral_arm_teleop",
+                    executable="astral_arm_teleop_node",
+                    name="astral_arm_teleop_right",
+                    output="screen",
+                    parameters=[cfg_r, teleop_extra],
+                ),
+            ]
+        )
+    actions.append(
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(drivers_launch),
+            condition=IfCondition(LaunchConfiguration("with_driver")),
+            launch_arguments={
+                "dry_run": LaunchConfiguration("dry_run"),
+                "control_board_ip": LaunchConfiguration("control_board_ip"),
+            }.items(),
+        )
     )
     return actions
 
@@ -125,6 +139,11 @@ def generate_launch_description() -> LaunchDescription:
                 description="Start quest3_udp_mocap (false when a parent launch owns it)",
             ),
             DeclareLaunchArgument("dry_run", default_value="false"),
+            DeclareLaunchArgument(
+                "arm_side",
+                default_value="both",
+                description="left | right | both — which arm teleop nodes to start",
+            ),
             DeclareLaunchArgument(
                 "protocol",
                 default_value="",

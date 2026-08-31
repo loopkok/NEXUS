@@ -1,0 +1,282 @@
+// 数据采集卡片：astral_data_collect 的 web 控制面。
+// 后端桥 /data_collect/{control,task} 话题 + 镜像 latched /data_collect/state。
+// 采集节点即使由 CLI 启动也能被控制（纯话题接口），offline/stale 仅作提示。
+import { useState } from 'react'
+import type { CollectLaunchInfo, DataCollectState } from '../types'
+import { api } from '../api/client'
+import { pushToast } from '../hooks/useToast'
+
+interface Props {
+  dc: DataCollectState | null
+  launch: CollectLaunchInfo | null
+}
+
+const STATE_META: Record<string, { label: string; color: string }> = {
+  IDLE: { label: '空闲', color: '#6b7280' },
+  RECORDING: { label: '● 录制中', color: '#dc2626' },
+  PAUSED: { label: '已暂停', color: '#f59e0b' },
+  SAVING: { label: '保存中', color: '#3b82f6' },
+}
+
+export function DataCollectCard({ dc, launch }: Props) {
+  const [task, setTask] = useState('')
+  const online = dc != null && !dc.stale
+  const st = dc?.state ?? 'IDLE'
+  const meta = STATE_META[st] ?? STATE_META.IDLE
+  const dropped = Object.entries(dc?.dropped ?? {}).filter(([, v]) => v > 0)
+  const stateDim = Number(dc?.schema?.state_dim ?? 0) || null
+  // 节点进程状态（web 泳道；CLI 启动的节点 launch 为 stopped 但 online=true）
+  const launchState = launch?.state ?? 'stopped'
+  const nodeRunning = launchState === 'running' || launchState === 'starting'
+
+  async function send(cmd: string, okMsg: string) {
+    const res = await api.collectControl(cmd)
+    pushToast(res.ok ? okMsg : res.message, res.ok ? 'success' : 'error')
+  }
+
+  async function launchOp(fn: () => Promise<{ ok: boolean; message: string }>) {
+    const res = await fn()
+    pushToast(res.message, res.ok ? 'success' : 'error')
+  }
+
+  async function sendTask() {
+    const text = task.trim()
+    if (!text) return
+    const res = await api.collectTask(text)
+    if (res.ok) {
+      pushToast(`下一段任务: ${text}`, 'success')
+      setTask('')
+    } else {
+      pushToast(res.message, 'error')
+    }
+  }
+
+  function discard() {
+    if (!confirm('确认丢弃当前段？录制数据将被删除（段号会被下一段复用）。')) return
+    void send('discard', '已丢弃当前段')
+  }
+
+  return (
+    <div style={cardStyle}>
+      <div style={headStyle}>
+        <span style={titleStyle}>数据采集</span>
+        <span style={{ ...badgeStyle, background: meta.color }}>{meta.label}</span>
+        {dc != null && (
+          <span style={dimStyle}>
+            {dc.session} · 段 #{String(dc.episode_index).padStart(6, '0')} ·{' '}
+            {dc.elapsed_s.toFixed(1)}s{stateDim ? ` · state ${stateDim} 维` : ''}
+          </span>
+        )}
+        {dc != null && dc.stale && <span style={warnStyle}>状态超时，节点可能已退出</span>}
+        <div style={spacer} />
+        {/* 节点进程控制：独立泳道，与遥操预设生命周期解耦 */}
+        <span style={nodeChipStyle(launchState)}>
+          节点: {launchState === 'running' ? '运行中' : launchState === 'starting' ? '启动中' : '已停止'}
+          {launch?.preset ? ` (${launch.preset})` : ''}
+        </span>
+        {!nodeRunning ? (
+          <button style={btn('#4b5563')} onClick={() => void launchOp(api.collectLaunchStart)}>
+            启动节点
+          </button>
+        ) : (
+          <>
+            <button
+              style={btn('#4b5563')}
+              title="改了 data_collect.yaml 的 schema 配置后重启生效"
+              onClick={() => void launchOp(api.collectLaunchRestart)}
+            >
+              重启节点
+            </button>
+            <button
+              style={dangerBtn}
+              disabled={st === 'RECORDING' || st === 'PAUSED'}
+              title={st === 'RECORDING' || st === 'PAUSED' ? '录制中不能停节点（先停止保存或丢弃）' : ''}
+              onClick={() => void launchOp(api.collectLaunchStop)}
+            >
+              停止节点
+            </button>
+          </>
+        )}
+      </div>
+
+      {!online && (
+        <div style={offlineStyle}>
+          采集节点离线——点右上「启动节点」（独立泳道，不占用遥操预设），或命令行
+          <code style={codeStyle}>ros2 launch astral_data_collect data_collect.launch.py</code>
+          。schema 硬件配置在 <code style={codeStyle}>config/data_collect.yaml</code>，
+          改动后点「重启节点」生效。
+        </div>
+      )}
+
+      <div style={rowStyle}>
+        <button
+          style={btn('#22c55e')}
+          disabled={!online || st !== 'IDLE'}
+          title="开始新段（s）"
+          onClick={() => void send('start', '开始录制')}
+        >
+          开始录制
+        </button>
+        <button
+          style={btn('#3b82f6')}
+          disabled={!online || (st !== 'RECORDING' && st !== 'PAUSED')}
+          title="结束并保存当前段（q）"
+          onClick={() => void send('stop', '已保存当前段')}
+        >
+          停止保存
+        </button>
+        <button
+          style={btn('#3b82f6')}
+          disabled={!online || (st !== 'RECORDING' && st !== 'PAUSED')}
+          title="保存当前段并立即开新段（n）"
+          onClick={() => void send('next', '已保存，开始新段')}
+        >
+          下一段
+        </button>
+        {st === 'PAUSED' ? (
+          <button
+            style={btn('#f59e0b')}
+            disabled={!online}
+            onClick={() => void send('resume', '已继续录制')}
+          >
+            继续
+          </button>
+        ) : (
+          <button
+            style={btn('#f59e0b')}
+            disabled={!online || st !== 'RECORDING'}
+            title="暂停写盘（p），数据不入缓冲"
+            onClick={() => void send('pause', '已暂停')}
+          >
+            暂停
+          </button>
+        )}
+        <button
+          style={dangerBtn}
+          disabled={!online || (st !== 'RECORDING' && st !== 'PAUSED')}
+          title="丢弃当前段（d），文件删除"
+          onClick={discard}
+        >
+          丢弃
+        </button>
+
+        <div style={taskWrap}>
+          <input
+            style={inputStyle}
+            value={task}
+            placeholder="下一段任务文本（如：把方块放进盒子）"
+            disabled={!online}
+            onChange={(e) => setTask(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void sendTask()}
+          />
+          <button style={btn('#4b5563')} disabled={!online || !task.trim()} onClick={() => void sendTask()}>
+            设定任务
+          </button>
+        </div>
+      </div>
+
+      {dc != null && (
+        <div style={statsStyle}>
+          {dc.task_next && (
+            <span style={chipStyle}>
+              下段任务: <b>{dc.task_next}</b>
+            </span>
+          )}
+          {Object.entries(dc.samples_per_s).map(([k, v]) => (
+            <span key={k} style={chipStyle}>
+              {k}: <b>{v.toFixed(0)}</b>/s
+            </span>
+          ))}
+          {dropped.length > 0 && (
+            <span style={dropChipStyle}>
+              掉帧: {dropped.map(([k, v]) => `${k}×${v}`).join(' ')}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const cardStyle: React.CSSProperties = {
+  background: '#1f2937',
+  borderRadius: '8px',
+  padding: '12px 14px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '10px',
+}
+const headStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }
+const spacer: React.CSSProperties = { flex: 1 }
+const nodeChipStyle = (launchState: string): React.CSSProperties => ({
+  background: launchState === 'running' ? '#14532d' : '#374151',
+  color: launchState === 'running' ? '#86efac' : '#9ca3af',
+  borderRadius: '6px',
+  padding: '3px 10px',
+  fontSize: '12px',
+})
+const titleStyle: React.CSSProperties = { color: '#e5e7eb', fontWeight: 700, fontSize: '14px' }
+const badgeStyle: React.CSSProperties = {
+  color: 'white',
+  borderRadius: '6px',
+  padding: '2px 10px',
+  fontSize: '12px',
+  fontWeight: 700,
+}
+const dimStyle: React.CSSProperties = { color: '#9ca3af', fontSize: '12px' }
+const warnStyle: React.CSSProperties = { color: '#f59e0b', fontSize: '12px' }
+const offlineStyle: React.CSSProperties = { color: '#9ca3af', fontSize: '13px', lineHeight: 1.7 }
+const codeStyle: React.CSSProperties = {
+  background: '#111827',
+  borderRadius: '4px',
+  padding: '1px 6px',
+  marginLeft: '6px',
+  fontSize: '12px',
+}
+const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }
+const taskWrap: React.CSSProperties = { display: 'flex', gap: '8px', flex: 1, minWidth: '260px' }
+const inputStyle: React.CSSProperties = {
+  flex: 1,
+  background: '#111827',
+  border: '1px solid #374151',
+  borderRadius: '6px',
+  color: '#e5e7eb',
+  padding: '7px 10px',
+  fontSize: '13px',
+  outline: 'none',
+}
+const statsStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '8px',
+  fontSize: '12px',
+  color: '#9ca3af',
+}
+const chipStyle: React.CSSProperties = { background: '#374151', padding: '3px 10px', borderRadius: '6px' }
+const dropChipStyle: React.CSSProperties = {
+  background: '#7f1d1d',
+  color: '#fecaca',
+  padding: '3px 10px',
+  borderRadius: '6px',
+  fontWeight: 700,
+}
+const btn = (color: string): React.CSSProperties => ({
+  background: color,
+  color: 'white',
+  border: 'none',
+  borderRadius: '6px',
+  padding: '7px 14px',
+  fontSize: '13px',
+  fontWeight: 600,
+  cursor: 'pointer',
+})
+const dangerBtn: React.CSSProperties = {
+  background: 'transparent',
+  color: '#f87171',
+  border: '1px solid #f87171',
+  borderRadius: '6px',
+  padding: '7px 14px',
+  fontSize: '13px',
+  fontWeight: 600,
+  cursor: 'pointer',
+}

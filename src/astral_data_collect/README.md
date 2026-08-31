@@ -31,7 +31,7 @@ streamer 抽头 ┘     ▲                    robot_data.h5 + camera_data.h5 + 
 | `end_effector_left/right` | `gripper` | 左右末端：`gripper` / `wuji` / `none`（跟随所属臂，臂未启用不生效） |
 | `include_waist` | `false` | 腰 2 维（来自 `/astral/joint_states[14:16]`） |
 | `include_head` | `false` | 头 2 维（body_state[16:18]，无 body 时回退 `/head/joint_states`） |
-| `cameras` | `[d435i, wrist_left, wrist_right]` | 相机 label，须与 streamer 实际生效值一致（auto_scan 下是 `videoN`，用 `ros2 topic list \| grep collect` 核对）；**第一个 = 对齐参考相机**（episode 区间由其首尾帧界定） |
+| `cameras` | `[d435i, wrist_left, wrist_right]` | 相机 label，须与 streamer 实际生效值一致；**第一个 = 对齐参考相机**（episode 区间由其首尾帧界定）。auto_scan 下 label 是 `videoN`——直接把 d435i 那路的 videoN 写第一个即可；**videoN 编号不稳定（重启/重插会重排），每次开录前在 web 视频卡片（sysfs 名含 RealSense）或 `gate_state` 核对一次** |
 | `dataset_fps` | `30` | 对齐网格与 LeRobot fps |
 | `action_source` | `next_state` | `next_state`：action[t]=state[t+1]；`command`：指令流采样 |
 | `hold_frames` | `10` | 对齐时末尾追加的保持帧 |
@@ -55,6 +55,11 @@ ros2 launch astral_data_collect data_collect.launch.py \
 # 终端 2：键盘（也可只发话题，见下）
 ros2 run astral_data_collect keyboard_controller
 ```
+
+**web 端操作（推荐）**：`astral_web_monitor`「系统」tab 启动 **Data collect** 预设
+（或 CLI 启动节点均可），「监控」tab 顶部的**数据采集卡片**提供完整控制：
+开始/停止保存/下一段/暂停继续/丢弃按钮 + 下一段任务文本 + 实时状态徽标与流率。
+三种控制面（web 卡片 / 键盘 / 话题）完全等价，可混用。
 
 热键：`s` 开始 / `q` 停止保存 / `d` 丢弃当前段 / `n` 保存并开新段 /
 `p` 暂停继续 / `t` 输入下一段任务文本 / `ESC` 退出键盘（不影响采集）。

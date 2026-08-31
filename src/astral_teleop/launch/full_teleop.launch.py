@@ -30,8 +30,10 @@ Usage:
     with_arm_driver:=true with_hand_driver:=false \\
     right_hand_source:=gripper with_gripper:=true
 
-  # Without video return
-  ros2 launch astral_teleop full_teleop.launch.py ... with_video:=false
+  # Left arm + left gripper only (no right-arm teleop)
+  ros2 launch astral_teleop full_teleop.launch.py \\
+    with_arm_driver:=true with_hand_driver:=false \\
+    right_hand_source:=none with_gripper:=true arm_side:=left
 """
 
 from __future__ import annotations
@@ -105,8 +107,12 @@ def _setup(context, *args, **kwargs):
             retarget_pkg, "config", "retarget_wuji_lib_quest3_right.yaml"
         )
 
+    arm_side = _opt(context, "arm_side").lower() or "both"
+    if arm_side not in ("left", "right", "both"):
+        raise RuntimeError("arm_side must be left|right|both")
+
     mocap_extra = {
-        "arm_side": "both",
+        "arm_side": arm_side,
         "viz": False,
         "landmark_preprocess": "raw",
         "enable_xhand_pinky_adapt": False,
@@ -173,6 +179,7 @@ def _setup(context, *args, **kwargs):
             "protocol": protocol,
             "convert_to_robot": convert,
             "require_start_signal": _opt(context, "require_start_signal"),
+            "arm_side": _opt(context, "arm_side") or "both",
         }.items(),
     )
 
@@ -332,6 +339,11 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "control_board_ip",
                 default_value=os.environ.get("ASTRAL_BOARD_IP", "192.168.10.2"),
+            ),
+            DeclareLaunchArgument(
+                "arm_side",
+                default_value="both",
+                description="left | right | both — which arm teleop nodes to start",
             ),
             DeclareLaunchArgument("protocol", default_value=""),
             DeclareLaunchArgument("convert_to_robot", default_value=""),

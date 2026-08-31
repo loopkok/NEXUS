@@ -1,5 +1,5 @@
 // Normalise the raw ui_state frame into a camelCase view model.
-import type { UiState } from '../types'
+import type { CollectLaunchInfo, DataCollectState, UiState } from '../types'
 
 export interface NormalisedJoint {
   values: number[]
@@ -37,6 +37,8 @@ export interface NormalisedState {
     }>
   }
   videoGate: { pushEnabled: boolean; configured: string[]; active: string[] } | null
+  dataCollect: DataCollectState | null
+  collectLaunch: CollectLaunchInfo | null
   logTail: string[]
 }
 
@@ -90,6 +92,8 @@ export function mapUiState(msg: UiState, now: number = Date.now() / 1000): Norma
           active: msg.video_gate.active ?? [],
         }
       : null,
+    dataCollect: msg.data_collect ?? null,
+    collectLaunch: msg.collect_launch ?? null,
     logTail: msg.log_tail,
   }
 }

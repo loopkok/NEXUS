@@ -34,6 +34,11 @@ ros2 launch astral_teleop full_teleop.launch.py \
 ros2 launch astral_teleop full_teleop.launch.py \
   with_arm_driver:=true with_hand_driver:=false \
   right_hand_source:=gripper with_gripper:=true
+
+# 单左臂 + 左夹爪（不启动右臂遥操）
+ros2 launch astral_teleop full_teleop.launch.py \
+  with_arm_driver:=true with_hand_driver:=false \
+  right_hand_source:=none with_gripper:=true arm_side:=left
 ```
 
 不要再单独起 `astral_dual_arm_teleop` / `wujihand_real_pipeline`（会抢 mocap 或 `joint_commands`）。

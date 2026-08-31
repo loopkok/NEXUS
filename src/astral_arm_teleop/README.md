@@ -229,6 +229,7 @@ source install/setup.bash
 ros2 launch astral_arm_teleop astral_dual_arm_teleop.launch.py dry_run:=true
 ros2 launch astral_arm_teleop astral_dual_arm_teleop.launch.py \
   with_driver:=true control_board_ip:=192.168.10.2
+# 单左臂：arm_side:=left（right 对称）。整机左臂+夹爪见 astral_teleop arm_side:=left
 # 纯臂：不含夹爪 / 灵巧手。整机编排见 astral_teleop/full_teleop.launch.py
 
 # 仿真管线（solver / protocol 见 yaml，默认 geometric + tcp_wired）

@@ -141,6 +141,15 @@ VIDEO_TOPIC_GATE_STATE = f"/{VIDEO_NODE}/gate_state"
 # Per-camera JPEG preview topics published by the streamer (CompressedImage).
 VIDEO_TOPIC_PREVIEW = f"/{VIDEO_NODE}/preview"  # + "/{label}"
 
+# --- astral_data_collect（VLA 数据采集）-------------------------------------
+# 录制控制（String 命令：start/stop/discard/next/pause/resume）+ 任务文本
+# （latched，应用于下一段）+ 状态镜像（latched JSON，含状态/段号/时长/流率）。
+DC_TOPIC_CONTROL = "/data_collect/control"
+DC_TOPIC_TASK = "/data_collect/task"
+DC_TOPIC_STATE = "/data_collect/state"
+# 允许的录制命令（web 端按钮白名单，防注入任意字符串）
+DC_COMMANDS = ("start", "stop", "discard", "next", "pause", "resume")
+
 # --- Orphan process detection ----------------------------------------------
 # Regex fragment matched against the full command line of running processes
 # to detect a leftover teleop launch before starting a new one.

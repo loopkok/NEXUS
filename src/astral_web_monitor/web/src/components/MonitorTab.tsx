@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type { NormalisedState } from '../lib/mapUiState'
 import { JointPanel } from './JointPanel'
 import { ChartPanel } from './ChartPanel'
+import { DataCollectCard } from './DataCollectCard'
 import { getSamples, subscribeHistory } from '../hooks/historyStore'
 
 interface Props {
@@ -31,6 +32,7 @@ export function MonitorTab({ state }: Props) {
 
   return (
     <div style={wrapStyle}>
+      <DataCollectCard dc={state?.dataCollect ?? null} launch={state?.collectLaunch ?? null} />
       <div style={gridStyle}>
         <JointPanel title="左臂 (7-DoF)" joint={j.left_arm} rateHz={rates.left_arm_cmd} />
         <JointPanel title="右臂 (7-DoF)" joint={j.right_arm} rateHz={rates.right_arm_cmd} />

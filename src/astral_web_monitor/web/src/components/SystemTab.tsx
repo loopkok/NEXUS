@@ -15,7 +15,9 @@ interface Props {
 
 export function SystemTab({ state, presets, onAction }: Props) {
   const [selected, setSelected] = useState('')
-  const eff = selected || presets[0]?.name || ''
+  // 数采预设走独立泳道（监控 tab 卡片上的节点启停），不占遥操主泳道。
+  const teleopPresets = presets.filter((p) => p.package !== 'astral_data_collect')
+  const eff = selected || teleopPresets[0]?.name || ''
   const teleopState = state?.teleopState ?? 'stopped'
   const canStart = teleopState === 'stopped' || teleopState === 'start_failed'
   const canStop = teleopState === 'running' || teleopState === 'paused' || teleopState === 'starting'
@@ -48,7 +50,7 @@ export function SystemTab({ state, presets, onAction }: Props) {
             disabled={!canStart}
             style={selectStyle}
           >
-            {presets.map((p) => (
+            {teleopPresets.map((p) => (
               <option key={p.name} value={p.name}>{p.name}</option>
             ))}
           </select>

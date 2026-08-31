@@ -51,4 +51,12 @@ export const api = {
   videoCameras: (cameras: string[]) => post<unknown>('/api/v1/video/cameras', { cameras }),
   // MJPEG live preview URL for <img src> (streamed, not fetched)
   videoFeedUrl: (label: string) => `${base}/api/v1/video/feed/${encodeURIComponent(label)}`,
+  // Data collection recorder (astral_data_collect; works even when the
+  // recorder was started from CLI — the control surface is pure topics)
+  collectControl: (cmd: string) => post<unknown>('/api/v1/collect/control', { cmd }),
+  collectTask: (text: string) => post<unknown>('/api/v1/collect/task', { text }),
+  // 数采节点泳道（独立于遥操预设生命周期）
+  collectLaunchStart: () => post<unknown>('/api/v1/collect/launch/start'),
+  collectLaunchStop: () => post<unknown>('/api/v1/collect/launch/stop'),
+  collectLaunchRestart: () => post<unknown>('/api/v1/collect/launch/restart'),
 }
