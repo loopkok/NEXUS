@@ -4,6 +4,15 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-08-31
+
+**免 DH 几何臂角闭式 IK**——`astral_arm_teleop` 新增 `solver_type: geometric`（yaml 默认仍是 `urdf_numerical`）。
+
+- 现象：`analytic_dh` 靠硬编码 MDH + 关节翻转，和 SolidWorks URDF 对不齐；`urdf_numerical` 贴 URDF 但每拍 LM，遥操 150 Hz 偏重。
+- `ik/geometric.py`：q=0 时用 Pinocchio 从 URDF 抽出肩/肘/腕中心与关节轴（`left_base_link` / `right_base_link`），POE 正运动学 + 臂角 ψ + Paden-Kahan 子问题闭式求 q。无 DH 表、无 theta 偏置、无轴翻转；输出已是硬件约定，节点不 `flip_q`。
+- 连续解沿用 `analytic.py` 的局部 ψ 窗 + 迟滞 + 全局回退。工厂别名 `swe` / `poe` / `geometric_arm_angle`。
+- 离线套件 `test_geometric_ik`：FK 对 Pinocchio 到浮点精度、FK→IK 回环、限位、不可达、轨迹连续性、双臂/单臂工厂。
+
 ## 2026-08-28
 
 **Quest 面板：腕部靠左缩小，RealSense 居中放大**——`quest3_video_streamer`。

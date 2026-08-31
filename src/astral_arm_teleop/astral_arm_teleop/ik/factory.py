@@ -46,8 +46,8 @@ def default_astral_urdf_path() -> str:
 class AstralIKBridge:
     """Adapter for teleop / tests.
 
-    ``analytic_dh``: two Nero-style ``IKSolver`` instances in
-    ``left_base_link`` / ``right_base_link``.
+    ``analytic_dh`` / ``geometric``: two per-arm solver instances in
+    ``left_base_link`` / ``right_base_link`` (same ``IKSolver``-style API).
     ``urdf_numerical``: Pinocchio LM; dual solve via ``solve_dual`` (parallel).
     """
 
@@ -57,14 +57,13 @@ class AstralIKBridge:
         from astral_arm_teleop.ik.analytic import AstralParams
 
         self._params = {"L": AstralParams.left_arm(), "R": AstralParams.right_arm()}
-        self._dh: Dict[str, Any] = {}
-        if method == "analytic_dh" and isinstance(solver, dict):
-            self._dh = solver
+        # Per-arm dict solvers (analytic_dh, geometric) share the same API.
+        self._dh: Dict[str, Any] = solver if isinstance(solver, dict) else {}
 
     @property
     def method_name(self) -> str:
-        if self.method == "analytic_dh":
-            return "analytic_dh_arm_angle"
+        if self._dh:
+            return str(self._dh["L"].method_name)
         return getattr(self._solver, "method_name", self.method)
 
     @property
@@ -265,6 +264,18 @@ def make_ik_solver(
             "analytic_dh",
         )
 
+    if st in ("geometric", "swe", "poe", "geometric_arm_angle"):
+        from astral_arm_teleop.ik.geometric import GeometricIKSolver
+
+        path = urdf_path.strip() or default_astral_urdf_path()
+        return AstralIKBridge(
+            {
+                "L": GeometricIKSolver("left", urdf_path=path, fast_mode=True),
+                "R": GeometricIKSolver("right", urdf_path=path, fast_mode=True),
+            },
+            "geometric",
+        )
+
     if st in ("urdf_numerical", "urdf", "numerical"):
         from astral_arm_teleop.ik.urdf_solver import URDFNumericalIKSolver
 
@@ -288,7 +299,8 @@ def make_ik_solver(
         return AstralIKBridge(solver, "urdf_numerical")
 
     raise ValueError(
-        f"Unknown solver_type={solver_type!r}; use analytic_dh or urdf_numerical"
+        f"Unknown solver_type={solver_type!r}; "
+        "use analytic_dh, geometric or urdf_numerical"
     )
 
 
@@ -321,6 +333,12 @@ def make_single_arm_ik(
             return IKSolver(AstralParams.right_arm(), fast_mode=True)
         raise ValueError("arm_side must be left|right")
 
+    if st in ("geometric", "swe", "poe", "geometric_arm_angle"):
+        from astral_arm_teleop.ik.geometric import GeometricIKSolver
+
+        path = urdf_path.strip() or default_astral_urdf_path()
+        return GeometricIKSolver(arm_side, urdf_path=path, fast_mode=True)
+
     if st in ("urdf_numerical", "urdf", "numerical"):
         path = urdf_path.strip() or default_astral_urdf_path()
         bridge = make_ik_solver(
@@ -341,5 +359,6 @@ def make_single_arm_ik(
         return SingleArmIKAdapter(bridge, arm_side)
 
     raise ValueError(
-        f"Unknown solver_type={solver_type!r}; use analytic_dh or urdf_numerical"
+        f"Unknown solver_type={solver_type!r}; "
+        "use analytic_dh, geometric or urdf_numerical"
     )

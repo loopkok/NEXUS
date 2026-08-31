@@ -4,7 +4,8 @@ astral_arm_teleop_left:
   ros__parameters:
     arm_side: "left"
     control_rate: 150.0
-    # analytic_dh | urdf_numerical  — launch 不覆盖；改这里即可
+    # analytic_dh | geometric | urdf_numerical  — launch 不覆盖；改这里即可
+    # geometric: 免 DH 臂角解析 IK（S/E/W 空间几何 + POE/Paden-Kahan，URDF 提取）
     solver_type: "urdf_numerical"
     urdf_path: ""  # empty → astral_robot.pin.urdf
     # URDF LM (ignored by DH; hot-tunable)

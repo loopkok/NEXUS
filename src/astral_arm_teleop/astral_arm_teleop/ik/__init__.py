@@ -9,6 +9,7 @@ Layout::
     base.py          -- IKSolverBase protocol
     robot_params.py  -- Modified DH parameters
     analytic.py      -- Nero-port IKSolver / AstralParams (closed-form DH)
+    geometric.py     -- GeometricIKSolver (DH-free S/E/W arm-angle, POE+PK)
     urdf_solver.py   -- URDFNumericalIKSolver (Pinocchio LM)
     factory.py       -- AstralIKBridge + make_ik_solver
 

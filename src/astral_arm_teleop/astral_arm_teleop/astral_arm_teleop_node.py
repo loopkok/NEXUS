@@ -423,8 +423,12 @@ class AstralTeleopArmNode(Node):
             st = "analytic_dh"
         if st in ("urdf", "numerical"):
             st = "urdf_numerical"
-        if st not in ("analytic_dh", "urdf_numerical"):
-            raise ValueError(f"solver_type must be analytic_dh|urdf_numerical, got {st}")
+        if st in ("swe", "poe", "geometric_arm_angle"):
+            st = "geometric"
+        if st not in ("analytic_dh", "geometric", "urdf_numerical"):
+            raise ValueError(
+                f"solver_type must be analytic_dh|geometric|urdf_numerical, got {st}"
+            )
         q_hw = np.asarray(self.q_cmd, dtype=float).reshape(7)
         self._flip_needed = st == "analytic_dh"
         self.ik = make_single_arm_ik(

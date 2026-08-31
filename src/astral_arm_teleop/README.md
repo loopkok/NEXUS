@@ -1,6 +1,6 @@
 # astral_arm_teleop
 
-Quest3 腕部 → 双臂 IK（DH / URDF）→ `/left_arm|/right_arm/joint_commands`。  
+Quest3 腕部 → 双臂 IK（DH / 几何闭式 / URDF 数值）→ `/left_arm|/right_arm/joint_commands`。  
 **不** import `astral_robot_sdk`；硬件由 `astral_robot_control` 负责。
 
 当前架构是 **B：模型不动，控制层换算**。SolidWorks 的 `astral_robot_description` URDF、旧 MJCF、真机关节符号都保持原约定；闭式 DH 在「翻转轴 + 干净 MDH 基座」里求解，teleop 边界用 `flip_q` 和 `R_baseᵀ` 对接。
@@ -19,11 +19,12 @@ quest3_udp_mocap (convert_to_robot:=true)
 astral_arm_teleop_{left|right}                 # 进程并行
   PoseProcessor × vr_to_arm_rot
       analytic_dh: yaml(I) 再左乘 R_baseᵀ → 干净 MDH 基座
-      urdf_numerical: yaml(I) 原样 → SW `left_base_link` / `right_base_link`
+      urdf_numerical / geometric: yaml(I) 原样 → SW `left_base_link` / `right_base_link`
         （Pinocchio `T_base⁻¹ T_ee`，不再用 universe/躯干）
   → workspace_radius 球约束（IK 帧 *_base_link 原点；≤0 关闭）
   → IK
       analytic_dh: 翻转约定 q_dh（α=+90 闭式）
+      geometric: 硬件约定 q_hw（URDF 几何 + POE/PK 闭式）
       urdf_numerical: 硬件约定 q_hw（Pinocchio LM）
   → SafetyFilter（关节限位 / 速度；与求解器同一约定）
   → flip_q（仅 analytic_dh）→ q_hw
@@ -54,6 +55,7 @@ yaml 里 `init_pose` / `vr_to_arm_rot` 都按 **旧约定 / robot_world** 写。
 astral_arm_teleop/
   ik/
     analytic.py         ← 闭式臂角 DH（AstralParams + 公式修复）
+    geometric.py        ← 免 DH 臂角闭式（S/E/W 空间几何，POE + Paden-Kahan）
     urdf_solver.py      ← Pinocchio LM
     factory.py          ← make_ik_solver / make_single_arm_ik
   astral_arm_teleop_node.py   ← 自动 R_baseᵀ + flip_q
@@ -62,6 +64,7 @@ astral_arm_teleop/
 | `solver_type` | 实现 | 位姿帧 | 输出 q | 默认模型 |
 |---------------|------|--------|--------|----------|
 | `analytic_dh` | Nero 臂角闭式，硬编码 MDH | 干净 MDH 基座 | 翻转约定，发布前 flip | 无 URDF |
+| `geometric` | 免 DH 臂角闭式：URDF 提取肩/肘/腕中心与关节轴，POE + Paden-Kahan | SW `*_base_link` | 已是硬件约定，不 flip | `astral_robot_description/urdf/astral_robot.pin.urdf` |
 | `urdf_numerical`（yaml 默认） | Pinocchio + scipy LM | SW `*_base_link` | 已是硬件约定，不 flip | `astral_robot_description/urdf/astral_robot.pin.urdf` |
 
 单臂节点 `urdf_path` 为空 → `default_astral_urdf_path()` = **`astral_robot.pin.urdf`**（与 MuJoCo 同源）。  
@@ -77,7 +80,7 @@ ros2 launch astral_arm_teleop astral_dual_arm_teleop.launch.py dry_run:=true
 
 推荐路径 **`astral_arm_teleop_node`**（左右 yaml 里 `vr_to_arm_rot` 仍是 **I**）：
 
-| | `analytic_dh` | `urdf_numerical` |
+| | `analytic_dh` | `urdf_numerical` / `geometric` |
 |--|--|--|
 | 有效 `vr_to_arm_rot` | `_R_BASE_T @ yaml` | yaml（默认 I） |
 | `flip_q` | 左 2/3/4、右 2/4 取反（自反） | 恒等 |
@@ -234,6 +237,7 @@ ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
 | 命令 | 作用 | 依赖 |
 |------|------|------|
 | `ros2 run astral_arm_teleop test_ik_solver` | DH/URDF 离线 FK↔IK、双臂、安全滤波 | 无（URDF 需 pin） |
+| `ros2 run astral_arm_teleop test_geometric_ik` | 几何闭式 vs Pinocchio FK、回环、限位、工厂 | pinocchio |
 | `ros2 run astral_arm_teleop test_dh_urdf_fk` | 同 q、SW `*_base_link` 下 DH vs URDF（未映射会很大） | pinocchio |
 | `ros2 run astral_arm_teleop fit_dh_from_urdf` | 轴几何 / MDH 拟合 | pinocchio |
 | `ros2 run astral_arm_teleop test_vr_mapping` | PoseProcessor、TCP | 无 |

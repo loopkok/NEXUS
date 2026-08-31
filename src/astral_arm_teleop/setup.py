@@ -39,6 +39,7 @@ setup(
             "ik_solver_node = astral_arm_teleop.ik_solver_node:main",
             "keyboard_vr_sim = astral_arm_teleop.keyboard_vr_sim:main",
             "test_ik_solver = astral_arm_teleop.test_ik_solver:main",
+            "test_geometric_ik = astral_arm_teleop.test_geometric_ik:main",
             "test_dh_urdf_fk = astral_arm_teleop.test_dh_urdf_fk:main",
             "fit_dh_from_urdf = astral_arm_teleop.fit_dh_from_urdf:main",
             "test_vr_mapping = astral_arm_teleop.test_vr_mapping:main",
