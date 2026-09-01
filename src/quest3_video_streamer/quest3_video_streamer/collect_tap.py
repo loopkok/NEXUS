@@ -51,9 +51,13 @@ class CollectTapPublisher:
         self._node = node
         self._label = label
         self._gate = gate
-        self._period = 1.0 / max(0.5, max_fps)
+        self._max_fps = max(0.5, max_fps)
         self._quality = int(quality)
-        self._last_submit = 0.0
+        # 令牌桶限流（容量 2）：源帧率==目标时抖动被吸收、长跑 100% 透传；
+        # 源更快时仍限在目标附近。固定间隔硬卡会在源≈目标时误杀早到帧
+        # （实机：30/s 到达只放行 19-28/s）。
+        self._tokens = 2.0
+        self._last_refill = time.monotonic()
         # 边界插桩：帧在哪一段丢的（准入/限流/队列/编码/发布），5s 窗口 INFO。
         # 实测事故定位用：driver 侧 30fps 而 collect 话题 3fps 时，看这里。
         self._n_submitted = 0
@@ -88,14 +92,12 @@ class CollectTapPublisher:
             return
         self._n_submitted += 1
         now = time.monotonic()
-        # 抖动容差 0.8×period：源帧率==目标帧率时（30fps 源 / 30fps 目标），
-        # 驱动到达间隔是 33.3±5ms 抖动的，硬卡整周期会把早到几 ms 的帧误杀
-        # （实机：30/s 到达只放行 19/s，录进数据集掉 1/3 帧）。容差后
-        # ≤37.5fps 的源全通过；更快的源仍被限在目标附近。
-        if now - self._last_submit < self._period * 0.8:
+        self._tokens = min(2.0, self._tokens + (now - self._last_refill) * self._max_fps)
+        self._last_refill = now
+        if self._tokens < 1.0:
             self._n_rate_skip += 1
             return
-        self._last_submit = now
+        self._tokens -= 1.0
         try:
             self._queue.put_nowait((frame, is_rgb))
         except queue.Full:
