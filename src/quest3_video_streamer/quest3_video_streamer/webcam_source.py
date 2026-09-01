@@ -58,6 +58,8 @@ class WebcamSourceAdapter(VideoSourceAdapter):
     async def start(self) -> None:
         import cv2
 
+        if self._thread is not None and self._thread.is_alive():
+            return  # 幂等：eager start 后 track 的 lazy open 不再重复打开
         mjpg = cv2.VideoWriter_fourcc('M', 'J', 'P', 'G')
         capture = cv2.VideoCapture(self._device_index, cv2.CAP_V4L2)
         if self._force_mjpg:

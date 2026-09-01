@@ -140,6 +140,13 @@ quest3_video_streamer:
     push_max_width: 960
     push_fps: 30
 
+    # --- 启动即开相机（不等 Quest 视频连接）---
+    # true：streamer 一起动三路相机就开采，采集/web 预览不再依赖 Quest
+    # 视频会话——Quest 不开 video feed 也能采集；Quest 连上后 track 直接
+    # 复用已开的源（start 已幂等）。代价：无人看/无人录时相机也常驻
+    # （约 2 核 CPU 的读取+色彩转换开销）。
+    eager_start_sources: true
+
     # --- Web 实时预览（astral_web_monitor 视频卡片画面）---
     # 抽帧 → 独立线程 JPEG 编码 → ~/preview/{label}（CompressedImage, BEST_EFFORT）。
     # 跟随门控：被静音的路不发。编码不在捕获线程/asyncio 循环里，不影响 Quest 链路。

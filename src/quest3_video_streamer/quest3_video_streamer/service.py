@@ -32,6 +32,9 @@ class VideoServiceConfig:
     # push_fps 降发送帧率；只影响 WebRTC 软编码负载，采集抽头不受影响。
     push_max_width: int = 0
     push_fps: int = 0
+    # 启动即打开所有相机源（不等 Quest 连接）：采集/web 预览不再依赖
+    # Quest 视频会话，采集可与推流完全解耦。
+    eager_start_sources: bool = False
 
 
 _PRESET_MAP: dict[str, tuple[int, int, int]] = {
@@ -97,6 +100,13 @@ class Quest3VideoService:
             f"signaling server listening host={self._config.signaling_host} "
             f"port={self._config.signaling_port}"
         )
+        if self._config.eager_start_sources:
+            for src in self._sources:
+                try:
+                    await src.start()
+                    self._log(f"eager start: {src.get_format().label} opened")
+                except Exception as exc:
+                    self._log(f"eager start failed for {src.get_format().label}: {exc}")
 
     async def stop(self) -> None:
         await self._stop_sender()

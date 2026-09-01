@@ -50,6 +50,8 @@ class RosImageSourceAdapter(VideoSourceAdapter):
         self.collect_hook: Any = None
 
     async def start(self) -> None:
+        if self._sub is not None:
+            return  # 幂等：eager start 后 track 的 lazy open 不再重复订阅
         # Called from the asyncio loop thread: capture the loop so the rclpy
         # callback (running in a different thread) can schedule puts safely.
         self._loop = asyncio.get_running_loop()

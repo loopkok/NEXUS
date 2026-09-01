@@ -342,6 +342,8 @@ def _declare_params(node: Node) -> None:
     # 0 = 不降载。采集抽头走全帧全速，不受影响。
     _safe_declare(node, "push_max_width", 0)
     _safe_declare(node, "push_fps", 0)
+    # 启动即打开相机（不等 Quest 视频连接）：采集/web 预览与推流解耦。
+    _safe_declare(node, "eager_start_sources", False)
     # Auto-scan host capture devices instead of the fixed `cameras` list.
     _safe_declare(node, "auto_scan", False)
     # Web preview (JPEG over CompressedImage on ~/preview/{label}).
@@ -385,7 +387,7 @@ def main() -> None:
         "signaling_host", "signaling_port", "mocap_tcp_host",
         "mocap_tcp_port", "enable_mocap_tcp", "verbose",
         "preset", "push_enabled", "active_cameras",
-        "push_max_width", "push_fps",
+        "push_max_width", "push_fps", "eager_start_sources",
         "web_preview", "web_preview_fps", "web_preview_width",
         "web_preview_quality",
         "collect_tap", "collect_tap_fps", "collect_tap_quality",
@@ -413,6 +415,7 @@ def main() -> None:
         log_hook=lambda msg: _LOG.info(msg),
         push_max_width=int(params["push_max_width"] or 0),
         push_fps=int(params["push_fps"] or 0),
+        eager_start_sources=bool(params["eager_start_sources"]),
     )
 
     try:
