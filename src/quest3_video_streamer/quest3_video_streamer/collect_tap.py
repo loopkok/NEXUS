@@ -23,6 +23,7 @@ Latency isolation (same contract as preview):
 
 from __future__ import annotations
 
+import array
 import logging
 import queue
 import threading
@@ -154,7 +155,10 @@ class CollectTapPublisher:
                 msg.header.stamp = self._node.get_clock().now().to_msg()
                 msg.header.frame_id = self._label
                 msg.format = "jpeg"
-                msg.data = jpg.tobytes()
+                # 必须走 array.array 快路径：rosidl 的 data setter 对 bytes 会
+                # 用 Python genexpr 逐字节校验两遍（200KB JPEG ≈ 40 万次迭代，
+                # 持 GIL 数百 ms），py-spy 实锤三路 tap 全卡在这里拖垮全进程。
+                msg.data = array.array("B", jpg.tobytes())
                 t0 = time.monotonic()
                 self._pub.publish(msg)
                 self._n_published += 1

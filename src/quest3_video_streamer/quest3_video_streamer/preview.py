@@ -19,6 +19,7 @@ Default cost: ~10 fps x 640-wide q65 JPEG ≈ a few % of one core per camera.
 
 from __future__ import annotations
 
+import array
 import queue
 import threading
 import time
@@ -114,7 +115,9 @@ class PreviewPublisher:
                 msg.header.stamp = self._node.get_clock().now().to_msg()
                 msg.header.frame_id = self._label
                 msg.format = "jpeg"
-                msg.data = jpg.tobytes()
+                # array.array 快路径，原因见 collect_tap（bytes 会触发
+                # rosidl setter 的逐字节 Python 校验，持 GIL 数百 ms/帧）。
+                msg.data = array.array("B", jpg.tobytes())
                 self._pub.publish(msg)
             except Exception:
                 continue
