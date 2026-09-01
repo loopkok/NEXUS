@@ -88,7 +88,11 @@ class CollectTapPublisher:
             return
         self._n_submitted += 1
         now = time.monotonic()
-        if now - self._last_submit < self._period:
+        # 抖动容差 0.8×period：源帧率==目标帧率时（30fps 源 / 30fps 目标），
+        # 驱动到达间隔是 33.3±5ms 抖动的，硬卡整周期会把早到几 ms 的帧误杀
+        # （实机：30/s 到达只放行 19/s，录进数据集掉 1/3 帧）。容差后
+        # ≤37.5fps 的源全通过；更快的源仍被限在目标附近。
+        if now - self._last_submit < self._period * 0.8:
             self._n_rate_skip += 1
             return
         self._last_submit = now
