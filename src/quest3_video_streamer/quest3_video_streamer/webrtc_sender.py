@@ -622,22 +622,52 @@ class VideoWebRTCSender:
             )
 
     def _force_h264_codec_if_possible(self) -> None:
+        """把协商公共集里的 H264 提为每路 video transceiver 的首优编码。
+
+        必须在 setRemoteDescription 之后、createAnswer 之前调用：aiortc 的
+        createAnswer 直接用 setRemoteDescription 时算好的 transceiver._codecs
+        （offer 顺序，VP8 在前），setCodecPreferences 对应答无效（实测：
+        Quest offer 含 H264 却协商出 VP8）。发送端用 _codecs[0] 建编码器，
+        故直接重排该列表。条目来自公共集（offer 参数的深拷贝），无 fmtp
+        参数不匹配风险。
+        """
         if self._pc is None:
             return
         try:
-            rtc_rtp_sender = self._import_aiortc_symbol("RTCRtpSender")
-            capabilities = rtc_rtp_sender.getCapabilities("video")
-            codecs = [
-                codec
-                for codec in getattr(capabilities, "codecs", [])
-                if str(getattr(codec, "mimeType", "")).lower() == "video/h264"
-            ]
-            if not codecs:
-                return
             for transceiver in self._pc.getTransceivers():
-                if getattr(transceiver, "kind", "") == "video":
-                    transceiver.setCodecPreferences(codecs)
-                    self._h264_forced = True
+                if getattr(transceiver, "kind", "") != "video":
+                    continue
+                codecs = getattr(transceiver, "_codecs", None)
+                if not codecs:
+                    continue
+                h264_pts = {
+                    int(getattr(c, "payloadType"))
+                    for c in codecs
+                    if str(getattr(c, "mimeType", "")).lower() == "video/h264"
+                }
+                if not h264_pts:
+                    self._log("公共编码集无 H264（对端 offer 未提供可兼容项），保持默认")
+                    continue
+
+                def _rank(c: Any) -> int:
+                    mt = str(getattr(c, "mimeType", "")).lower()
+                    if mt == "video/h264":
+                        return 0
+                    if mt == "video/rtx":
+                        apt = getattr(c, "parameters", {}).get("apt")
+                        try:
+                            if apt is not None and int(apt) in h264_pts:
+                                return 1  # H264 的 RTX 重传伴随包
+                        except (TypeError, ValueError):
+                            pass
+                    return 2
+
+                first_before = getattr(codecs[0], "mimeType", "?")
+                codecs.sort(key=_rank)  # sort 稳定：同档内保持 offer 原序
+                self._h264_forced = True
+                self._log(
+                    f"codec 首优 {first_before} -> {getattr(codecs[0], 'mimeType', '?')}"
+                )
         except Exception:
             return
 

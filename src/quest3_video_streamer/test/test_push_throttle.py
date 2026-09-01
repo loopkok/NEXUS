@@ -98,3 +98,51 @@ def test_encoder_speed_patches_applied_when_aiortc_present():
     assert aiortc.__version__
     assert h264_mod.H264Encoder._encode_frame.__name__ == "_h264_encode_frame_with_preset"
     assert vpx_mod.Vp8Encoder.encode.__name__ == "_vp8_encode_fast"
+
+
+# --- H264 首优重排（createAnswer 不吃 setCodecPreferences，只能直接排 _codecs）---
+
+from types import SimpleNamespace
+
+from quest3_video_streamer.webrtc_sender import VideoWebRTCSender
+
+
+class _FakeCodec:
+    def __init__(self, mime: str, pt: int, apt: int | None = None) -> None:
+        self.mimeType = mime
+        self.payloadType = pt
+        self.parameters = {} if apt is None else {"apt": apt}
+
+
+def _fake_sender(codecs: list) -> SimpleNamespace:
+    tr = SimpleNamespace(kind="video", _codecs=codecs)
+    logs: list[str] = []
+    return SimpleNamespace(
+        _pc=SimpleNamespace(getTransceivers=lambda: [tr]),
+        _log=logs.append,
+        _h264_forced=False,
+        _tr=tr,
+        _logs=logs,
+    )
+
+
+def test_force_h264_reorders_and_keeps_rtx_companion():
+    # offer 顺序：VP8(96)+其rtx(97)、H264(102)+其rtx(103)
+    codecs = [
+        _FakeCodec("video/VP8", 96), _FakeCodec("video/rtx", 97, apt=96),
+        _FakeCodec("video/H264", 102), _FakeCodec("video/rtx", 103, apt=102),
+    ]
+    s = _fake_sender(codecs)
+    VideoWebRTCSender._force_h264_codec_if_possible(s)
+    assert s._h264_forced is True
+    assert [c.payloadType for c in codecs] == [102, 103, 96, 97]
+    assert codecs[0].mimeType == "video/H264"
+
+
+def test_force_h264_noop_when_offer_lacks_h264():
+    codecs = [_FakeCodec("video/VP8", 96), _FakeCodec("video/rtx", 97, apt=96)]
+    s = _fake_sender(codecs)
+    VideoWebRTCSender._force_h264_codec_if_possible(s)
+    assert s._h264_forced is False
+    assert [c.payloadType for c in codecs] == [96, 97]
+    assert any("无 H264" in m for m in s._logs)
