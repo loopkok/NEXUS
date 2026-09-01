@@ -58,6 +58,7 @@ except Exception:
 # aiortc 原逻辑建 codec 但追加 preset。aiortc 内部结构若变则静默回退。
 # ---------------------------------------------------------------------------
 _X264_PRESET = "veryfast"
+_X264_THREADS = "2"
 _H264_PATCHED = False
 _VP8_PATCHED = False
 
@@ -89,11 +90,16 @@ try:
                 "level": "31",
                 "tune": "zerolatency",
                 "preset": _X264_PRESET,
+                # x264 默认 threads=1.5×核数：12 核 Jetson 上每编码器 18 线程，
+                # 3 路 = 54 线程在弱 ARM 核上convoy（实机：流从 ~3fps 塌缩到 0）。
+                # 每路限 2 线程，3 路共 6，给捕获/采集线程留核。
+                "threads": _X264_THREADS,
             }
             self.codec.profile = "Baseline"
         return _orig_h264_encode_frame(self, frame, force_keyframe)
 
-    _h264_pres.H264Encoder._encode_frame = _h264_encode_frame_with_preset
+    if getattr(_h264_pres.H264Encoder._encode_frame, "__name__", "") != "_h264_encode_frame_with_preset":
+        _h264_pres.H264Encoder._encode_frame = _h264_encode_frame_with_preset
     _H264_PATCHED = True
 except Exception:
     pass
@@ -150,7 +156,8 @@ try:
                 pass
         return _orig_vp8_encode(self, frame, force_keyframe)
 
-    _vpx_pres.Vp8Encoder.encode = _vp8_encode_fast
+    if getattr(_vpx_pres.Vp8Encoder.encode, "__name__", "") != "_vp8_encode_fast":
+        _vpx_pres.Vp8Encoder.encode = _vp8_encode_fast
     _VP8_PATCHED = True
 except Exception:
     pass
