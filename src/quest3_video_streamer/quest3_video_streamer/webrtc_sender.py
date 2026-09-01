@@ -58,6 +58,14 @@ except Exception:
 # aiortc 原逻辑建 codec 但追加 preset。aiortc 内部结构若变则静默回退。
 # ---------------------------------------------------------------------------
 _X264_PRESET = "veryfast"
+_H264_PATCHED = False
+_VP8_PATCHED = False
+
+
+def encoder_patch_status() -> str:
+    """启动时打一行自证——补丁静默回退时（aiortc 结构变化）能立刻看出来。"""
+    return f"h264_preset={'on' if _H264_PATCHED else 'OFF'} vp8_cpu_used={'on' if _VP8_PATCHED else 'OFF'}"
+
 
 try:
     import aiortc.codecs.h264 as _h264_pres
@@ -86,8 +94,83 @@ try:
         return _orig_h264_encode_frame(self, frame, force_keyframe)
 
     _h264_pres.H264Encoder._encode_frame = _h264_encode_frame_with_preset
+    _H264_PATCHED = True
 except Exception:
     pass
+
+
+# ---------------------------------------------------------------------------
+# VP8 cpu-used patch.
+#
+# 实机：Quest(Unity WebRTC) 的 offer 不含可用 H264 → 实际协商 VP8。aiortc 给
+# libvpx 设 cpu-used="-6"——负值比默认更慢（画质向），桌面无感，Jetson 上
+# 三路 540p 直接吃掉所有核（实测每路发送仅 1-2fps，采集/捕获线程全被饿死）。
+# realtime 模式下 cpu-used 0..16 越大越快；8 是速度/画质平衡点。
+# 手法同 H264 补丁：codec 未建时先按原逻辑建（镜像 1.15 的 options，
+# 只改 cpu-used），结构不符则静默回退到原实现。
+# ---------------------------------------------------------------------------
+_VP8_CPU_USED = "8"
+
+try:
+    import aiortc.codecs.vpx as _vpx_pres
+
+    _orig_vp8_encode = _vpx_pres.Vp8Encoder.encode
+
+    def _vp8_encode_fast(self, frame, force_keyframe=False):
+        if self.codec is None:
+            import av as _av
+
+            self.codec = _av.CodecContext.create("libvpx", "w")
+            self.codec.width = frame.width
+            self.codec.height = frame.height
+            self.codec.bit_rate = self.target_bitrate
+            self.codec.pix_fmt = "yuv420p"
+            self.codec.gop_size = 3000  # kf_max_dist
+            self.codec.qmin = 2  # rc_min_quantizer
+            self.codec.qmax = 56  # rc_max_quantizer
+            self.codec.options = {
+                "bufsize": str(self.target_bitrate),
+                "cpu-used": _VP8_CPU_USED,
+                "deadline": "realtime",
+                "lag-in-frames": "0",
+                "minrate": str(self.target_bitrate),
+                "maxrate": str(self.target_bitrate),
+                "noise-sensitivity": "4",
+                "overshoot-pct": "15",
+                "partitions": "0",  # VP8_ONE_TOKENPARTITION
+                "static-thresh": "1",
+                "undershoot-pct": "100",
+            }
+            try:
+                self.codec.thread_count = _vpx_pres.number_of_threads(
+                    frame.width * frame.height,
+                    _vpx_pres.multiprocessing.cpu_count(),
+                )
+            except Exception:
+                pass
+        return _orig_vp8_encode(self, frame, force_keyframe)
+
+    _vpx_pres.Vp8Encoder.encode = _vp8_encode_fast
+    _VP8_PATCHED = True
+except Exception:
+    pass
+
+
+def sdp_video_codecs(sdp: str) -> list[str]:
+    """SDP 里 m=video 段的编码名列表（去重，保序）——看对端到底报了什么。"""
+    names: list[str] = []
+    in_video = False
+    for line in sdp.splitlines():
+        if line.startswith("m=video"):
+            in_video = True
+            continue
+        if line.startswith("m="):
+            in_video = False
+        if in_video and line.startswith("a=rtpmap:"):
+            enc = line.split(":", 1)[1].split(" ", 1)[1].split("/", 1)[0].strip()
+            if enc and enc not in names:
+                names.append(enc)
+    return names
 
 
 def install_bitrate_diagnostics(verbose: bool = False) -> None:
@@ -338,6 +421,7 @@ class VideoWebRTCSender:
             raise RuntimeError("Video sender not started.")
         rtc_session_description = self._import_aiortc_symbol("RTCSessionDescription")
         offer = rtc_session_description(sdp=sdp_offer, type="offer")
+        self._log(f"offer video codecs: {sdp_video_codecs(sdp_offer)}")
         await self._pc.setRemoteDescription(offer)
         self._force_h264_codec_if_possible()
         answer = await self._pc.createAnswer()

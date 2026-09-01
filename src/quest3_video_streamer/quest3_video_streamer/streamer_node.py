@@ -37,7 +37,10 @@ from quest3_video_streamer.service import (
     parse_preset,
 )
 from quest3_video_streamer.source_base import VideoSourceAdapter
-from quest3_video_streamer.webrtc_sender import install_bitrate_diagnostics
+from quest3_video_streamer.webrtc_sender import (
+    encoder_patch_status,
+    install_bitrate_diagnostics,
+)
 
 
 _LOG = logging.getLogger("quest3_video_streamer")
@@ -365,6 +368,7 @@ def main() -> None:
         format="[%(asctime)s] [%(name)s] %(message)s",
         datefmt="%H:%M:%S",
     )
+    _LOG.info("encoder speed patches: %s", encoder_patch_status())
 
     rclpy.init()
     # Auto-declare nested per-camera params coming from the yaml overrides so

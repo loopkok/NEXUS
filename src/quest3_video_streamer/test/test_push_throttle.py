@@ -6,7 +6,11 @@
 from __future__ import annotations
 
 from quest3_video_streamer.source_base import VideoFormat
-from quest3_video_streamer.webrtc_sender import _AdapterVideoTrack, scaled_size
+from quest3_video_streamer.webrtc_sender import (
+    _AdapterVideoTrack,
+    scaled_size,
+    sdp_video_codecs,
+)
 
 
 def _fmt(w: int, h: int, fps: int) -> VideoFormat:
@@ -60,3 +64,37 @@ def test_track_push_size_defaults_to_source_when_disabled():
 def test_track_push_size_scaled():
     t = _AdapterVideoTrack(_Src(_fmt(1920, 1080, 30)), fps=30, push_max_width=960)
     assert (t._push_w, t._push_h) == (960, 540)
+
+
+_SDP = """v=0\r
+m=audio 9 UDP/TLS/RTP/SAVPF 111\r
+a=rtpmap:111 opus/48000/2\r
+m=video 9 UDP/TLS/RTP/SAVPF 96 97 98\r
+a=rtpmap:96 VP8/90000\r
+a=rtpmap:97 VP9/90000\r
+a=rtpmap:98 H264/90000\r
+a=fmtp:98 profile-level-id=42e01f\r
+m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r
+"""
+
+
+def test_sdp_video_codecs_only_video_section():
+    assert sdp_video_codecs(_SDP) == ["VP8", "VP9", "H264"]
+
+
+def test_sdp_video_codecs_vp8_only_offer():
+    sdp = _SDP.replace(" 96 97 98", " 96").replace(
+        "a=rtpmap:97 VP9/90000\r\n", ""
+    ).replace("a=rtpmap:98 H264/90000\r\n", "")
+    assert sdp_video_codecs(sdp) == ["VP8"]
+
+
+def test_encoder_speed_patches_applied_when_aiortc_present():
+    """aiortc 存在时 x264/VP8 补丁必须已挂上（静默回退会让本测试失败）。"""
+    aiortc = __import__("aiortc", fromlist=["__version__"])
+    import aiortc.codecs.h264 as h264_mod
+    import aiortc.codecs.vpx as vpx_mod
+
+    assert aiortc.__version__
+    assert h264_mod.H264Encoder._encode_frame.__name__ == "_h264_encode_frame_with_preset"
+    assert vpx_mod.Vp8Encoder.encode.__name__ == "_vp8_encode_fast"
