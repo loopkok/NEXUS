@@ -169,7 +169,8 @@ ros2 topic echo --once /quest3_video_streamer/gate_state std_msgs/msg/String
 - 全分辨率不降采样，`collect_tap_fps`（默认 30）是帧率上限，
   `collect_tap_quality`（默认 90）为 JPEG 质量——像素即训练数据
 - 与 preview 同线程模型（编码在独立 daemon 线程，不进捕获线程/asyncio 循环），
-  跟随门控：被静音的路不出流
+  **不跟随门控**：推送开关关掉 / 相机被静音不影响采集（唯一准入条件是话题有订阅者，
+  录制与否由 `astral_data_collect` 自己的状态机决定）
 - 两个 source 适配器各新增 `collect_hook`（与 `preview_hook` 并列；
   webcam 源回调原生 BGR，ros 源回调转换后 RGB）
 

@@ -4,6 +4,26 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-09-01
+
+**采集抽头从推送开关解耦**——`quest3_video_streamer`。此前 `~/collect/{label}` 与 preview 共用运行时门控：`push_enabled=false`（或相机被 `active_cameras` 静音）时采集流也断，「关了推送开关想省 CPU 却采不到图」。改为**唯一准入条件 = 话题有订阅者**（编码本来就按需，无订阅零开销），录不录由 `astral_data_collect` 状态机决定；preview/WebRTC 仍走门控不变。效果：推送开关现在只控制「看」（Quest + web 实时画面），与「录」完全正交。
+
+**采集抽头限流器换代：令牌桶**——`quest3_video_streamer`。0.8 容差后仍有 2-3/s 误杀（捕获线程调度抖动偶发 20ms 间隔对）；改令牌桶（容量 2、速率=max_fps）：源≈目标时抖动被吸收、长跑 99%+ 透传，源更快仍限 30/s。仿真：30fps±5ms 抖动 99.4% 透传、60fps 源稳态 30.0/s。实机录制 ~28.8/27.6/27.3fps（中位 29-30）→ 修复后 tap 发布 29.8-29.9/s、rate_skip=0，采集支路 30fps 满速透传实锤。
+
+**回传降载再减半：push_max_width 960→640**——`quest3_video_streamer`。960 宽下 WebRTC 实测 10-13fps/路；降 640（360p，编码像素较 1080p −84%）后 13-17fps/路。降载只作用于 WebRTC track（等比缩放 + 黑帧同尺寸保编码 context），采集抽头全分辨率全速不受影响。yaml 注释内调参阶梯同步更新。
+
+**采集抽头限流器抖动误杀修复**——`quest3_video_streamer`。setter 修复后实机：capture 三路 30fps 钉死、queue_full=0，但 tap 只放行 18-20/s——限流器硬卡整周期（33.3ms），30fps 源到达间隔 33.3±5ms 抖动，早到几 ms 的帧被 rate_skip 误杀 1/3。改 0.8×period 容差：≤37.5fps 的源全通过，更快源仍限在目标附近。**同时记录里程碑**：修复后 WebRTC H264 回传达 10-13fps/路（5.5Mbps，此前 1-2fps），采集/捕获/推流首次三线并发满速。
+
+**全案根因定案：rosidl `data` setter 逐字节校验吃光 GIL**——`quest3_video_streamer`。**py-spy 实锤**：三路 collect-tap 线程全部停在 `sensor_msgs/msg/_compressed_image.py:183-184` 的 genexpr——`msg.data = bytes` 触发 rosidl setter 的 `all(isinstance(v, int) ...)` + `all(0<=v<256 ...)` 两遍逐字节 Python 校验（200KB JPEG ≈ 40 万次迭代/帧，持 GIL 数百 ms）；3 路 × 30fps 把 GIL 占满，捕获线程/事件循环/WebRTC 全部饿死。**这解释了全部历史症状**：采集 video8 3fps、推送开关 ON/OFF 的 16↔30fps（无 Quest 也复现）、三种编码配置吞吐不变（编码器从来无罪——VP8/x264 修复仍保留，是真实加速只是非瓶颈）。**修复**：`msg.data = array.array('B', jpg.tobytes())` 走 setter 的 array 快路径（C memcpy），本地实测 10.1ms → 0.016ms（630×）。collect_tap + preview 两处都改。Jetson cv2 5.0 多线程扩展比 3.9×，GIL 释放正常，洗清嫌疑。
+
+**相机 eager start：采集/预览与 Quest 视频解耦**——`quest3_video_streamer`。此前相机源仅在 WebRTC track 首帧时惰性打开——Quest 不开 video feed，采集抽头就拿不到任何图像。新增 `eager_start_sources`（yaml 默认 true）：service 启动即打开全部源，Quest 连接后 track 复用已开源（`WebcamVideoSource.start`/`RosImageSource.start` 补幂等守卫）。同时支撑"无 WebRTC 负载时采集支路满速"的对照实验（三组编码配置吞吐不变已证瓶颈非编码器，疑似 aiortc 媒体面 Python/GIL 开销拖垮全进程，待 py-spy 实证）。
+
+**H264 上线后流塌缩修复：x264 线程爆炸**——`quest3_video_streamer`。**实机证据**：重排生效（`codec 首优 video/VP8 -> video/H264` ×3、协商 H264）后，流从 ~3fps 一路塌缩到 **0.0fps/0kbps**，且捕获/采集线程照旧被饿死。**根因**：x264 默认 `threads=1.5×核数`——12 核 Jetson 每编码器 18 线程、3 路共 54 线程在弱 ARM 核上 convoy（zerolatency 的 sliced-threads 同步开销在小核上被放大）；对比 VP8 基本单线程所以只是慢不是塌。**修复**：x264 options 加 `threads=2`（3 路共 6 线程，给捕获/采集留核）；本地 540p veryfast threads=2 实测 215fps（x86），Jetson 预期每路 15-30fps。另加补丁幂等守卫（模块重复 import 时不再自包装递归）。
+
+**H264 强转失效根因定案与修复**——`quest3_video_streamer`。**实机证据**：`offer video codecs: ['VP8','rtx','VP9','H264','AV1','H265',...]`——Quest **明明提供 H264**，应答却仍是 VP8（`h264_forced` 空转实锤）。**根因（aiortc 1.15 源码实证）**：`setCodecPreferences` 在应答路径无效——`createAnswer` 直接用 `setRemoteDescription` 时算好的 `transceiver._codecs`（offer 顺序，VP8 在前），发送端 `RTCRtpSender` 以 `_codecs[0]` 建编码器。**修复**：弃用 setCodecPreferences，改为在 setRemoteDescription 之后、createAnswer 之前直接重排 `transceiver._codecs`（H264 及其 RTX 伴随提前；条目来自协商公共集即 offer 参数深拷贝，无 fmtp 不匹配风险）；公共集无 H264 时打日志保持 VP8。新增重排日志 `codec 首优 VP8 -> H264`。新增 2 例单测（重排序+RTX 伴随、无 H264 回退）。
+
+**低帧率根因定案与修复：VP8 软编码挤爆嵌入式 CPU**——`quest3_video_streamer`。插桩证据链：tap `publish=3.4ms`（DDS 无罪）、编码线程有活跑不动（encode 20ms 吞吐仅 7.5/s）、捕获线程进程内 17-20fps（单跑 30）、**协商日志显示三路全是 VP8**（初判 Quest 未提供 H264；当日实机日志证伪——offer 含 H264，实为强转代码在应答路径无效，见上方 H264 条目）——aiortc 给 libvpx 设 `cpu-used=-6`（比默认更慢的画质向档位），三路软编在 Jetson 上吃光 CPU 并阻塞默认 executor，全进程线程互相饿死。修复三件套：① **VP8 `cpu-used=-6→8` 补丁**（realtime 档位上限提速，镜像 aiortc 1.15 原生 options 仅改此一项）；② **x264 preset veryfast 补丁**（dormant：Quest 端 app 开 H264 后立即受益）；③ **回传降载旋钮** `push_max_width`/`push_fps`（默认 960/30 ≈ 编码像素 -59%），track 级等比缩放 + 黑帧同尺寸保编码 context，采集抽头全帧全速不受影响。两补丁带 `encoder_patch_status()` 启动自证行（结构不符静默回退会显示 OFF）；`apply_offer` 新增 offer 编码列表日志（Quest 报了什么一眼可见）。新增 `test_push_throttle.py`（11 例，含补丁激活断言）。调参阶梯：960/30 → 960/15 → 采集时 mute 腕部轨。
+
 ## 2026-08-31
 
 **E2E 延迟：QoS 只留最新帧**——腕位 / body / 关节状态 / 指令流改为 `BEST_EFFORT` `KEEP_LAST` **depth=1**。mocap 发布、teleop 订阅、driver/monitor 指令订阅对齐。旧 depth 10/20 会在 IK 跟不上时把旧腕位排队，表现为「手已经停了臂还在走」。Joy/头/hips/landmarks 同步改，避免 BEST_EFFORT 发布对不上 RELIABLE 订阅。
@@ -19,20 +39,6 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 **数采防护体系 + launch 参数优先级修复**——`astral_data_collect` / `astral_web_monitor`。①launch 参数改空串默认 + OpaqueFunction：**yaml 成为唯一默认来源**，此前 launch 默认值（如 `arms` 默认 `left,right`）静默盖掉 yaml——"改了 yaml 却采出旧 schema"即此机制；CLI/预设显式传参仍可覆盖。②**domain 单例锁**：`/data_collect/control` 谁订阅谁开录是双份数据的根因（残留节点 + 再启动 = 双开同录）；节点对 `/tmp/astral_data_collect_domain{N}.lock` 取排他锁，第二个节点构造即拒绝，session 不同也不放过。③**段号原子占位**：mkdir 抢号撞号让位——老残留进程不持锁，段号互斥由文件系统原子性兜底（此前一个 start 双节点各写 000000/000001）。④**多节点红条**：web 按 `/data_collect/state` 发布者计数 >1 即提示残留。⑤**低帧率告警**：录制中参考相机实率 < dataset_fps/2 → state `low_fps_warning` + 日志节流 WARN + 卡片红条。⑥web 重启端点等旧进程真退出再启（单例锁窗口）。另修：cameras 逗号字符串曾被逐字符拆解；jpeg_quality 参数此前被静默忽略。
 
 **auto_scan MJPG 确定性优先（非帧率根因，实机已证伪带宽假设）**——`quest3_video_streamer`。MJPG/JPEG 提至 110 分消除平票依赖枚举序的不确定性。**实机验证**：d435i 彩色节点仅播 YUYV（无 MJPG 可优先）、三相机分属不同总线且 1080p YUYV 单跑满 30fps——采集低帧率非带宽问题；双订阅者收到完全相同帧集合证明丢失在 streamer 进程内部（抽头总共只发了那么多）。`test_scan_mjpg.py` 保留作为确定性回归。
-
-**H264 强转失效根因定案与修复**——`quest3_video_streamer`。**实机证据**：`offer video codecs: ['VP8','rtx','VP9','H264','AV1','H265',...]`——Quest **明明提供 H264**，应答却仍是 VP8（`h264_forced` 空转实锤）。**根因（aiortc 1.15 源码实证）**：`setCodecPreferences` 在应答路径无效——`createAnswer` 直接用 `setRemoteDescription` 时算好的 `transceiver._codecs`（offer 顺序，VP8 在前），发送端 `RTCRtpSender` 以 `_codecs[0]` 建编码器。**修复**：弃用 setCodecPreferences，改为在 setRemoteDescription 之后、createAnswer 之前直接重排 `transceiver._codecs`（H264 及其 RTX 伴随提前；条目来自协商公共集即 offer 参数深拷贝，无 fmtp 不匹配风险）；公共集无 H264 时打日志保持 VP8。新增重排日志 `codec 首优 VP8 -> H264`。新增 2 例单测（重排序+RTX 伴随、无 H264 回退）。
-
-**采集抽头限流器换代：令牌桶**——`quest3_video_streamer`。0.8 容差后仍有 2-3/s 误杀（捕获线程调度抖动偶发 20ms 间隔对）；改令牌桶（容量 2、速率=max_fps）：源≈目标时抖动被吸收、长跑 99%+ 透传，源更快仍限 30/s。仿真：30fps±5ms 抖动 99.4% 透传、60fps 源稳态 30.0/s。实机录制 ~28.8/27.6/27.3fps（中位 29-30）→ 预期 ≈30。
-
-**采集抽头限流器抖动误杀修复**——`quest3_video_streamer`。setter 修复后实机：capture 三路 30fps 钉死、queue_full=0，但 tap 只放行 18-20/s——限流器硬卡整周期（33.3ms），30fps 源到达间隔 33.3±5ms 抖动，早到几 ms 的帧被 rate_skip 误杀 1/3。改 0.8×period 容差：≤37.5fps 的源全通过，更快源仍限在目标附近。**同时记录里程碑**：修复后 WebRTC H264 回传达 10-13fps/路（5.5Mbps，此前 1-2fps），采集/捕获/推流首次三线并发满速。
-
-**全案根因定案：rosidl `data` setter 逐字节校验吃光 GIL**——`quest3_video_streamer`。**py-spy 实锤**：三路 collect-tap 线程全部停在 `sensor_msgs/msg/_compressed_image.py:183-184` 的 genexpr——`msg.data = bytes` 触发 rosidl setter 的 `all(isinstance(v, int) ...)` + `all(0<=v<256 ...)` 两遍逐字节 Python 校验（200KB JPEG ≈ 40 万次迭代/帧，持 GIL 数百 ms）；3 路 × 30fps 把 GIL 占满，捕获线程/事件循环/WebRTC 全部饿死。**这解释了全部历史症状**：采集 video8 3fps、推送开关 ON/OFF 的 16↔30fps（无 Quest 也复现）、三种编码配置吞吐不变（编码器从来无罪——VP8/x264 修复仍保留，是真实加速只是非瓶颈）。**修复**：`msg.data = array.array('B', jpg.tobytes())` 走 setter 的 array 快路径（C memcpy），本地实测 10.1ms → 0.016ms（630×）。collect_tap + preview 两处都改。Jetson cv2 5.0 多线程扩展比 3.9×，GIL 释放正常，洗清嫌疑。
-
-**相机 eager start：采集/预览与 Quest 视频解耦**——`quest3_video_streamer`。此前相机源仅在 WebRTC track 首帧时惰性打开——Quest 不开 video feed，采集抽头就拿不到任何图像。新增 `eager_start_sources`（yaml 默认 true）：service 启动即打开全部源，Quest 连接后 track 复用已开源（`WebcamVideoSource.start`/`RosImageSource.start` 补幂等守卫）。同时支撑"无 WebRTC 负载时采集支路满速"的对照实验（三组编码配置吞吐不变已证瓶颈非编码器，疑似 aiortc 媒体面 Python/GIL 开销拖垮全进程，待 py-spy 实证）。
-
-**H264 上线后流塌缩修复：x264 线程爆炸**——`quest3_video_streamer`。**实机证据**：重排生效（`codec 首优 video/VP8 -> video/H264` ×3、协商 H264）后，流从 ~3fps 一路塌缩到 **0.0fps/0kbps**，且捕获/采集线程照旧被饿死。**根因**：x264 默认 `threads=1.5×核数`——12 核 Jetson 每编码器 18 线程、3 路共 54 线程在弱 ARM 核上 convoy（zerolatency 的 sliced-threads 同步开销在小核上被放大）；对比 VP8 基本单线程所以只是慢不是塌。**修复**：x264 options 加 `threads=2`（3 路共 6 线程，给捕获/采集留核）；本地 540p veryfast threads=2 实测 215fps（x86），Jetson 预期每路 15-30fps。另加补丁幂等守卫（模块重复 import 时不再自包装递归）。
-
-**低帧率根因定案与修复：VP8 软编码挤爆嵌入式 CPU**——`quest3_video_streamer`。插桩证据链：tap `publish=3.4ms`（DDS 无罪）、编码线程有活跑不动（encode 20ms 吞吐仅 7.5/s）、捕获线程进程内 17-20fps（单跑 30）、**协商日志显示三路全是 VP8**（初判 Quest 未提供 H264；次日实机日志证伪——offer 含 H264，实为强转代码在应答路径无效，见上方 H264 条目）——aiortc 给 libvpx 设 `cpu-used=-6`（比默认更慢的画质向档位），三路软编在 Jetson 上吃光 CPU 并阻塞默认 executor，全进程线程互相饿死。修复三件套：① **VP8 `cpu-used=-6→8` 补丁**（realtime 档位上限提速，镜像 aiortc 1.15 原生 options 仅改此一项）；② **x264 preset veryfast 补丁**（dormant：Quest 端 app 开 H264 后立即受益）；③ **回传降载旋钮** `push_max_width`/`push_fps`（默认 960/30 ≈ 编码像素 -59%），track 级等比缩放 + 黑帧同尺寸保编码 context，采集抽头全帧全速不受影响。两补丁带 `encoder_patch_status()` 启动自证行（结构不符静默回退会显示 OFF）；`apply_offer` 新增 offer 编码列表日志（Quest 报了什么一眼可见）。新增 `test_push_throttle.py`（11 例，含补丁激活断言）。调参阶梯：960/30 → 960/15 → 采集时 mute 腕部轨。
 
 **Web 数据采集卡片 + 独立泳道**——监控页顶部录制控制（开始/停/下一段/暂停/丢弃 + 任务文本）；数采 `LaunchManager` 与遥操预设解耦，互不挡启动。`/teleop/start` 订阅改 VOLATILE 才能收到 web 一次性触发。详见 8/28 VLA 条目补记。
 

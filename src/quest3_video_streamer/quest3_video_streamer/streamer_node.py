@@ -405,7 +405,7 @@ def main() -> None:
     sources, layouts, cameras_info = _build_sources(node, params)
     gate = _setup_gate(node, sources, params, cameras_info)
     previews = _setup_previews(node, sources, gate, params)
-    collect_taps = _setup_collect_taps(node, sources, gate, params)
+    collect_taps = _setup_collect_taps(node, sources, params)
 
     config = VideoServiceConfig(
         signaling_host=str(params["signaling_host"]),
@@ -473,14 +473,14 @@ def _setup_previews(
 def _setup_collect_taps(
     node: Node,
     sources: list[VideoSourceAdapter],
-    gate: StreamGate,
     params: dict[str, Any],
 ) -> list[Any]:
     """Attach a CollectTapPublisher to each source (data-collection feed).
 
     Full-res JPEG on ``~/collect/{label}`` at up to ``collect_tap_fps``.
     Frames are only encoded while the topic has subscribers, so a teleop-only
-    run pays nothing. Follows the same runtime gate as the preview.
+    run pays nothing.  Unlike the preview this does NOT follow the push gate:
+    recording works with push off / cameras muted for viewing.
     """
     if not bool(params.get("collect_tap", True)):
         return []
@@ -493,7 +493,7 @@ def _setup_collect_taps(
     for src in sources:
         label = str(src.get_format().label)
         pub = CollectTapPublisher(
-            node=node, label=label, gate=gate, max_fps=fps, quality=quality,
+            node=node, label=label, max_fps=fps, quality=quality,
         )
         is_ros = isinstance(src, RosImageSourceAdapter)
         src.collect_hook = lambda f, p=pub, rgb=is_ros: p.submit(f, is_rgb=rgb)

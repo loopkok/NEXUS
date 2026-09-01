@@ -14,11 +14,14 @@ Key differences from the web preview:
 Latency isolation (same contract as preview):
 
   * ``submit()`` runs in the producer thread (capture thread / rclpy
-    callback). It only does gate + subscriber + rate checks and a
-    ``put_nowait`` on a maxsize-1 queue — never blocks, drops when busy.
+    callback). It only does subscriber + rate checks and a ``put_nowait``
+    on a maxsize-1 queue — never blocks, drops when busy.
   * JPEG encoding runs in a dedicated daemon thread, NEVER in the capture
     thread and NEVER in the asyncio loop.
-  * Publishing follows the runtime gate: a muted camera publishes nothing.
+  * Publishing is decoupled from the runtime push gate: data collection
+    works whether or not anyone is watching (Quest / web preview off).
+    The only admission condition is "topic has a subscriber" — the
+    recorder decides what to keep by its own state machine.
 """
 
 from __future__ import annotations
@@ -41,7 +44,6 @@ class CollectTapPublisher:
         *,
         node: Any,
         label: str,
-        gate: Any = None,
         max_fps: float = 30.0,
         quality: int = 90,
     ) -> None:
@@ -50,7 +52,6 @@ class CollectTapPublisher:
 
         self._node = node
         self._label = label
-        self._gate = gate
         self._max_fps = max(0.5, max_fps)
         self._quality = int(quality)
         # 令牌桶限流（容量 2）：源帧率==目标时抖动被吸收、长跑 100% 透传；
@@ -85,9 +86,12 @@ class CollectTapPublisher:
         self._thread.start()
 
     def submit(self, frame: Any, *, is_rgb: bool) -> None:
-        """Offer a frame (numpy HxWx3). Non-blocking; drops when busy."""
-        if self._gate is not None and not self._gate.is_enabled(self._label):
-            return
+        """Offer a frame (numpy HxWx3). Non-blocking; drops when busy.
+
+        No push-gate check on purpose: collection must not depend on the
+        Quest/web "push" switch.  Encode cost is already on-demand via the
+        subscriber-count check below.
+        """
         if self._pub.get_subscription_count() == 0:
             return
         self._n_submitted += 1
