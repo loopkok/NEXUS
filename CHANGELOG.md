@@ -6,6 +6,8 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-02
 
+**指纹查询 CLI：`python3 -m quest3_video_streamer.scan`**——在机器人上直接打印每路采集设备（节点名/设备路径/fourcc）的全部稳定指纹（by-id → by-path → sysfs），抄子串进 `label_aliases` 即可，替代手工 `ls -l /dev/v4l/by-id/` 再对节点。无采集设备时提示 no capture-capable device。无相机环境冒烟通过。
+
 **label_aliases：auto_scan 换口/重插防漂移落地（别名表方案）**——`quest3_video_streamer`。在昨日「auto_scan: false + 命名块 + by-id」备选写法之上，补上两全方案：保持 `auto_scan: true` 的自动发现，新增 `label_aliases` 参数（字符串数组 `"指纹子串=稳定label"`），扫描完成后按设备指纹（`/dev/v4l/by-id` → `by-path` → sysfs 名，子串匹配，先列先赢）改写 label；改写发生在 per-label 覆盖块查找之前（`video8.preset` 等同名块自动生效）。语义细节：目标名=匹配设备当前内核名 → 合法 no-op（固化现状，且消耗该设备，后续规则不再对其生效）；目标名撞上**其他**设备的内核名 → 拒绝并告警（防止重名）；一条规则匹配多台 → 只改第一台并告警；规则零命中 → 告警（指纹写错或相机未插，开录前看日志一眼）。`scan.py` 新增 `stable_fingerprints()`（纯函数）与 `apply_label_aliases()`（支持预置 fingerprints 注入）；`streamer_node` 声明 `label_aliases` 参数并接入 `_build_sources` 的 auto_scan 分支。新增 `test_label_aliases.py` 12 例（指纹顺序/兜底 mock、命中/未命中/固化现状/多设备/冲突/畸形规则/集成断言——rclpy 缺失自动 skip），streamer 全套 32 例通过。使用：`params.yaml` 加 `label_aliases: ["Intel_R._RealSense=video8", ...]`，换口/重插/重启后 data_collect 与 openpi camera_map 永远零改动。
 
 **VLA 一键脚本 + 相机 label 防漂移 + 默认配置切单左臂**——`scripts/` × `astral_data_collect` × `quest3_video_streamer`。①新增 `vla_process_session.sh`（对齐→校验→转 LeRobot 一条龙，走 openpi uv venv，`--image-size`/`--apply-quarantine` 可选）与 `openpi_train.sh`（norm stats 重算 → 训练，`lora|full` 二选一，前置检查数据集软链与 pi05_base 权重）。②`params.yaml` auto_scan 覆盖块加「换 USB 口防漂移」注释写法：`auto_scan: false` + `/dev/v4l/by-id/` 稳定路径 + label 沿用 `video8/video0/video2`，数据集 key 不变下游零改动。③`data_collect.yaml` 默认切实际采集配置：单左臂 + 左夹爪、`cameras: ["video8", "video0", "video2"]`（auto_scan 节点名，双臂配置注释保留）。回归：转换/schema/web 31 例 + node_guards 9 例 + 对抗配置 8 例（openpi uv 环境跑通）全绿。

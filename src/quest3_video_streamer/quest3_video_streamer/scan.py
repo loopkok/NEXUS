@@ -359,3 +359,25 @@ def apply_label_aliases(
         renamed.add(id(target))
         used.add(label)
     return devices, warnings
+
+
+def _print_fingerprints() -> None:
+    """CLI helper: print stable fingerprints of every capture device.
+
+    Usage (on the robot):
+      python3 -m quest3_video_streamer.scan
+    Copy the substring of any fingerprint into a label_aliases rule.
+    """
+    devices = enumerate_capture_devices()
+    if not devices:
+        print("no capture-capable device found")
+        return
+    for dev in devices:
+        node = str(dev["label"])
+        print(f"{node}  ({dev['device']}, {dev['fourcc'] or 'fourcc?'}):")
+        for f in stable_fingerprints(node):
+            print(f"    {f}")
+
+
+if __name__ == "__main__":
+    _print_fingerprints()
