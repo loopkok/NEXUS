@@ -115,6 +115,24 @@ quest3_video_streamer:
 > 启动日志 `auto_scan built … (video8, /dev/video8, YUYV, …)` 里应看到 YUYV 而不是 GREY。
 > 仍不对时用 `auto_scan: false` + 显式 `d435i` 块指定彩色节点。
 
+> **换口/重插后 label 防漂移（label_aliases）**：auto_scan 的 label 是内核
+> 节点名 videoN，换 USB 口或重插会重排编号，下游 `data_collect.cameras` 与
+> 数据集 key `observation.images.videoN` 全得跟着改。在保持 `auto_scan: true`
+> 的同时加一张指纹→label 别名表即可把名字钉死在相机硬件上：
+>
+> ```yaml
+> label_aliases:
+>   - "Intel_R._RealSense=video8"   # 子串匹配设备的 by-id/by-path 链接名或 sysfs 名
+>   - "1080P_Camera=video0"
+> ```
+>
+> 扫描完成后按指纹（优先 by-id → by-path → sysfs，子串匹配）改写 label：
+> 先列先赢；没命中的设备保留 videoN 名。改写发生在覆盖块查找之前，同名块
+> （如 `video8.preset`）随之自动生效。规则没匹配到任何设备、目标名撞上其他
+> 设备的内核名等情况都会在启动日志告警——开录前看一眼日志确认三条别名都命中。
+> 指纹列表用 `ls -l /dev/v4l/by-id/` 查（D435i 有多个节点，选彩色那个）；
+> 同款多台相机（两个手腕同款模组）by-id 也区分不开时才用 by-path 口位指纹。
+
 > **懒打开**：相机在 Quest 连上且该路未被门控静音时才真正打开设备；打开失败
 > （没插/被占用）不会拖垮整个 sender——该轨退化为黑帧并每秒重试，插上即恢复。
 

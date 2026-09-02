@@ -81,10 +81,10 @@ quest3_video_streamer:
     # --- auto_scan 覆盖块：label = 节点名。换口后编号变了会走代码里按
     # fourcc 的默认（腕部左侧缩小上下叠，YUYV RealSense 靠右 size=0.60）。
     #
-    # 【换 USB 口/重插后的防漂移写法】auto_scan 下 label=videoN 编号，换口即变，
-    # 下游 data_collect cameras / 已转换数据集 key 全跟着变。要名字钉死在相机
-    # 硬件上：auto_scan: false + 命名块 + device 指 /dev/v4l/by-id/ 稳定路径，
-    # 且 label 沿用 "video8"/"video0"/"video2"（数据集 key 不变，下游零改动）：
+    # 【换 USB 口/重插后的防漂移】推荐 label_aliases（见下方注释），保留
+    # auto_scan 的自动发现能力，同时把 label 钉死在相机硬件指纹上；改写
+    # 发生在扫描之后，同名 yaml 覆盖块（如 video8.preset）随之自动生效。
+    # 备选写法是 auto_scan: false + 命名块 + by-id 稳定路径（失去自动发现）：
     #   auto_scan: false
     #   cameras: ["video8", "video0", "video2"]
     #   video8:  {source: "v4l2",  device: "/dev/v4l/by-id/usb-Intel_R._RealSense...-video-index2",
@@ -95,6 +95,17 @@ quest3_video_streamer:
     #             preset: "720p30",  label: "video2", force_mjpg: true}
     # by-id 路径在机器人上 `ls /dev/v4l/by-id/` 查看（D435i 有多个节点，选彩色那个）。
     # 若更想钉物理口位而非相机个体，用 /dev/v4l/by-path/ 同理。
+
+    # 【label_aliases：auto_scan 的稳定名映射】保持 auto_scan: true，加：
+    #   label_aliases:
+    #     - "Intel_R._RealSense=video8"     # 子串匹配 by-id/by-path 链接名或 sysfs 名
+    #     - "1080P_Camera=video0"
+    # 语义：扫描完成后按设备指纹（优先 by-id → by-path → sysfs，子串匹配）
+    # 改写 label；先列先赢，未命中的设备保留 videoN 名。目标名撞上扫描里
+    # 另一台设备的内核名会被拒绝；与"匹配设备自己的当前名"相同则是合法
+    # no-op（固化现状）。规则没匹配到任何设备会在节点日志里告警——通常是
+    # 指纹写错，或相机没插。改写后 data_collect.cameras / openpi camera_map
+    # 里的 video8/video0 永远不用跟着内核编号变。
     video0:
       preset: "720p30"
       fov_h_deg: 60.0

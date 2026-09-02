@@ -255,3 +255,107 @@ def enumerate_capture_devices() -> list[dict[str, Any]]:
         })
     out.sort(key=lambda d: _node_index(str(d["label"])))
     return out
+
+
+def stable_fingerprints(node: str) -> list[str]:
+    """Identity fingerprints for a video node, most stable first.
+
+    by-id   : ties to the physical camera (survives re-plug / port change)
+    by-path : ties to the physical USB port (survives device swap)
+    sysfs   : device model name, last-resort hint (not unique per camera)
+
+    Users match these against `label_aliases` patterns (substring match) to
+    pin a stable stream label regardless of the kernel's videoN numbering.
+    """
+    fps: list[str] = []
+    for link in ("/dev/v4l/by-id", "/dev/v4l/by-path"):
+        try:
+            for entry in os.scandir(link):
+                if os.path.realpath(entry.path) == os.path.realpath(f"/dev/{node}"):
+                    fps.append(entry.name)
+        except OSError:
+            pass
+    fps.append(sysfs_name(node))
+    return [f for f in fps if f]
+
+
+def apply_label_aliases(
+    devices: list[dict[str, Any]], aliases: list[str]
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Rewrite scanned labels via ``<pattern>=<label>`` alias rules.
+
+    A device matches a rule when any of its stable fingerprints (by-id /
+    by-path / sysfs name) contains the pattern as a substring. Devices may
+    carry a pre-computed ``fingerprints`` list (used by tests and by callers
+    that already resolved links); otherwise it is derived from the node via
+    :func:`stable_fingerprints`. First matching rule wins per device.
+
+    Rule validation (against the kernel labels of the current scan):
+      * target equals the matched device's own label -> allowed no-op (pinning
+        the current name); the device is consumed either way;
+      * target equals the kernel label of a *different* device -> rejected
+        (renaming would create a duplicate label);
+      * two devices matched by one rule -> only the first is renamed.
+    A rule matching no device at all is reported too (usually a typo — or a
+    camera that is unplugged, which is exactly what you want to hear about).
+
+    Returns (devices, warnings).
+    """
+    rules: list[tuple[str, str]] = []
+    warnings: list[str] = []
+    for raw in aliases:
+        entry = str(raw).strip()
+        if not entry or "=" not in entry:
+            warnings.append(f"alias ignored (want 'pattern=label'): {entry!r}")
+            continue
+        pattern, _, label = entry.partition("=")
+        pattern, label = pattern.strip(), label.strip()
+        if not pattern or not label:
+            warnings.append(f"alias ignored (empty side): {entry!r}")
+            continue
+        rules.append((pattern, label))
+
+    def _fps(dev: dict[str, Any]) -> list[str]:
+        return [str(f) for f in dev.get("fingerprints") or ()] or \
+            stable_fingerprints(str(dev["label"]))
+
+    current_labels = {str(d["label"]) for d in devices}
+    renamed: set[int] = set()   # device ids already assigned a stable label
+    used: set[str] = set()      # stable labels assigned so far
+    for pattern, label in rules:
+        hits = [d for d in devices
+                if id(d) not in renamed and any(pattern in f for f in _fps(d))]
+        if not hits:
+            warnings.append(
+                f"alias '{pattern}={label}' matched no scanned device "
+                "(typo, or the camera is not plugged in)"
+            )
+            continue
+        if len(hits) > 1:
+            warnings.append(
+                f"alias '{pattern}={label}' matches {len(hits)} devices "
+                f"({', '.join(str(d['label']) for d in hits)}): "
+                "only the first will be renamed"
+            )
+        target = hits[0]
+        if label in current_labels and str(target["label"]) != label:
+            warnings.append(
+                f"alias '{pattern}={label}' rejected: '{label}' is the kernel "
+                "label of another scanned device"
+            )
+            continue
+        if label in used:
+            warnings.append(
+                f"alias '{pattern}={label}' rejected: '{label}' already "
+                "assigned by an earlier alias in this list"
+            )
+            continue
+        if str(target["label"]) != label:
+            warnings.append(
+                f"alias '{pattern}={label}' matched {target['label']} via "
+                + next(f for f in _fps(target) if pattern in f)
+            )
+            target["label"] = label
+        renamed.add(id(target))
+        used.add(label)
+    return devices, warnings

@@ -124,9 +124,20 @@ def _build_sources(
         return sources, layouts, infos
 
     if bool(params.get("auto_scan", False)):
-        from quest3_video_streamer.scan import enumerate_capture_devices
+        from quest3_video_streamer.scan import (
+            apply_label_aliases,
+            enumerate_capture_devices,
+        )
 
         found = enumerate_capture_devices()
+        # Stable-label aliases: pin a scanned device to a fixed label by
+        # hardware fingerprint (by-id / by-path / sysfs), so kernel renumbering
+        # (re-plug, port change, boot order) never leaks downstream.
+        found, alias_warnings = apply_label_aliases(
+            found, [str(v) for v in (params.get("label_aliases") or [])]
+        )
+        for w in alias_warnings:
+            _LOG.warning(f"label_aliases: {w}")
         if found:
             sources = []
             layouts = []
@@ -346,6 +357,10 @@ def _declare_params(node: Node) -> None:
     _safe_declare(node, "eager_start_sources", False)
     # Auto-scan host capture devices instead of the fixed `cameras` list.
     _safe_declare(node, "auto_scan", False)
+    # Stable label aliases for auto_scan: '<fingerprint>=<label>' entries.
+    # Fingerprint = substring of the device's by-id/by-path link name or sysfs
+    # name; first match wins. Survives kernel renumbering on re-plug.
+    _safe_declare(node, "label_aliases", [])
     # Web preview (JPEG over CompressedImage on ~/preview/{label}).
     _safe_declare(node, "web_preview", True)
     _safe_declare(node, "web_preview_fps", 10.0)
@@ -383,7 +398,7 @@ def main() -> None:
     _declare_params(node)
 
     params = {name: _get_param(node, name, None) for name in [
-        "sources_json", "cameras", "auto_scan",
+        "sources_json", "cameras", "auto_scan", "label_aliases",
         "signaling_host", "signaling_port", "mocap_tcp_host",
         "mocap_tcp_port", "enable_mocap_tcp", "verbose",
         "preset", "push_enabled", "active_cameras",
