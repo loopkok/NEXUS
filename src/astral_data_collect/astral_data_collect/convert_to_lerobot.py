@@ -11,9 +11,8 @@ VLA/lerobot @0cf86487（OpenPI pyproject 钉死的提交）：
   data/chunk-000/episode_{i:06d}.parquet
   videos/chunk-000/{video_key}/episode_{i:06d}.mp4
 
-parquet 视频列 = VideoFrame struct{path: string, timestamp: float32}
-（path 为视频相对路径，timestamp = frame_index/fps；与 VideoFrame docstring 示例一致。
-v2.1 读取侧实际用 timestamp 列 + video_path 模板，struct 列为兼容性保留）。
+parquet 不含视频列（v2.1 规范：视频帧由读取侧用 timestamp 列 + meta 的
+video_path 模板解析；写 struct 列会让旧版 lerobot 加载崩溃）。
 
 用法：
   python3 convert_to_lerobot.py --session ~/astral_data/pick_place \
@@ -65,12 +64,13 @@ def encode_video(
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    def _open(codec_name: str):
+    def _open(codec_name: str, extra: dict[str, str] | None = None):
         container = av.open(out_path, "w")
         try:
-            stream = container.add_stream(
-                codec_name, rate=fps, options={"crf": str(crf), "g": str(gop)}
-            )
+            opts = {"crf": str(crf), "g": str(gop)}
+            if extra:
+                opts.update(extra)
+            stream = container.add_stream(codec_name, rate=fps, options=opts)
         except Exception:
             container.close()  # 回退路径：不泄漏容器/残留文件句柄
             raise
@@ -79,11 +79,27 @@ def encode_video(
         stream.height = height - (height % 2)
         return container, stream
 
-    try:
-        container, stream = _open(codec)
-    except Exception:
-        codec = "h264"
-        container, stream = _open(codec)
+    # SVT-AV1 默认按核数并行 + 深 lookahead：1080p 时编码器内部缓冲可达
+    # 数 GB（实测 15GB 小内存机转换 3 段 1080p 数据峰值 RSS 6.3GB 被 OOM
+    # 杀掉）。lp=2 限并行度、lookahead=16 限前瞻深度，内存降到 ~1GB 量级；
+    # 参数名不被旧版 libsvtav1 包装识别时退化为无参数打开，再不行回退 h264。
+    if codec == "libsvtav1":
+        try:
+            container, stream = _open(
+                codec, {"svtav1-params": "lp=2:lookahead=16"}
+            )
+        except Exception:
+            try:
+                container, stream = _open(codec)
+            except Exception:
+                codec = "h264"
+                container, stream = _open(codec)
+    else:
+        try:
+            container, stream = _open(codec)
+        except Exception:
+            codec = "h264"
+            container, stream = _open(codec)
 
     time_base = Fraction(1, fps)
     try:
@@ -144,10 +160,60 @@ def _to_jsonable(v: Any) -> Any:
     return v
 
 
+class ImageStatsAccumulator:
+    """流式图像统计：输出与 compute_episode_stats 的图像分支同构，内存 O(1)。
+
+    旧实现 np.stack(≤100 帧) 在 1080p 下 ≈620MB/相机、3 相机 >1GB，与
+    SVT-AV1 编码器内部缓冲叠加后在小内存机上 OOM。这里只维护每通道
+    sum/sumsq/min/max（float64 标量组），数值与堆叠后计算等价。
+    """
+
+    def __init__(self) -> None:
+        self._frames = 0
+        self._pixels = 0
+        self._sum: np.ndarray | None = None
+        self._sumsq: np.ndarray | None = None
+        self._min: np.ndarray | None = None
+        self._max: np.ndarray | None = None
+
+    def update(self, img: np.ndarray) -> None:
+        c = img.astype(np.float64).reshape(-1, 3) / 255.0
+        s = c.sum(axis=0)
+        sq = (c * c).sum(axis=0)
+        mn = c.min(axis=0)
+        mx = c.max(axis=0)
+        if self._sum is None:
+            self._sum, self._sumsq, self._min, self._max = s, sq, mn, mx
+        else:
+            self._sum += s
+            self._sumsq += sq
+            self._min = np.minimum(self._min, mn)
+            self._max = np.maximum(self._max, mx)
+        self._frames += 1
+        self._pixels += c.shape[0]
+
+    def stats(self) -> dict[str, np.ndarray] | None:
+        if self._frames == 0:
+            return None
+        mean = self._sum / self._pixels
+        var = self._sumsq / self._pixels - mean**2
+
+        def _c(v: np.ndarray) -> np.ndarray:
+            return np.asarray(v, dtype=np.float64).reshape(3, 1, 1)
+
+        return {
+            "min": _c(self._min),
+            "max": _c(self._max),
+            "mean": _c(mean),
+            "std": _c(np.sqrt(np.clip(var, 0.0, None))),
+            "count": np.array([self._frames]),  # 与上游一致：按帧计数（聚合权重）
+        }
+
+
 def compute_episode_stats(
     state: np.ndarray,
     action: np.ndarray,
-    image_samples: dict[str, np.ndarray],  # cam → (N,H,W,C) uint8
+    image_samples: dict[str, Any],  # cam → (N,H,W,C) uint8 数组，或预算好的 stats dict
 ) -> dict[str, dict]:
     """与上游 compute_episode_stats 同构：数值全量，图像抽样 /255。"""
     stats: dict[str, dict] = {
@@ -155,6 +221,9 @@ def compute_episode_stats(
         "action": _feature_stats(action, axis=0),
     }
     for key, imgs in image_samples.items():
+        if isinstance(imgs, dict):
+            stats[key] = imgs  # ImageStatsAccumulator 预算结果
+            continue
         if len(imgs) == 0:
             continue
         arr = imgs.astype(np.float32) / 255.0  # (N,H,W,C)
@@ -214,8 +283,6 @@ def write_episode_parquet(
     episode_index: int,
     index_start: int,
     task_index: int,
-    video_keys: list[str],
-    video_paths: dict[str, str],
 ) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -229,15 +296,10 @@ def write_episode_parquet(
             [action[i].tolist() for i in range(n)], type=pa.list_(pa.float32())
         ),
     }
-    for key in video_keys:
-        rel = video_paths[key]
-        columns[key] = pa.array(
-            [
-                {"path": rel, "timestamp": np.float32(i / fps)}
-                for i in range(n)
-            ],
-            type=pa.struct({"path": pa.string(), "timestamp": pa.float32()}),
-        )
+    # 注意：parquet 不写视频 struct{path,timestamp} 列。v2.1 规范的 parquet 只含
+    # 非视频列（视频帧由读取侧用 timestamp 列 + meta 里的 video_path 模板解析）；
+    # 多余的 struct 列会让旧版 lerobot（openpi 锁定的 0.1.0）hf_transform_to_torch
+    # 在 torch.tensor(dict) 处直接崩溃。
     columns["timestamp"] = pa.array(
         [np.float32(i / fps) for i in range(n)], type=pa.float32()
     )
@@ -264,14 +326,40 @@ def _decode_jpeg(jpeg: np.ndarray) -> np.ndarray | None:
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
+def _letterbox(img: np.ndarray, size: int) -> np.ndarray:
+    """等比缩放 + 黑边补齐到 size×size（复刻 openpi resize_with_pad 的几何约定：
+    ratio = max(w,h)/size、对称黑边、余数归下/右）。转换期就把它做掉，
+    训练时 openpi 的 ResizeImages(224,224) 对已是 size×size 的输入是恒等操作，
+    与全分辨率入库再在线 letterbox 的模型输入一致，同时省掉加载侧解码+缩放开销。
+    """
+    import cv2
+
+    h, w = img.shape[:2]
+    if (h, w) == (size, size):
+        return img
+    ratio = max(w / size, h / size)
+    new_w, new_h = int(w / ratio), int(h / ratio)
+    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    pad_h0 = (size - new_h) // 2
+    pad_h1 = size - new_h - pad_h0
+    pad_w0 = (size - new_w) // 2
+    pad_w1 = size - new_w - pad_w0
+    return cv2.copyMakeBorder(
+        resized, pad_h0, pad_h1, pad_w0, pad_w1, cv2.BORDER_CONSTANT, value=0
+    )
+
+
 def convert_session(
     session_dir: str,
     output_dir: str,
     *,
     robot_type: str = "astral_dual_arm",
     codec: str = "libsvtav1",
+    image_size: int | None = 224,
     log=print,
 ) -> dict[str, Any]:
+    """image_size: 视频落盘前等比缩放+黑边补齐到该边长（默认 224，与 openpi
+    ResizeImages 约定一致）；None 保留原始分辨率。"""
     """把 session 下所有已对齐 episode 导出为一个 LeRobot v2.1 数据集。"""
     import cv2  # noqa: F401  (JPEG 解码依赖)
 
@@ -343,7 +431,7 @@ def convert_session(
 
             # -- 视频：JPEG → RGB 帧 → mp4 ------------------------------------------
             rel_paths: dict[str, str] = {}
-            img_samples: dict[str, np.ndarray] = {}
+            img_stats: dict[str, dict] = {}
             for cam, vkey in zip(schema.cameras, video_keys):
                 rel = VIDEO_PATH_TEMPLATE.format(
                     episode_chunk=chunk, video_key=vkey, episode_index=ep_index
@@ -355,6 +443,8 @@ def convert_session(
                 first = _decode_jpeg(jpegs[0])
                 if first is None:
                     raise RuntimeError(f"{ep_dir}: {cam} frame 0 undecodable")
+                if image_size is not None:
+                    first = _letterbox(first, image_size)
                 h, w = first.shape[:2]
                 shapes[vkey] = (h, w)
 
@@ -366,6 +456,8 @@ def convert_session(
                             img = last if last is not None else np.zeros(
                                 (h, w, 3), dtype=np.uint8
                             )
+                        elif image_size is not None:
+                            img = _letterbox(img, image_size)
                         last = img
                         yield img
 
@@ -374,16 +466,20 @@ def convert_session(
                 )
                 used_codec = used
 
-                # 图像统计抽样（均匀 ≤100 帧，剔除解码失败帧）
+                # 图像统计抽样（均匀 ≤100 帧，剔除解码失败帧）——流式累加，
+                # 不堆叠帧数组（1080p×100 帧 ≈620MB/相机，小内存机会 OOM）。
+                # 统计口径与落盘一致：letterbox 后的帧。
+                acc = ImageStatsAccumulator()
                 step = max(1, n // _IMAGE_STAT_MAX_SAMPLES)
-                sampled = [
-                    img
-                    for i in range(0, n, step)
-                    if (img := _decode_jpeg(jpegs[i])) is not None
-                ]
-                img_samples[vkey] = (
-                    np.stack(sampled) if sampled else np.zeros((0, h, w, 3), np.uint8)
-                )
+                for i in range(0, n, step):
+                    img = _decode_jpeg(jpegs[i])
+                    if img is not None:
+                        if image_size is not None:
+                            img = _letterbox(img, image_size)
+                        acc.update(img)
+                st = acc.stats()
+                if st is not None:
+                    img_stats[vkey] = st
 
             if ep_index == 0:
                 for vkey in video_keys:
@@ -403,11 +499,9 @@ def convert_session(
                 episode_index=ep_index,
                 index_start=total_frames,
                 task_index=task_index,
-                video_keys=video_keys,
-                video_paths=rel_paths,
             )
 
-            ep_stats = compute_episode_stats(state, action, img_samples)
+            ep_stats = compute_episode_stats(state, action, img_stats)
             all_stats.append(ep_stats)
             episodes_f.write(
                 json.dumps(
@@ -514,9 +608,19 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--output", required=True, help="LeRobot 数据集输出目录")
     ap.add_argument("--robot-type", default="astral_dual_arm")
     ap.add_argument("--codec", default="libsvtav1", help="libsvtav1（默认）| h264，不可用自动回退")
+    ap.add_argument(
+        "--image-size",
+        type=int,
+        default=224,
+        help="视频落盘前 letterbox 到该边长（默认 224，与 openpi 输入一致）；0 = 保留原分辨率",
+    )
     args = ap.parse_args(argv)
     convert_session(
-        args.session, args.output, robot_type=args.robot_type, codec=args.codec
+        args.session,
+        args.output,
+        robot_type=args.robot_type,
+        codec=args.codec,
+        image_size=args.image_size or None,
     )
 
 

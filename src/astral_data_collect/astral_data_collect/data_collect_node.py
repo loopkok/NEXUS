@@ -287,6 +287,14 @@ class DataCollectNode(Node):
         return self._state == STATE_RECORDING
 
     def _mk_joint_cb(self, name: str, dim: int):
+        # *_cmd 流用到达时刻而非 header.stamp：teleop 端把 joint_commands 的
+        # stamp 打成上游 VR 输入戳（供延迟面板算 E2E 延迟），IK 定时器比 VR
+        # 快时会多次复用同一戳——实测 ~45% cmd 样本戳完全重复（值不同），
+        # validate F4 严格递增检查必然失败。指令的样本时刻语义本就应是
+        # 「发出时刻」；且 stamp 比真实发出时间早一个管线延迟，混用两种
+        # 时钟还会给 command 模式的 action 对齐引入交错偏差。
+        use_arrival = name.endswith("_cmd")
+
         def _cb(msg: Any) -> None:
             if not self._accepting():
                 return
@@ -296,7 +304,7 @@ class DataCollectNode(Node):
                 pos = pos[:dim]
             elif len(pos) < dim:
                 return  # 维度不足的消息视为无效（配置错误由 validate 暴露）
-            ts = _stamp_sec(msg.header, now)
+            ts = now if use_arrival else _stamp_sec(msg.header, now)
             with self._buf_lock:
                 dq = self._stream_buf[name]
                 if len(dq) == dq.maxlen:

@@ -16,9 +16,9 @@ data_collect:
     # --- schema ---
     # 臂配置：启用哪些臂侧（["left"] 仅左臂 / ["right"] 仅右臂 / 双臂默认）。
     # 末端块跟随所属臂：臂未启用时该侧 end_effector 设置不生效。
-    arms: ["left", "right"]
+    arms: ["left"] #["left", "right"]
     end_effector_left: "gripper"   # gripper | wuji | none
-    end_effector_right: "gripper"  # gripper | wuji | none
+    end_effector_right: "none"  # gripper | wuji | none
     include_waist: false
     include_head: false
 
@@ -31,7 +31,7 @@ data_collect:
     # ⚠ videoN 编号不稳定（重启/重插/换 USB 口会重排）：auto_scan 模式下每次开录前
     #   在 web「系统」tab 视频卡片核对 d435i（sysfs 名含 RealSense）的实际 label，
     #   或 ros2 topic echo --once /quest3_video_streamer/gate_state 看 sysfs_name。
-    cameras: ["d435i", "wrist_left", "wrist_right"]
+    cameras: ["video8", "video0", "video2"] #cameras: ["d435i", "wrist_left", "wrist_right"]
     camera_topic_prefix: "/quest3_video_streamer/collect"
 
     # 数据集帧率（对齐网格与 LeRobot fps；LeRobot 要求整数）

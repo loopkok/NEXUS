@@ -117,6 +117,50 @@ def test_low_fps_warning_logic():
     assert warn and "0fps" in warn
 
 
+def test_cmd_stream_uses_arrival_time(tmp_path, ros_context):
+    """*_cmd 流必须用到达时刻：teleop 把 joint_commands 的 stamp 打成上游
+    VR 输入戳（延迟面板用），IK 比 VR 快时同戳复用——实机 3 段数据 ~45%
+    cmd 样本戳完全重复，validate F4 全灭。指令样本时刻语义 = 发出时刻。"""
+    from types import SimpleNamespace
+
+    node = _make(tmp_path)
+    try:
+        node._state = STATE_RECORDING
+        cb = node._mk_joint_cb("left_arm_cmd", 7)
+        dup_stamp = SimpleNamespace(sec=1788233881, nanosec=456269000)
+        for _ in range(3):
+            cb(SimpleNamespace(
+                header=SimpleNamespace(stamp=dup_stamp), position=[0.0] * 7
+            ))
+            time.sleep(0.002)
+        ts = [t for t, _ in node._stream_buf["left_arm_cmd"]]
+        assert len(ts) == 3
+        assert all(b > a for a, b in zip(ts, ts[1:]))  # 严格递增
+        assert all(t > 1788233882.0 for t in ts)  # 是当前墙钟，非上游旧戳
+    finally:
+        node._state = STATE_IDLE
+        node.destroy_node()
+
+
+def test_state_stream_keeps_header_stamp(tmp_path, ros_context):
+    """state 流不受影响：header.stamp 有效时仍用戳（驱动侧时钟更准）。"""
+    from types import SimpleNamespace
+
+    node = _make(tmp_path)
+    try:
+        node._state = STATE_RECORDING
+        cb = node._mk_joint_cb("left_arm_state", 7)
+        cb(SimpleNamespace(
+            header=SimpleNamespace(stamp=SimpleNamespace(sec=1788233881, nanosec=500000000)),
+            position=[0.0] * 7,
+        ))
+        ts = node._stream_buf["left_arm_state"][0][0]
+        assert abs(ts - 1788233881.5) < 1e-6
+    finally:
+        node._state = STATE_IDLE
+        node.destroy_node()
+
+
 def test_low_fps_warning_published_while_recording(tmp_path, ros_context):
     """端到端：录制中参考相机无帧 → state JSON 带 low_fps_warning。"""
     from std_msgs.msg import String as _String

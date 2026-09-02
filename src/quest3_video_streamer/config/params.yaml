@@ -80,6 +80,21 @@ quest3_video_streamer:
 
     # --- auto_scan 覆盖块：label = 节点名。换口后编号变了会走代码里按
     # fourcc 的默认（腕部左侧缩小上下叠，YUYV RealSense 靠右 size=0.60）。
+    #
+    # 【换 USB 口/重插后的防漂移写法】auto_scan 下 label=videoN 编号，换口即变，
+    # 下游 data_collect cameras / 已转换数据集 key 全跟着变。要名字钉死在相机
+    # 硬件上：auto_scan: false + 命名块 + device 指 /dev/v4l/by-id/ 稳定路径，
+    # 且 label 沿用 "video8"/"video0"/"video2"（数据集 key 不变，下游零改动）：
+    #   auto_scan: false
+    #   cameras: ["video8", "video0", "video2"]
+    #   video8:  {source: "v4l2",  device: "/dev/v4l/by-id/usb-Intel_R._RealSense...-video-index2",
+    #             preset: "1080p30", label: "video8", force_mjpg: false}
+    #   video0:  {source: "webcam", device: "/dev/v4l/by-id/usb-...左腕...-video-index0",
+    #             preset: "720p30",  label: "video0", force_mjpg: true}
+    #   video2:  {source: "webcam", device: "/dev/v4l/by-id/usb-...右腕...-video-index0",
+    #             preset: "720p30",  label: "video2", force_mjpg: true}
+    # by-id 路径在机器人上 `ls /dev/v4l/by-id/` 查看（D435i 有多个节点，选彩色那个）。
+    # 若更想钉物理口位而非相机个体，用 /dev/v4l/by-path/ 同理。
     video0:
       preset: "720p30"
       fov_h_deg: 60.0

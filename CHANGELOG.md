@@ -4,7 +4,22 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-09-02
+
+**VLA 一键脚本 + 相机 label 防漂移 + 默认配置切单左臂**——`scripts/` × `astral_data_collect` × `quest3_video_streamer`。①新增 `vla_process_session.sh`（对齐→校验→转 LeRobot 一条龙，走 openpi uv venv，`--image-size`/`--apply-quarantine` 可选）与 `openpi_train.sh`（norm stats 重算 → 训练，`lora|full` 二选一，前置检查数据集软链与 pi05_base 权重）。②`params.yaml` auto_scan 覆盖块加「换 USB 口防漂移」注释写法：`auto_scan: false` + `/dev/v4l/by-id/` 稳定路径 + label 沿用 `video8/video0/video2`，数据集 key 不变下游零改动。③`data_collect.yaml` 默认切实际采集配置：单左臂 + 左夹爪、`cameras: ["video8", "video0", "video2"]`（auto_scan 节点名，双臂配置注释保留）。回归：转换/schema/web 31 例 + node_guards 9 例 + 对抗配置 8 例（openpi uv 环境跑通）全绿。
+
 ## 2026-09-01
+
+**换配置全链路对抗测试 + openpi 侧布局硬编码清除**——`astral_data_collect` × `VLA/openpi`。新增 `test_adversarial_configs.py`（8 例，独立临时 HF_LEROBOT_HOME，不碰真实数据集）：双臂+双夹爪+三相机（16 维）、左臂+wuji 灵巧手+腰+头（31 维，贴近上限）、双臂+腰头+15fps+非对称相机映射（右腕映射/左腕零填充）、NaN 段校验隔离后训练侧只剩健康段、31 维 norm stats 全量计算+归一化回归，以及三个负例（35 维超限必须拒 / camera_map 指向不存在相机必须拒 / 缺 meta 清晰报错）。每例在 openpi 侧逐维验证：delta 掩码与 schema 期望逐位一致、delta 语义为「相对 chunk 起始 state」（含 k≥1 帧）、`AstralOutputs` 截断维=state_dim、相机槽位按 conftest 颜色指纹验证接线正确、空 task 段 default_prompt 兜底分词与正常 task 段不同。同步修复：openpi `LeRobotAstralDataConfig` 原来写死 8 维截断、`(7,-1)` delta 掩码、video8/video0 相机映射——现改为 `create()` 时从数据集 `meta/info.json` 现读（state 维度/names 推导，`_ee_` 保持绝对其余转 delta，相机走 `camera_map`）；并修正环境变量口径：pinned lerobot 0.1.0 只认 `HF_LEROBOT_HOME`（设旧名 `LEROBOT_HOME` 会直接 raise），meta 解析与文档同步对齐。全套 53 例回归通过。
+
+
+**转换期图像 letterbox 到 224×224**——`astral_data_collect`。`convert_session` 新增 `image_size`（默认 224，`--image-size 0` 保留原分辨率）：视频落盘前按 openpi `resize_with_pad` 的几何约定等比缩放 + 对称黑边（余数归下/右），训练时 `ResizeImages(224,224)` 变恒等操作，模型输入与"全分辨率入库 + 在线缩放"逐像素一致，但省掉加载侧解码大图 + 缩放的 CPU 开销；图像统计口径同步改为 letterbox 后的帧。存量 3 段重转后数据集 283MB → 20MB（-93%），openpi 管线加载验证通过（原生 224 直入）。新增 2 例测试（letterbox 几何对齐 openpi 约定 / 默认 224 端到端尺寸与黑边断言）。
+
+**转换产物 parquet 去掉视频 struct 列（OpenPI 下游适配）**——`astral_data_collect`。v2.1 规范的 parquet 只含非视频列（视频帧由读取侧用 `timestamp` 列 + `meta/info.json` 的 `video_path` 模板解析，`get_hf_features_from_features` 对 `dtype=="video"` 直接跳过）；此前为"兼容性"多写的 `struct{path,timestamp}` 列会让 openpi 锁定的 lerobot 0.1.0 在 `hf_transform_to_torch` 的 `torch.tensor(dict)` 处崩溃（`Could not infer dtype of dict`）。转换器删列、存量 3 段 parquet 原地重写（未重编码视频）、schema 测试改为断言**不得**出现 `observation.images.*` 列。修复后 openpi 数据管线端到端验证通过：1828 样本加载、AV1 视频解码、action=next_state 语义保持（max diff 0.0）、pi05 三相机槽位映射 + 空 prompt 兜底分词正确。
+
+**转换管线 OOM 修复：SVT-AV1 限内存 + 图像统计流式化**——`astral_data_collect`。实机 3 段 1080p 数据转换在小内存机（15GB）上被 OOM 杀掉（exit 137，峰值 RSS 6.3GB，且管道下游静默表现为"只转出 1 段、meta 全空、退出码 0"——教训：该命令勿接 `| tail` 看结果，要看退出码）。两处根因：① SVT-AV1 默认按核数并行 + 深 lookahead，1080p 内部缓冲数 GB → 加 `svtav1-params: lp=2:lookahead=16`（参数不识别则退化无参打开，再不行回退 h264）；② 图像统计 `np.stack(≤100 帧)` ≈620MB/相机 → 改 `ImageStatsAccumulator` 流式累加（每通道 sum/sumsq/min/max，输出与堆叠计算数值等价，新增等价性回归 2 例）。修复后峰值 RSS **6.3GB → 1.14GB**，3 段 1828 帧完整转出。
+
+**cmd 流时间戳修复：改用到达时刻**——`astral_data_collect`。validate 对 9/1 上午实机 3 段数据报 F4 全灭：`left_arm_cmd` ~45% 样本戳完全重复（值不同）。根因：teleop `_publish_q` 把 `joint_commands` 的 `header.stamp` 打成上游 VR 输入戳（供 web 延迟面板算 E2E），IK 定时器（~60Hz）比 VR（~30Hz）快时同戳复用。采集端 `*_cmd` 流改为一律用到**达时刻**——指令样本时刻语义本就是「发出时刻」，且 VR 戳比真实发出早一个管线延迟，混用两时钟还会给 command 模式 action 对齐引入交错偏差。state 流仍用 header.stamp（驱动侧时钟）。新增 2 例回归（cmd 用到达时刻严格递增 / state 保留戳）。存量 3 段测试数据的 raw cmd 戳仍是旧的（next_state 模式不消费 cmd，不影响对齐/转换）。
 
 **采集抽头从推送开关解耦**——`quest3_video_streamer`。此前 `~/collect/{label}` 与 preview 共用运行时门控：`push_enabled=false`（或相机被 `active_cameras` 静音）时采集流也断，「关了推送开关想省 CPU 却采不到图」。改为**唯一准入条件 = 话题有订阅者**（编码本来就按需，无订阅零开销），录不录由 `astral_data_collect` 状态机决定；preview/WebRTC 仍走门控不变。效果：推送开关现在只控制「看」（Quest + web 实时画面），与「录」完全正交。
 

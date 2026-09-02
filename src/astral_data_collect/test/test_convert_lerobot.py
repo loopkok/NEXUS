@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from astral_data_collect.align_data import align_episode  # noqa: E402
 from astral_data_collect.convert_to_lerobot import (  # noqa: E402
+    _letterbox,
     aggregate_stats,
     convert_session,
     get_video_info,
@@ -39,7 +40,10 @@ def _build_dataset(tmp_path):
     for i in range(3):
         assert align_episode(str(root / f"episode00000{i}")) is not None
     out = tmp_path / "lerobot"
-    summary = convert_session(str(root), str(out), codec="h264", log=lambda *a: None)
+    # image_size=None：保留 64x48 原尺寸，让既有尺寸断言不受影响
+    summary = convert_session(
+        str(root), str(out), codec="h264", image_size=None, log=lambda *a: None
+    )
     return str(out), summary
 
 
@@ -114,17 +118,15 @@ def test_parquet_schema_and_content(tmp_path):
     out, _ = _build_dataset(tmp_path)
     pf = pq.ParquetFile(os.path.join(out, "data/chunk-000/episode_000001.parquet"))
     names = pf.schema_arrow.names
-    # 列集与 v2.1 一致（视频列为 VideoFrame struct）
+    # 列集与 v2.1 一致：parquet 只含非视频列（视频帧由读取侧用 timestamp +
+    # meta.video_path 模板解析；struct 列会让 openpi 锁定的旧版 lerobot 崩溃）
     for col in (
         "observation.state", "action", "timestamp", "frame_index",
         "episode_index", "index", "task_index",
-        "observation.images.wrist_left", "observation.images.wrist_right",
     ):
         assert col in names, col
-    vid_type = pf.schema_arrow.field("observation.images.wrist_left").type
-    assert str(vid_type.field("path").type) == "string"
-    assert str(vid_type.field("timestamp").type) == "float"  # float32
-    assert "timestamp" in [vid_type.field(i).name for i in range(vid_type.num_fields)]
+    # 回归：不得出现视频 struct 列
+    assert not any(c.startswith("observation.images.") for c in names), names
 
     table = pf.read()
     n = table.num_rows
@@ -141,12 +143,6 @@ def test_parquet_schema_and_content(tmp_path):
     state = np.array(table.column("observation.state").to_pylist(), dtype=np.float32)
     assert state.shape == (n, 16)
     assert np.all(np.isfinite(state))
-    # 视频 struct 列指向相对路径
-    vcol = table.column("observation.images.wrist_left").to_pylist()
-    assert vcol[0]["path"].endswith(
-        "observation.images.wrist_left/episode_000001.mp4"
-    )
-    assert abs(vcol[10]["timestamp"] - np.float32(10 / 30.0)) < 1e-6
 
 
 def test_global_index_continuity(tmp_path):
@@ -211,6 +207,36 @@ def test_episode_stats_and_aggregate(tmp_path):
     assert np.allclose(gs["observation.state"]["mean"], wmean, atol=1e-6)
 
 
+def test_image_stats_accumulator_matches_stacked():
+    """流式累加器与 np.stack 后计算数值等价（OOM 修复的回归锚点）。"""
+    from astral_data_collect.convert_to_lerobot import (
+        ImageStatsAccumulator,
+        compute_episode_stats,
+    )
+
+    rng = np.random.default_rng(0)
+    frames = rng.integers(0, 256, size=(17, 9, 13, 3), dtype=np.uint8)
+    state = rng.normal(size=(17, 4)).astype(np.float32)
+    action = rng.normal(size=(17, 4)).astype(np.float32)
+
+    ref = compute_episode_stats(state, action, {"cam": frames})["cam"]
+    acc = ImageStatsAccumulator()
+    for i in range(len(frames)):
+        acc.update(frames[i])
+    got = compute_episode_stats(state, action, {"cam": acc.stats()})["cam"]
+
+    assert got["count"][0] == ref["count"][0] == 17
+    for k in ("min", "max", "mean", "std"):
+        assert np.asarray(got[k]).shape == (3, 1, 1)
+        assert np.allclose(got[k], ref[k], atol=1e-6), k
+
+
+def test_image_stats_accumulator_empty():
+    from astral_data_collect.convert_to_lerobot import ImageStatsAccumulator
+
+    assert ImageStatsAccumulator().stats() is None
+
+
 def test_aggregate_stats_math():
     a = {"x": {"min": np.array([0.0]), "max": np.array([2.0]),
                "mean": np.array([1.0]), "std": np.array([0.5]), "count": np.array([4])}}
@@ -243,7 +269,9 @@ def test_convert_single_arm_layout(tmp_path):
     write_raw_episode(str(root / "episode000000"), schema=schema, duration_s=1.0)
     assert align_episode(str(root / "episode000000")) is not None
     out = tmp_path / "lerobot"
-    summary = convert_session(str(root), str(out), codec="h264", log=lambda *a: None)
+    summary = convert_session(
+        str(root), str(out), codec="h264", image_size=None, log=lambda *a: None
+    )
     assert summary["state_dim"] == 27
     with open(os.path.join(str(out), "meta/info.json")) as f:
         info = json.load(f)
@@ -251,3 +279,62 @@ def test_convert_single_arm_layout(tmp_path):
     assert len(info["features"]["observation.state"]["names"]) == 27
     assert list(info["features"].keys()).count("observation.images.wrist_right") == 1
     assert "observation.images.wrist_left" not in info["features"]
+
+
+def test_letterbox_matches_openpi_geometry():
+    """letterbox 几何与 openpi resize_with_pad 一致：等比 + 对称黑边（余数归下/右）。"""
+    # 1080p -> 224x126 + 上下各 49 黑边
+    img = np.full((1080, 1920, 3), 200, dtype=np.uint8)
+    out = _letterbox(img, 224)
+    assert out.shape == (224, 224, 3)
+    assert out[0].max() == 0 and out[-1].max() == 0  # 黑边
+    assert out[49].max() == 200 and out[49 + 126 - 1].max() == 200
+    # 竖高输入（200x100）-> 112x224 + 左右各 56 黑边
+    tall = np.full((200, 100, 3), 128, dtype=np.uint8)
+    out_tall = _letterbox(tall, 224)
+    assert out_tall.shape == (224, 224, 3)
+    assert out_tall[:, 0].max() == 0 and out_tall[:, -1].max() == 0
+    assert out_tall[:, 56].max() == 128
+    # 方形输入等比拉满，无黑边
+    sq = np.full((100, 100, 3), 128, dtype=np.uint8)
+    out_sq = _letterbox(sq, 224)
+    assert out_sq.shape == (224, 224, 3)
+    assert out_sq[0].max() == 128 and out_sq[-1].max() == 128
+    # 已是目标尺寸：恒等
+    done = np.full((224, 224, 3), 7, dtype=np.uint8)
+    assert np.array_equal(_letterbox(done, 224), done)
+
+
+def test_convert_letterbox_default_224(tmp_path):
+    """默认 image_size=224：视频与 meta 均为 224x224，解码帧带黑边。"""
+    root = tmp_path / "session"
+    write_raw_episode(str(root / "episode000000"), schema=SCHEMA, duration_s=0.5,
+                      task="t")
+    assert align_episode(str(root / "episode000000")) is not None
+    out = tmp_path / "lerobot"
+    convert_session(str(root), str(out), codec="h264", log=lambda *a: None)
+    with open(os.path.join(str(out), "meta/info.json")) as f:
+        info = json.load(f)
+    v = info["features"]["observation.images.wrist_left"]
+    assert v["shape"] == [224, 224, 3], v["shape"]
+    vinfo = get_video_info(
+        os.path.join(
+            str(out),
+            "videos/chunk-000/observation.images.wrist_left/episode_000000.mp4",
+        )
+    )
+    assert vinfo["video.width"] == 224 and vinfo["video.height"] == 224
+    import cv2
+
+    cap = cv2.VideoCapture(
+        os.path.join(
+            str(out),
+            "videos/chunk-000/observation.images.wrist_left/episode_000000.mp4",
+        )
+    )
+    ok, frame = cap.read()
+    cap.release()
+    assert ok and frame.shape == (224, 224, 3)
+    # 64x48 源 -> 224x168 内容 + 上下 28px 黑边
+    assert frame[0].max() == 0 and frame[-1].max() == 0
+    assert frame[28:196].max() > 0
