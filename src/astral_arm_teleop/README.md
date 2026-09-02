@@ -124,6 +124,11 @@ ros2 launch astral_arm_teleop astral_dual_arm_teleop.launch.py dry_run:=true
   缓慢牵回），探针确认人臂角**连续 20 帧**可行才正式返回 —— 一次大 roll
   最多甩一次、回一次，且都被速度限幅摊成平滑过渡；
 - 冷启动（无 `θ0_prev`）不受影响，立即全局求解；`1/1` 可复现旧行为。
+- 两个帧数已暴露为节点参数（可热改）：`ik_escape_after_frames`（默认 4，
+  调大 = 越不容易甩肩、但腕姿态"卡住不跟"的窗口越长）、
+  `ik_return_after_frames`（默认 20，调小 = roll 结束后更快回到人臂角）。
+  逃逸发生时打 WARN 日志一次并计入 `[Latency]` 行的 `psi_escape` 计数，
+  真机看到肩部突动先查这个。
 
 ### 按求解器切换的 `vr_to_arm_rot` 与 `flip_q`
 

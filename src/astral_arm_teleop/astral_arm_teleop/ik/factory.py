@@ -320,6 +320,8 @@ def make_single_arm_ik(
     ik_w_pref: float = 0.0,
     ik_w_fold: float = 0.015,
     ik_q4_fold: float = -1.20,
+    escape_after_frames: int | None = None,
+    return_after_frames: int | None = None,
 ):
     """One-arm solver for ``astral_arm_teleop_node`` (DH native or URDF adapter)."""
     st = solver_type.strip().lower()
@@ -337,7 +339,13 @@ def make_single_arm_ik(
         from astral_arm_teleop.ik.geometric import GeometricIKSolver
 
         path = urdf_path.strip() or default_astral_urdf_path()
-        return GeometricIKSolver(arm_side, urdf_path=path, fast_mode=True)
+        return GeometricIKSolver(
+            arm_side,
+            urdf_path=path,
+            fast_mode=True,
+            escape_after_frames=escape_after_frames,
+            return_after_frames=return_after_frames,
+        )
 
     if st in ("urdf_numerical", "urdf", "numerical"):
         path = urdf_path.strip() or default_astral_urdf_path()

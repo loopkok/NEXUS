@@ -179,6 +179,10 @@ class AstralTeleopArmNode(Node):
         # garbage angle. 0.15 ~= elbow 4 cm off the line on a 28 cm upper
         # arm; normal bent-arm gestures have sin >= 0.5.
         self.declare_parameter("human_elbow_min_sin", 0.15)
+        # 逃逸迟滞（仅 geometric）：局部窗连续空 esc 帧才全局逃逸，逃逸后
+        # home 窗连续可行 ret 帧才返回。roll 大角度腕限位边界闪空时防肩抽。
+        self.declare_parameter("ik_escape_after_frames", 4)
+        self.declare_parameter("ik_return_after_frames", 20)
 
         self.side = str(self.get_parameter("arm_side").value).lower()
         if self.side not in ("left", "right"):
@@ -232,6 +236,8 @@ class AstralTeleopArmNode(Node):
         self._elbow_dir_vr: Optional[np.ndarray] = None  # EMA-smoothed unit dir
         self._elbow_dir_t: float = 0.0
         self._body_subs = None
+        # Arm-angle escape watcher state (geometric solver; see main loop).
+        self._esc_prev_active = False
         init_q_old = np.asarray(
             self.get_parameter("init_pose").value, dtype=float
         ).reshape(7)  # hardware/original convention (config)
@@ -444,6 +450,15 @@ class AstralTeleopArmNode(Node):
                     self._human_elbow_tau = float(p.value)
                 elif name == "human_elbow_min_sin":
                     self._human_elbow_min_sin = float(p.value)
+                elif name in ("ik_escape_after_frames", "ik_return_after_frames"):
+                    cont = getattr(self.ik, "continuity", None)
+                    if cont is not None:
+                        attr = (
+                            "escape_after_frames"
+                            if name == "ik_escape_after_frames"
+                            else "return_after_frames"
+                        )
+                        setattr(cont, attr, max(1, int(p.value)))
                 elif name in (
                     "arm_side",
                     "urdf_path",
@@ -506,6 +521,12 @@ class AstralTeleopArmNode(Node):
             ik_w_pref=float(self.get_parameter("ik_w_pref").value),
             ik_w_fold=float(self.get_parameter("ik_w_fold").value),
             ik_q4_fold=float(self.get_parameter("ik_q4_fold").value),
+            escape_after_frames=int(
+                self.get_parameter("ik_escape_after_frames").value
+            ),
+            return_after_frames=int(
+                self.get_parameter("ik_return_after_frames").value
+            ),
         )
         self._apply_human_elbow_cfg()
         if self._use_human_elbow and not hasattr(self.ik, "arm_angle_from_elbow_dir"):
@@ -858,6 +879,25 @@ class AstralTeleopArmNode(Node):
             sol = self.ik.solve(T_flange, psi_ref=psi_ref)
         if self._print_latency:
             self._lat.add("ik", (time.perf_counter() - t_ik) * 1000.0)
+        # Arm-angle escape: the local psi window went empty for
+        # ik_escape_after_frames (wrist-limit boundary during a big roll) and
+        # the solver jumped to a globally feasible psi — the visible shoulder
+        # swing. Count it and log once per escape; return is debounced by
+        # ik_return_after_frames.
+        esc_state = getattr(self.ik, "_state", None)
+        if esc_state is not None and esc_state.esc_active:
+            if self._esc_prev_active is not True:
+                self._esc_prev_active = True
+                if self._print_latency:
+                    self._lat.count("psi_escape")
+                self.get_logger().warn(
+                    f"[{self.side}] arm-angle escape: wrist limit swallowed the "
+                    f"local psi window during a big roll; shoulder swings "
+                    f"once, returns after ik_return_after_frames of feasible "
+                    f"home psi"
+                )
+        else:
+            self._esc_prev_active = False
         if sol is None:
             if self._print_latency:
                 self._lat.count("ik_fail")

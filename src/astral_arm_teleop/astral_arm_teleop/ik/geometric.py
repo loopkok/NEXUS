@@ -844,6 +844,8 @@ class GeometricIKSolver:
         urdf_path: str = "",
         continuity_params: Optional[ContinuityParams] = None,
         fast_mode: bool = True,
+        escape_after_frames: Optional[int] = None,
+        return_after_frames: Optional[int] = None,
     ):
         side = arm_side.strip().lower()
         if side.startswith("l"):
@@ -858,6 +860,10 @@ class GeometricIKSolver:
         self.continuity = (
             continuity_params if continuity_params is not None else ContinuityParams()
         )
+        if escape_after_frames is not None:
+            self.continuity.escape_after_frames = int(escape_after_frames)
+        if return_after_frames is not None:
+            self.continuity.return_after_frames = int(return_after_frames)
         self.fast_mode = fast_mode
         self._state = ContinuityRuntimeState(
             q_prev=np.zeros(7, dtype=float),

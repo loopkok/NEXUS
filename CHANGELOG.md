@@ -6,6 +6,8 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-02
 
+**roll 逃逸迟滞参数化 + 逃逸可观测**——`astral_arm_teleop`。`ik_escape_after_frames`（默认 4）/`ik_return_after_frames`（默认 20）从 `geometric.py` 常量提升为节点参数，工厂/求解器全链路透传，可经 `ros2 param set` 热改（调大 = 越不易甩肩但"卡住不跟"窗口越长；调小返回 = roll 结束更快回人臂角）。逃逸发生时打一次 WARN 并计入 `[Latency]` 行 `psi_escape` 计数——真机肩部突动先查这个，不再是无声的瞬间跳变。验证：`test_geometric_ik` 9 例全 PASS（含 `roll_escape_hysteresis`），工厂注入 7/33 生效、默认 4/20 不变。
+
 **指纹查询 CLI：`python3 -m quest3_video_streamer.scan`**——在机器人上直接打印每路采集设备（节点名/设备路径/fourcc）的全部稳定指纹（by-id → by-path → sysfs），抄子串进 `label_aliases` 即可，替代手工 `ls -l /dev/v4l/by-id/` 再对节点。无采集设备时提示 no capture-capable device。无相机环境冒烟通过。
 
 **label_aliases：auto_scan 换口/重插防漂移落地（别名表方案）**——`quest3_video_streamer`。在昨日「auto_scan: false + 命名块 + by-id」备选写法之上，补上两全方案：保持 `auto_scan: true` 的自动发现，新增 `label_aliases` 参数（字符串数组 `"指纹子串=稳定label"`），扫描完成后按设备指纹（`/dev/v4l/by-id` → `by-path` → sysfs 名，子串匹配，先列先赢）改写 label；改写发生在 per-label 覆盖块查找之前（`video8.preset` 等同名块自动生效）。语义细节：目标名=匹配设备当前内核名 → 合法 no-op（固化现状，且消耗该设备，后续规则不再对其生效）；目标名撞上**其他**设备的内核名 → 拒绝并告警（防止重名）；一条规则匹配多台 → 只改第一台并告警；规则零命中 → 告警（指纹写错或相机未插，开录前看日志一眼）。`scan.py` 新增 `stable_fingerprints()`（纯函数）与 `apply_label_aliases()`（支持预置 fingerprints 注入）；`streamer_node` 声明 `label_aliases` 参数并接入 `_build_sources` 的 auto_scan 分支。新增 `test_label_aliases.py` 12 例（指纹顺序/兜底 mock、命中/未命中/固化现状/多设备/冲突/畸形规则/集成断言——rclpy 缺失自动 skip），streamer 全套 32 例通过。使用：`params.yaml` 加 `label_aliases: ["Intel_R._RealSense=video8", ...]`，换口/重插/重启后 data_collect 与 openpi camera_map 永远零改动。
