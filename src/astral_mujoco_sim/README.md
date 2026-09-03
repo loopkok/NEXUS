@@ -3,9 +3,11 @@
 Astral 双臂 MuJoCo 仿真：订阅 teleop 的 `joint_commands`，驱动 MJCF（真机驱动替身）。
 
 ```text
-quest3 (convert_to_robot:=true)
+quest3 (protocol: tcp_wired 默认; convert_to_robot:=true)
   Mixed → robot_world   IOBT → robot_body   # mocap 保证 frame_id 稳定
   → astral_arm_teleop_{left,right}
+      geometric（yaml 默认）: SW base_link 系闭式解，输出即硬件约定，不 flip；
+        use_human_elbow 默认开（Quest 肩肘方向作为臂角 psi_ref 先验）
       analytic_dh: R_baseᵀ + flip_q → 发布旧约定 q
       urdf_numerical: 无 flip，直接旧约定 q
   → /{side}_arm/joint_commands
@@ -47,18 +49,21 @@ sim 管线默认也起 `controller_start_gate` 与带 trigger 合并的 gripper�
 
 | 文件 | 用途 |
 |------|------|
-| `astral_dual.xml` | **默认仿真**。`init_pose_*` 与 teleop yaml 同为旧约定 |
-| `astral_dual_clean.xml` | 干净 MDH / 翻转限位的可选 MJCF。架构 B 下 **不接入** 默认 launch |
+| `astral_dual.xml` | **默认仿真**（`mjcf_path` 为空时的回退，`mjcf_path` 留空即用它）。与 `geometric`/`analytic_dh` 发布的 q 同约定 |
+| `astral_dual_clean.xml` | 干净 MDH / 翻转限位的可选 MJCF。当前 teleop 默认链路下 **不接入**，误用会肘/肩符号对反 |
 
-`mujoco_sim_node.py` / `astral_mujoco_sim.yaml` 的 `init_pose_left/right` 保持：
+`mujoco_sim_node.py` 代码默认 `init_pose_left/right` 仍是 `[0.32, ±0.11, -0.53, -0.80, 0.28, 0, 0]`，
+但 **`astral_mujoco_sim.yaml` 已覆盖为零位**：
 
-```text
-left:  [0.32,  0.11, -0.53, -0.80, 0.28, 0, 0]
-right: [0.32, -0.11,  0.53, -0.80, 0.28, 0, 0]
+```yaml
+init_pose_left:  [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]
+init_pose_right: [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00]
 ```
 
-DH teleop 已在发布前 `flip_q`，仿真按旧约定解释即可。  
-若误用 `astral_dual_clean.xml` 接当前 teleop，肘/肩符号会对反。
+零位让仿真开机就能看到「rest → via → init_pose」的 homing 过程
+（teleop 启动时会沿 `init_waypoints` 慢速走到各 yaml 的 `init_pose`，
+与 sim 的展示位姿无关）。想让模型启动即停在工作位姿，把 yaml 里这两行改回
+代码默认值即可。
 
 ## 依赖
 
@@ -81,11 +86,11 @@ source install/setup.bash
 # 仅仿真（另开终端发 joint_commands 或 keyboard_vr_sim + teleop）
 ros2 launch astral_mujoco_sim astral_mujoco_sim.launch.py
 
-# Quest 遥操 → MuJoCo（solver / protocol 在 yaml，默认 urdf_numerical + tcp_wired）
+# Quest 遥操 → MuJoCo（solver / protocol 在 yaml，默认 geometric + tcp_wired）
 ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
 
 # 一次性覆盖求解器或协议（不改 yaml）
-ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py solver_type:=analytic_dh
+ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py solver_type:=urdf_numerical
 ```
 
 键盘假 VR：

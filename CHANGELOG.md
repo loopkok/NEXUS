@@ -4,6 +4,10 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-09-03
+
+**sim README 对齐当前默认 + 关节 3/5 限位放宽**——`astral_mujoco_sim` × `astral_arm_teleop` × `astral_robot_description`。①README：默认求解器描述从 `urdf_numerical` 修正为 **`geometric`**（yaml 实际默认，含 `use_human_elbow` 先验说明）、init_pose 描述改为「代码默认非零位、`astral_mujoco_sim.yaml` 覆盖为零位看 homing 过程」、MJCF 表补 `mjcf_path` 回退逻辑。②URDF/MJCF/`analytic.py` 四处一致放宽 joint3/5：±1.57 → **±2.2689 / ±1.7802**（`astral_arm.urdf`、`astral_robot.urdf` 及各自 `.pin.urdf`、内嵌 `RobotMain_URDF.pin.urdf`、`astral_dual.xml` 关节 range + actuator ctrlrange）。③`test_geometric_ik` 满伸 sweep 用例对齐逃逸迟滞设计：>0.15 rad 跳变仅当 `esc_active`（分支逃逸）时放行并打印 note，无逃逸的真跳变仍 FAIL；离散化与 seed 选择同为 5mm，避免更细步长撞进合法的窄姿态口袋。
+
 ## 2026-09-02
 
 **roll 逃逸迟滞参数化 + 逃逸可观测**——`astral_arm_teleop`。`ik_escape_after_frames`（默认 4）/`ik_return_after_frames`（默认 20）从 `geometric.py` 常量提升为节点参数，工厂/求解器全链路透传，可经 `ros2 param set` 热改（调大 = 越不易甩肩但"卡住不跟"窗口越长；调小返回 = roll 结束更快回人臂角）。逃逸发生时打一次 WARN 并计入 `[Latency]` 行 `psi_escape` 计数——真机肩部突动先查这个，不再是无声的瞬间跳变。验证：`test_geometric_ik` 9 例全 PASS（含 `roll_escape_hysteresis`），工厂注入 7/33 生效、默认 4/20 不变。
