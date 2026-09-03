@@ -6,6 +6,107 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-03
 
+**真机遥操手感调参：两级低通串联改单级**——`astral_arm_teleop` × `astral_robot_control`。
+**现象**：遥操小动作"先顿后冲"（先迟钝一下再冲上去），静止又有发颤。**原因**：teleop
+`pos/rot_smoothing` 与 driver 板卡 `lpf` 是**两级串联低通**，时间常数叠加、噪声抑制与跟手
+矛盾。**做法**：噪声抑制收敛到 teleop 一级，板卡近直通——teleop `pos/rot_smoothing` 0.4→
+**0.25**（按 50Hz 标定 ≈ τ14ms）；driver `lpf_alpha` 0.35→**0.85**（100Hz ≈ ~2ms 近直通）。
+注释记录回退阶梯：静止发颤回 0.35~0.4 / `lpf 0.6~0.7`；大动作仍觉肉再降 0.15~0.2 / 升 0.95
+（`lpf_enable:false` = 全直通）。三处 yaml（左右臂 + `astral_robot.yaml`）同步。
+
+**web 急停后恢复不归位修复 + HOME（归位到零）按钮**——`astral_robot_control` ×
+`astral_arm_teleop` × `astral_web_monitor`。**现象**：web 端急停（真断电 disable）→ 停止 →
+再启动，机器人不回零，直接锁在当前位置。**原因**：急停后电机失能；重启时 driver `auto_ready`
+的 one_click_ready 未可靠确认上电，且启动仅起节点、无"使能=遥操版一键就绪"步骤，臂节点的
+归位轨迹在电机失能期"内部空跑"领先实体。**做法**：① driver 新增 `~/enable` Trigger 服务
+（WORK→POSITION→enable，**不回零**——遥操恢复归位路径专用，避免与 teleop 正在发布的
+joint_commands 轨迹目标抢）；② 启动/重启带真机 driver 的预设后，monitor 等待 `~/enable`
+服务出现并幂等调用（`DRIVER_ENABLE_WAIT_S` 12s 预算，无 driver/sim 自动跳过）——
+`_preset_has_driver` 按 `with_arm_driver` 或 package 判定；③ 臂节点归位贴实测 joint_states
+（新参数 `homing_track_state` 默认 true）：fresh 且贴近 q_cmd 时每拍从实测位姿迈步，电机未使能
+不动时 q_cmd 不再空跑，使能晚到不会猛扑；④ 新增 **HOME / park-to-zero**：臂节点订阅
+`/teleop/home`（一次性 volatile，语义同 `/teleop/start`）+ `~/home` 服务，`_go_home` disarm
+后沿 **init_pose → init_waypoints → 零位** 慢速收回，到零位把机器人原点锚到 FK(零)，超时保持
+当前 q_cmd 绝不硬发零目标（新单臂/双臂通用测试 `test_home_park.py` 5 例全绿）；⑤ web monitor
+`config.py` 增 `TOPIC_HOME`/`DRIVER_SRV_ENABLE`，monitor_node 发布 `publish_home` 并把
+`enable` 纳入 `_DRIVER_SERVICES`；⑥ `web_server.py` 新增 `POST /api/v1/teleop/home`（先使能
+后 disarm+home，仅 RUNNING/PAUSED 可用），前端预设管理区「启动/停止/重启」旁加 **HOME** 按钮
+（`api.teleopHome`，purple，与急停区分）。真机流程：急停→停止→启动（自动使能）→ 按需 HOME 收回
+零位 → 一键就绪/`/teleop/start` 重新遥操。
+
+**新增推理功能包 `astral_policy_inference`（策略部署 / 数据真机回放 / 人在环路）**。
+本包接遥操数采与训练上游做推理闭环：模型无关后端（openpi 远程 ws `host/port` / lerobot ACT 进程内
+`checkpoint_dir` / stub 冒烟），**换模型=只换后端参数**；三种引擎模式 `queue_sync`（阻塞重填）/
+`queue_async`（后台预取）/ `rtc`（后台滚切+min_tail+延迟补偿跳行）；布局真源
+`astral_data_collect.schema.CollectSchema`——观测订阅/state 向量/`split_action` 指令拆分全自动，
+换机器人配置只改同 schema 参数。回放读 LeRobot v2.1 目录或 `aligned_data.h5`，`PlaybackSession`
+步进 + 中断续播 offset 重锚。HITL：`_cmd_takeover` 先对每个遥操节点调 `~/reanchor`（效应）全部成功
+才提交 HUMAN（仲裁先效应后提交）；暂停→增量 VR 接管→交还策略/回放；release/resume 时策略按实况
+重规划、回放按实况重锚，避免陈旧 chunk 跳变。`astral_arm_teleop` 新增 `~/reanchor` 服务（同步重记
+机器人原点=FK(当前关节) 与 VR 零点=当前 VR 位姿）。安全兜底 `SafeExecutor`（NaN/比值 [0,1]/
+关节限位/`max_joint_vel` 限速）独立于策略。修复三个易踩坑：rclpy 无 struct 参数 →
+`camera_map` 用 JSON 字符串；`__init__` 顺序清空 `_backend_cfg` 导致 make_backend 缺参；re-anchor
+`service_is_ready` 误判就绪后阻塞等响应 → `call_async`+3s 轮询。验证：最初 74 例单测全绿（含进程内
+mock 机器人 + stub 后端 + 真实 Trigger 服务的 node_flow：策略起停/暂停恢复重规划/回放两路径/
+接管成功与失败路径），另有 `astral_arm_teleop/test_reanchor_teleop.py` 覆盖 `~/reanchor`。
+实现期后续修复/补强（同批次）：① `pinch_gripper_node` 新增 `disarm_topic` 仲裁门
+（默认 `/teleop/disarm`，空串=旧行为），策略在 POLICY/PLAYBACK 期间独占夹爪指令话题、进入
+HUMAN 时 policy_node 发 disarm=False 放行真人捏合/扳机——否则夹爪遥操与策略抢写
+`/left_gripper/command`；② `ActionEngine.stop()` 在锁内 close backend、queue_sync 边界重填
+整段持锁推理，消除"控制线程推理中另一线程停引擎→并发关后端"竞态；③ 刚进播放立刻暂停且尚无
+指令时 `_cmd_pause` 兜底 `_hold_current()`（以实测姿态冻结）；④ 引擎/节点恢复语义：暂停后
+resume 策略重建 chunk、回放重锚 offset（防陈旧行跳变）。MuJoCo 真话题端到端冒烟
+`scripts/run_inference_sim_smoke.py`（astral_mujoco_sim + policy_node stub 全链路：policy 驱动
+arm/gripper→pause 夹持值稳定→resume 恢复变化→h5 回放逐帧一致→播完自动 IDLE）**全部通过**。
+
+**对抗性审查修复（首轮 14 项，本轮全处理）**——`astral_policy_inference` × `astral_arm_teleop`
+× `astral_gripper_teleop`。① **`/teleop/disarm` 电平语义冲突（critical）**：arm/head 遥操
+`_on_disarm` 对任何 Bool 都 disarm，而 policy 进 HUMAN/IDLE 发 disarm=false 开闸，把刚
+re-anchor 武装的遥操又拆掉 → arm/head 只认 `Bool(true)`，与 web/pinch 消费方对齐；② stop→
+IDLE 发 disarm=false 重开仲裁门（TRANSIENT_LOCAL 闩锁不再永久关死夹爪门）；③ pinch 门控回归
+web pause→resume：pinch 新增 `arm_topic`（`/teleop/armed`=true 也恢复），默认配置同时设
+disarm+arm；④ `_cmd_playback` 先 load+`action_dim`/`state_names` 校验再 request→teardown，
+失败原地保持（不再"POLICY+引擎 None 静默冻结"）；⑤ `_start_policy` 先验证 obs→冻结旧引擎→
+新引擎成功后 disarm+换新，失败 `revert()` 恢复（Controller 快照含 `_interrupted`）；⑥ POLICY
+运行期 state 连续缺失 >`obs_stale_stop_s` 自动暂停，杜绝陈旧观测盲推；⑦ `~/cmd` 入队 + 控制
+定时器持 `RLock` 串行 drain+dispatch（仲裁回调与控制循环不再交错双写，接管改为事件驱动轮询
+re-anchor、失败事务性 re-disarm）；⑧ 接管先验新鲜 state，避免陈旧 q_cmd 锚点跳变；⑨
+`_run_plan` 整段持锁推理，`stop()` 锁内 close，消除 infer/close 竞态；⑩ 二次回放不再跳过
+末帧保持（`_hold_end` 在 playback/stop 清理）；⑪ 回放带 schema 时校验布局命名顺序（同维不同
+块序拒绝）；⑫ smoke 驱动反馈泵按 disarm 闩锁门控、断言策略夹爪比值且不再被 0.5 回显污染、
+回放 leg 断言轨迹末帧=记录末行。验证：全套 79 例单测全绿（新增 obs 陈旧自动暂停/disarm 电平
+顺序/接管失败事务性回滚/回放 schema 拒绝/连续回放保持 等 node_flow 回归），
+`astral_arm_teleop/test_reanchor_teleop.py` 5 例全绿。
+
+**LeRobot v2.1→v3.0 升版转换器（现代 lerobot ACT 直接训练）**——`astral_data_collect`
+新增 `convert_to_lerobot_v3.py`：把 openpi 用的 v2.1 数据集**原样升版**为 v3.0，
+供 `VLA/lerobot`（>=0.6，ACT 与其它策略共用读取管线）直接训练——其读取侧对 v2.1
+直接 `raise BackwardCompatibilityError`。布局/数值语义逐字段镜像官方
+`scripts/convert_dataset_v21_to_v30.py`：data/episodes 按 chunk 分段合并
+`file-*.parquet`、同 chunk 的段视频用 PyAV `ffconcat` **流拷贝串接不重编码**、
+时间窗按各段实测时长叠加、tasks.jsonl→`tasks.parquet`、episodes.jsonl→
+`meta/episodes/chunk-000/file-000.parquet`、v2.1 专用 info 字段清掉换成 v3.0
+模板；`stats.json` 原样沿用（无需重算）。**源 v2.1 目录只读**，输出独立目录默认
+拒覆写（`--overwrite` 重建）。验证：与官方脚本同源产物逐文件一致；现代
+`LeRobotDataset` 加载 3 段 1828 帧、逐帧解码逐像素与官方产物一致；`lerobot-train
+--policy.type=act` 冒烟 2 步在 CPU 上真实跑通并落 checkpoint（前向/反向/保存全过）。
+`vla_process_session.sh` 增加 `--act-output <dir>`（可加 `--overwrite-v3`）一条龙
+串接升版。新增 `test_convert_lerobot_v3.py` 7 例回归：目录布局/info 字段迁移、
+tasks.parquet、数据 parquet 行数+非视频列集不变、episodes 元数据区间/tasks/
+length、视频合成帧数=各段之和+时间窗首尾相接、stats 原样拷贝、守卫（覆写拒绝/
+非 v2.1 源/输出在源内）与源目录只读。离线回归全套 59 例通过。
+
+**改采集配置后同目录重转的静默污染修复**——`convert_to_lerobot.py` ×
+`convert_to_lerobot_v3.py`。对抗审查发现：改 `data_collect.yaml`（加右臂/换手/
+段数变少）后把 v2.1 重转进**同一输出目录**，旧 `data/`、`videos/` 的 episode
+文件不会被删（只截断 meta jsonl），而 v3 升版按目录遍历文件 → 把**旧布局的行**
+（如单臂 8 维）与新高维行混进同一个 parquet，静默产出损坏数据。修复两层：
+①`convert_session` 视输出目录为数据集专属目录，开始前清掉旧 `data/`、`videos/`
+（与官方"输出即替换"语义一致）；②`convert_to_lerobot_v3` 以
+`meta/episodes.jsonl` 为权威 episode 清单，数据/视频文件集与清单不一致即响亮报错
+（列出多余残留下标与缺失下标并提示换新目录），不再静默跳过或合并。新增 2 例回归
+（重转清残留后升版一致性 / 脏源拒绝），离线回归全套 **61 例**通过。
+
 **sim README 对齐当前默认 + 关节 3/5 限位放宽**——`astral_mujoco_sim` × `astral_arm_teleop` × `astral_robot_description`。①README：默认求解器描述从 `urdf_numerical` 修正为 **`geometric`**（yaml 实际默认，含 `use_human_elbow` 先验说明）、init_pose 描述改为「代码默认非零位、`astral_mujoco_sim.yaml` 覆盖为零位看 homing 过程」、MJCF 表补 `mjcf_path` 回退逻辑。②URDF/MJCF/`analytic.py` 四处一致放宽 joint3/5：±1.57 → **±2.2689 / ±1.7802**（`astral_arm.urdf`、`astral_robot.urdf` 及各自 `.pin.urdf`、内嵌 `RobotMain_URDF.pin.urdf`、`astral_dual.xml` 关节 range + actuator ctrlrange）。③`test_geometric_ik` 满伸 sweep 用例对齐逃逸迟滞设计：>0.15 rad 跳变仅当 `esc_active`（分支逃逸）时放行并打印 note，无逃逸的真跳变仍 FAIL；离散化与 seed 选择同为 5mm，避免更细步长撞进合法的窄姿态口袋。
 
 ## 2026-09-02
