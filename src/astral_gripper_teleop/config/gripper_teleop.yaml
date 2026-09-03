@@ -30,3 +30,9 @@ pinch_gripper_node:
     # 输出限速（ratio/s）：驱动每拍发绝对角度、夹爪伺服全速赴位，不限速时
     # 快速扣扳机会"啪"地合死。2.5 = 全行程 ≥0.4s；<=0 关闭。trigger/pinch 都生效。
     max_ratio_rate: 2.5
+    # 仲裁门：策略推理（astral_policy_inference）在 POLICY/PLAYBACK 期间发 disarm=true
+    # 独占夹爪指令话题，避免与真人捏合抢写；进入 HUMAN/IDLE 后发 false 恢复本节点。
+    # 电平语义：只有 true 才禁用；web 恢复发的是 /teleop/armed=true（它从不发 disarm=false），
+    # 故本节点把 fresh armed=true 也当作门开启。留空 = 该方向不监听。
+    disarm_topic: "/teleop/disarm"
+    arm_topic: "/teleop/armed"

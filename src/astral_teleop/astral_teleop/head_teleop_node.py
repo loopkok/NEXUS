@@ -168,7 +168,11 @@ class HeadTeleopNode(Node):
             f"pitch={self._head_init[1]:.3f}; head control armed"
         )
 
-    def _on_disarm(self, _msg: Bool) -> None:
+    def _on_disarm(self, msg: Bool) -> None:
+        # Level signal: only Bool(true) disarms (web pause = True, policy
+        # re-opens with False on IDLE/HUMAN). A False must not disarm us.
+        if not msg.data:
+            return
         self._armed = False
         self.get_logger().info("disarm: head control stopped (driver holds)")
 

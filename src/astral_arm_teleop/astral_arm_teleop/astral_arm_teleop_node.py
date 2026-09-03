@@ -146,6 +146,10 @@ class AstralTeleopArmNode(Node):
             False,
         )
         self.declare_parameter("use_joint_state_seed", True)
+        # Homing 逐拍贴实测 joint_states（fresh 且与 q_cmd 接近时）：电机失能
+        # （急停后未使能）时 q_cmd 不再"内部空跑"领先机器人，而是等使能后
+        # 从真实位姿继续走，避免使能晚到瞬间机器人猛扑。
+        self.declare_parameter("homing_track_state", True)
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
         )
@@ -268,8 +272,15 @@ class AstralTeleopArmNode(Node):
         self._init_timeout = float(self.get_parameter("init_timeout").value)
         self._homing_t0 = 0.0
         self._homing_last_log = 0.0
+        self._homing_last_base = None
         self._homing_started = False
         self._homing_seeded = False
+        # "init" = 启动归位 init_waypoints→init_pose；"park" = HOME 按钮
+        # init_pose→init_waypoints→零位。决定 _finish_homing 的终态目标。
+        self._homing_mode = "init"
+        self._track_homing_state = bool(
+            self.get_parameter("homing_track_state").value
+        )
 
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
@@ -354,7 +365,16 @@ class AstralTeleopArmNode(Node):
         self.create_subscription(Bool, "/teleop/disarm", self._on_disarm, 10)
         self.create_subscription(Bool, "/teleop/start", self._on_start, 10)
         self.create_service(Trigger, "~/start", self._start_srv)
+        # HITL takeover: re-anchor the robot origin to the current measured
+        # joint state AND the VR zero to the current hand pose, then arm.
+        self.create_service(Trigger, "~/reanchor", self._reanchor_srv)
+        # HOME / park-to-zero: init_pose → init_waypoints → 零位（双臂同启用
+        # /teleop/home 一次性信号，单臂用 ~/home 服务）。VOLATILE 语义同
+        # /teleop/start：晚启动节点不得被历史 HOME 信号误触发。
+        self.create_subscription(Bool, "/teleop/home", self._on_home, 10)
+        self.create_service(Trigger, "~/home", self._home_srv)
 
+        self._state_t: Optional[float] = None
         self._last_vr_t = 0.0
         self._last_vr_stamp = None
         self._prev_t = time.monotonic()
@@ -630,7 +650,13 @@ class AstralTeleopArmNode(Node):
         self._disarm_reason = None
         self.get_logger().info(f"[{self.side}] armed via /teleop/armed")
 
-    def _on_disarm(self, _msg: Bool) -> None:
+    def _on_disarm(self, msg: Bool) -> None:
+        # /teleop/disarm is a *level* signal: only Bool(true) disarms. Several
+        # owners publish to it (web pause = True, astral_policy_inference opens
+        # the gate with False on IDLE/HUMAN), so a False must not disarm an
+        # armed teleop that a re-anchor / ~/start just armed.
+        if not msg.data:
+            return
         self._armed = False
         # A fault reason sticks until a proper /teleop/start; an operator
         # pause must not downgrade it (pause→resume would bypass re-centering).
@@ -672,10 +698,116 @@ class AstralTeleopArmNode(Node):
         )
         return True, "started"
 
+    def _on_home(self, msg: Bool) -> None:
+        # One-shot level guard (mirrors /teleop/start): only Bool(true) triggers.
+        if msg.data:
+            self._go_home()
+
+    def _home_srv(
+        self, _req: Trigger.Request, resp: Trigger.Response
+    ) -> Trigger.Response:
+        ok, message = self._go_home()
+        resp.success = ok
+        resp.message = message
+        return resp
+
+    def _go_home(self):
+        """HOME / park-to-zero：从当前位姿慢速走 init_pose → init_waypoints →
+        零位（硬件约定），到零位后保持（关节目标=0）。
+
+        用于把遥操（或急停恢复后）的臂安全收回零位。动作前先 disarm（若在
+        遥操/armed），期间忽略 VR/start；结束后要再遥操需重新 /teleop/start。
+        与启动归位共用同一条慢速 joint-space 轨迹机（_homing_*），仅终态与
+        轨迹点不同。
+        """
+        if self._homing:
+            msg = "homing/park already in progress; wait until it finishes"
+            self.get_logger().warn(f"[{self.side}] home: {msg}")
+            return False, msg
+        self._armed = False
+        if self._disarm_reason != "fault":
+            self._disarm_reason = "operator"
+        self._homing_mode = "park"
+        self._homing_path = (
+            [self._init_q_hw.copy()]
+            + self._parse_init_waypoints()
+            + [np.zeros(7, dtype=float)]
+        )
+        self._homing_i = 0
+        self._homing_started = False
+        self._homing_seeded = False
+        self._homing = True
+        self._homing_last_log = 0.0
+        self._homing_last_base = None
+        self.pose.reset()
+        self.get_logger().warn(
+            f"[{self.side}] HOME: disarm + park to zero via init_pose → "
+            f"{len(self._parse_init_waypoints())} via → zero "
+            f"({self._init_joint_vel:.2f} rad/s)"
+        )
+        return True, "HOME 已启动 (init_pose → init_waypoints → 零位)"
+
     def _on_state(self, msg: JointState) -> None:
         if len(msg.position) >= 7:
             self.state_q = np.asarray(msg.position[:7], dtype=float)
             self._got_state = True
+            self._state_t = time.monotonic()
+
+    def _reanchor_srv(
+        self, _req: Trigger.Request, resp: Trigger.Response
+    ) -> Trigger.Response:
+        ok, message = self._reanchor_teleop()
+        resp.success = ok
+        resp.message = message
+        return resp
+
+    def _reanchor_teleop(self):
+        """Re-anchor robot origin + VR zero to the *current* state/pose, then arm.
+
+        Used for HITL takeover: after a policy has moved the arm away from the
+        startup pose, ``_start_teleop`` alone would command toward the stale
+        startup ``robot_init`` and jump. This re-derives ``robot_init_pos/rot``
+        from the latest measured joint state (fallback: last commanded q) and
+        captures ``vr_init`` from the current VR pose, so subsequent motion is
+        purely incremental from where the robot actually is.
+
+        Returns ``(ok, message)``; on failure nothing is re-anchored/armed.
+        """
+        if self._homing:
+            msg = "homing in progress; wait for init pose, then re-anchor"
+            self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
+            return False, msg
+        if self.pose.vr_current_pos is None or self.pose.vr_current_rot is None:
+            msg = "no VR wrist pose yet; start Quest stream, place hand, then re-anchor"
+            self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
+            return False, msg
+        state_fresh = self._got_state and (
+            self.data_timeout <= 0.0
+            or (self._state_t is not None and time.monotonic() - self._state_t <= self.data_timeout)
+        )
+        q_hw = np.asarray(self.state_q if state_fresh else self.q_cmd, dtype=float).reshape(7)
+        q_ik = np.clip(
+            self._flip_q(q_hw), self.ik.lower_limits + 0.02, self.ik.upper_limits - 0.02
+        )
+        self.ik.sync_state(q_ik)
+        T0 = self.ik.fk(q_ik)
+        self.robot_init_pos = T0[:3, 3].copy()
+        self.robot_init_rot = T0[:3, :3].copy()
+        self.q_cmd = q_hw
+        self.safety.set_initial_state(q_ik, self.robot_init_pos)
+        if not self.pose.calibrate_from_current():
+            msg = "re-anchor failed (no VR pose for zero capture)"
+            self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
+            return False, msg
+        self._armed = True
+        self._disarm_reason = None
+        src = "measured joint state" if state_fresh else "last commanded q"
+        self.get_logger().warn(
+            f"[{self.side}] REANCHOR: robot origin ← FK({src}) "
+            f"{np.round(self.robot_init_pos, 3).tolist()}, vr_init ← current pose, armed"
+        )
+        return True, "re-anchored + armed"
+
 
     def _on_wrist(self, msg: PoseStamped) -> None:
         if self._homing:
@@ -933,6 +1065,29 @@ class AstralTeleopArmNode(Node):
         self.cmd_pub.publish(msg)
 
     def _finish_homing(self, now: float, reason: str) -> None:
+        mode = self._homing_mode
+        self._homing_mode = "init"
+        if mode == "park":
+            if reason == "arrived":
+                # 到零位：终态 q=0，并把机器人原点锚到零位 FK（后续 start/
+                # re-anchor 从实际位姿重新标定前不会用旧 init 目标）
+                self.q_cmd = np.zeros(7, dtype=float)
+                T0 = self.ik.fk(self._flip_q(self.q_cmd))
+                self.robot_init_pos = T0[:3, 3].copy()
+                self.robot_init_rot = T0[:3, :3].copy()
+            # reason=timeout → 保持当前 q_cmd（未到零位绝不能硬发零目标）
+            self.safety.set_initial_state(
+                self._flip_q(self.q_cmd), self.robot_init_pos
+            )
+            self.pose.reset()
+            self._homing = False
+            elapsed = now - self._homing_t0 if self._homing_t0 else 0.0
+            verb = "Parked at zero" if reason == "arrived" else "Park interrupted"
+            self.get_logger().warn(
+                f"[{self.side}] {verb} ({reason}, {elapsed:.1f}s). "
+                "Arms hold; send /teleop/start to resume teleop"
+            )
+            return
         self.q_cmd = self._init_q_hw.copy()
         self.safety.set_initial_state(self._flip_q(self.q_cmd), self.robot_init_pos)
         self.pose.reset()
@@ -974,17 +1129,42 @@ class AstralTeleopArmNode(Node):
             )
             self._homing_seeded = True
 
+        # Feedback-clamped base: 电机正常跟随时（实测 fresh 且贴近 q_cmd）每拍
+        # 从*实测位姿*迈步，而不是从内部 q_cmd 累加——急停后电机失能、机器人
+        # 不动时，q_cmd 不会"内部空跑"领先实体，使能晚到也不会让机器人猛扑，
+        # 而是原地等待、使能后继续沿轨迹走。
+        base = self.q_cmd
+        if self._track_homing_state and self._got_state and self._state_t is not None:
+            state_fresh = self.data_timeout <= 0.0 or (
+                now - self._state_t <= max(self.data_timeout, 1.0)
+            )
+            if state_fresh:
+                sdiff = float(np.max(np.abs(self.state_q - self.q_cmd)))
+                if sdiff < 0.6:
+                    base = np.asarray(self.state_q, dtype=float).reshape(7)
+
         target = self._homing_target()
         last = self._homing_i >= len(self._homing_path) - 1
-        err = target - self.q_cmd
+        err = target - base
         max_abs = float(np.max(np.abs(err)))
         if now - self._homing_last_log >= 2.0:
-            kind = "init" if last else f"via[{self._homing_i}]"
+            if self._homing_mode == "park" and last:
+                kind = "zero"
+            elif self._homing_mode == "park":
+                kind = f"park[{self._homing_i}]"
+            else:
+                kind = "init" if last else f"via[{self._homing_i}]"
+            stuck = ""
+            if base is not self.q_cmd and self._homing_last_base is not None:
+                moved = float(np.max(np.abs(base - self._homing_last_base)))
+                if moved < 1e-4 and max_abs > self._init_arrive_tol:
+                    stuck = " — 机器人没在动（电机未使能/堵转？）"
             self.get_logger().info(
                 f"[{self.side}] Homing {kind}: error={max_abs:.3f} rad, "
-                f"elapsed={elapsed:.1f}s"
+                f"elapsed={elapsed:.1f}s{stuck}"
             )
             self._homing_last_log = now
+            self._homing_last_base = base.copy()
 
         if max_abs < self._init_arrive_tol:
             self.q_cmd = target.copy()
@@ -1000,9 +1180,14 @@ class AstralTeleopArmNode(Node):
             self._publish_q()
             return
         if elapsed >= self._init_timeout:
+            note = (
+                "hold at current q"
+                if self._homing_mode == "park"
+                else "VR zero uses current q"
+            )
             self.get_logger().warn(
-                f"[{self.side}] Init pose timeout ({self._init_timeout:.0f}s), "
-                f"error={max_abs:.3f} rad — VR zero uses current q"
+                f"[{self.side}] Home timeout ({self._init_timeout:.0f}s), "
+                f"error={max_abs:.3f} rad — {note}"
             )
             T0 = self.ik.fk(self._flip_q(self.q_cmd))
             self.robot_init_pos = T0[:3, 3].copy()
@@ -1012,7 +1197,7 @@ class AstralTeleopArmNode(Node):
             return
 
         max_d = self._init_joint_vel * dt
-        self.q_cmd = self.q_cmd + np.clip(err, -max_d, max_d)
+        self.q_cmd = base + np.clip(err, -max_d, max_d)
         self._publish_q()
 
     def _pose_msg(self, T: np.ndarray, stamp) -> PoseStamped:

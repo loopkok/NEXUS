@@ -76,6 +76,16 @@ class PinchGripperNode(Node):
         # without this a fast trigger pull slams it shut despite the pipeline
         # being proportional end to end.
         self.declare_parameter("max_ratio_rate", 2.5)
+        # Optional arbitration gate: when an external owner (e.g. policy
+        # inference) publishes Bool true on this topic, this node stops writing
+        # its ratio command topic (last-writer-wins collision). Empty = always
+        # enabled (legacy behaviour).
+        self.declare_parameter("disarm_topic", "/teleop/disarm")
+        # Web monitor resume re-arms teleop by publishing Bool true on
+        # /teleop/armed (it never publishes disarm=False), so an operator
+        # pause→resume would otherwise leave this gate shut for the rest of
+        # the node's life. Treat a fresh armed=true as "gate open" too.
+        self.declare_parameter("arm_topic", "/teleop/armed")
 
         side = str(self.get_parameter("hand_side").value).strip().lower()
         if side not in ("left", "right"):
@@ -143,6 +153,22 @@ class PinchGripperNode(Node):
         self._emin: float | None = None
         self._emax: float | None = None
         self._last_env_t = 0.0
+
+        self._gripper_disarmed = False
+        self._disarm_log_t = 0.0
+        disarm_topic = str(self.get_parameter("disarm_topic").value).strip()
+        arm_topic = str(self.get_parameter("arm_topic").value).strip()
+        if disarm_topic:
+            from std_msgs.msg import Bool
+            self.create_subscription(Bool, disarm_topic, self._on_disarm, 10)
+        if arm_topic:
+            from std_msgs.msg import Bool
+            self.create_subscription(Bool, arm_topic, self._on_arm, 10)
+        if disarm_topic or arm_topic:
+            self.get_logger().info(
+                f"gripper arbitration gate: disarm={disarm_topic or 'off'} "
+                f"arm={arm_topic or 'off'}"
+            )
 
         self.create_timer(1.0 / max(1.0, rate), self._on_timer)
         self.get_logger().info(
@@ -244,8 +270,27 @@ class PinchGripperNode(Node):
             self._emin = mid - half
             self._emax = mid + half
 
+    def _on_disarm(self, msg) -> None:
+        """Arbitration gate: True = an external owner (policy / web pause)
+        commands the gripper topic; stop publishing until the gate opens."""
+        self._gripper_disarmed = bool(msg.data)
+
+    def _on_arm(self, msg) -> None:
+        """Web monitor resume publishes /teleop/armed=true (never disarm=false);
+        treat a fresh arm signal as the gate opening."""
+        if msg.data:
+            self._gripper_disarmed = False
+
     def _on_timer(self) -> None:
         now = time.monotonic()
+        if self._gripper_disarmed:
+            if now - self._disarm_log_t > 1.0:
+                self._disarm_log_t = now
+                self.get_logger().info(
+                    f"[gripper {self.side}] disarmed by arbitration gate — "
+                    "not publishing (waiting for open)"
+                )
+            return
         pinch_stale = (
             self._last_lm_t <= 0.0
             or (now - self._last_lm_t) > self.input_timeout_s
