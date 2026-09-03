@@ -33,9 +33,12 @@ astral_robot_driver:
     state_publish_rate: 100.0
     control_rate: 100.0
     # 板卡 SESSION 目标低通（SDK set_lpf）。y += alpha*(x-y)，alpha 越大越跟手。
-    # 100 Hz 下 0.35 ≈ 19 ms 时间常数；发颤再降到 0.2，发肉再升到 0.5。
+    # 真机遥操：teleop pos/rot_smoothing=0.25 滤手势噪声，这里 0.85≈近直通
+    # (~2ms)，避免两级串联低通导致小动作"先顿一下再冲上去"。
+    #   0.2 = ~40ms  0.35 = ~19ms（出厂，发肉）  0.85 = ~2ms（当前）
+    # 静止发颤回 0.6~0.7；大动作仍肉升 0.95；切 lpf_enable:false 全直通。
     lpf_enable: true
-    lpf_alpha: 0.35
+    lpf_alpha: 0.85
     auto_ready: true
     dry_run: false
     enable_full_body_cmd: true
