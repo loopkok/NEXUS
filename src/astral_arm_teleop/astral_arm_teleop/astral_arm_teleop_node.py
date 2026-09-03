@@ -146,11 +146,14 @@ class AstralTeleopArmNode(Node):
             False,
         )
         self.declare_parameter("use_joint_state_seed", True)
-        # HOME park 逐拍贴实测 joint_states（fresh 且与 q_cmd 接近时）：电机
-        # 失能/使能晚到（急停后）时 q_cmd 不"内部空跑"领先机器人，等使能后
-        # 从真实位姿继续走收回零位，避免猛扑。启动 init 归位**不**用（保持改前
-        # 开环推进）。
+        # HOME park 的反馈只做"跟随便用"（不每拍从实测位姿迈步——那会把平滑
+        # 位置控制变成"等实测挪一步才挪一步"的阶梯，实机表现 = 一卡一卡+慢）。
+        # park 与启动 init 一样纯开环匀速推进；若实测落后指令超过
+        # homing_follow_tol（电机失能/堵转没在跟随），冻结轨迹不超前跑，
+        # 等实测追近后自动继续——领先被钳在 tol 内，恢复时不会猛扑。
+        # 启动 init 归位不受此守卫影响（保持改前纯开环）。
         self.declare_parameter("homing_track_state", True)
+        self.declare_parameter("homing_follow_tol", 0.25)  # rad；正常跟随稳态滞后远小于此
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
         )
@@ -282,6 +285,10 @@ class AstralTeleopArmNode(Node):
         self._track_homing_state = bool(
             self.get_parameter("homing_track_state").value
         )
+        self._homing_follow_tol = float(
+            self.get_parameter("homing_follow_tol").value
+        )
+        self._park_frozen = False
 
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
@@ -750,6 +757,7 @@ class AstralTeleopArmNode(Node):
         self._homing_started = False
         self._homing_seeded = False
         self._homing = True
+        self._park_frozen = False
         self._homing_last_log = 0.0
         self._homing_last_base = None
         self.pose.reset()
@@ -1142,24 +1150,35 @@ class AstralTeleopArmNode(Node):
             )
             self._homing_seeded = True
 
-        # base = q_cmd（启动 init 归位保持改前开环推进：web 启动已回退自动
-        # enable，启动归位就按原样逐拍朝轨迹推进，不因实测没动而卡住）。
-        # HOME park 才用反馈钳制：电机正常跟随时从*实测位姿*迈步，避免使能
-        # 晚到/失能时 q_cmd"内部空跑"领先实体，收回零位时不会猛扑。
+        # 纯开环逐拍推进（base = q_cmd）——启动 init 与 HOME park 一致。HOME
+        # park 的反馈只做"跟随便用"：实测落后指令超过 homing_follow_tol 说明
+        # 电机没在跟随（失能/堵转），冻结轨迹不让 q_cmd 超前跑，等实测追近后
+        # 自动继续。**不做**"每拍从实测位姿迈步"——那会把平滑位置控制变成等
+        # 实测挪一步才挪一步的阶梯采样（命令永远只领先实测一个 tick 步长），
+        # 实机 HOME 表现 = 慢慢的一卡一卡 + 突然抽一下。
         base = self.q_cmd
-        if (
-            self._homing_mode == "park"
-            and self._track_homing_state
-            and self._got_state
-            and self._state_t is not None
-        ):
-            state_fresh = self.data_timeout <= 0.0 or (
-                now - self._state_t <= max(self.data_timeout, 1.0)
-            )
-            if state_fresh:
-                sdiff = float(np.max(np.abs(self.state_q - self.q_cmd)))
-                if sdiff < 0.6:
-                    base = np.asarray(self.state_q, dtype=float).reshape(7)
+        if self._homing_mode == "park" and self._track_homing_state:
+            follow_checked = False
+            if self._got_state and self._state_t is not None:
+                state_fresh = self.data_timeout <= 0.0 or (
+                    now - self._state_t <= max(self.data_timeout, 1.0)
+                )
+                if state_fresh:
+                    follow_checked = True
+                    gap = float(np.max(np.abs(self.state_q - self.q_cmd)))
+                    if gap > self._homing_follow_tol:
+                        if not self._park_frozen:
+                            self._park_frozen = True
+                            self.get_logger().warn(
+                                f"[{self.side}] HOME: 实测落后指令 {gap:.3f} rad "
+                                f"(>{self._homing_follow_tol:.2f}) — 电机未使能/堵转？"
+                                "轨迹冻结，等实测跟上来再继续"
+                            )
+                    else:
+                        self._park_frozen = False
+            if not follow_checked:
+                # 实测流不可用：守卫无从判断，按纯开环继续（与 init 行为一致）。
+                self._park_frozen = False
 
         target = self._homing_target()
         last = self._homing_i >= len(self._homing_path) - 1
@@ -1173,10 +1192,8 @@ class AstralTeleopArmNode(Node):
             else:
                 kind = "init" if last else f"via[{self._homing_i}]"
             stuck = ""
-            if base is not self.q_cmd and self._homing_last_base is not None:
-                moved = float(np.max(np.abs(base - self._homing_last_base)))
-                if moved < 1e-4 and max_abs > self._init_arrive_tol:
-                    stuck = " — 机器人没在动（电机未使能/堵转？）"
+            if self._park_frozen:
+                stuck = " — 实测落后，轨迹冻结（电机未使能/堵转？）"
             self.get_logger().info(
                 f"[{self.side}] Homing {kind}: error={max_abs:.3f} rad, "
                 f"elapsed={elapsed:.1f}s{stuck}"
@@ -1214,6 +1231,12 @@ class AstralTeleopArmNode(Node):
             self.robot_init_rot = T0[:3, :3].copy()
             self._init_q_hw = self.q_cmd.copy()
             self._finish_homing(now, "timeout")
+            return
+
+        if self._park_frozen:
+            # 冻结：不推进 q_cmd（领先被钳在 follow_tol 内），重发当前目标保持，
+            # 等实测追近（电机恢复跟随）后自然解除，继续走完收回轨迹。
+            self._publish_q()
             return
 
         max_d = self._init_joint_vel * dt

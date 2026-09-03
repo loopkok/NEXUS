@@ -62,6 +62,11 @@ astral_arm_teleop_left:
     init_speed_percent: 10  # of max_joint_vel
     init_arrive_tol: 0.05
     init_timeout: 40.0
+    # HOME park 与启动 init 一样纯开环匀速推进；反馈只做"跟随便用"：
+    # 实测落后指令超过 homing_follow_tol（电机失能/堵转没在跟随）→ 冻结轨迹
+    # 不空跑，领先钳在 tol 内，恢复跟随后自动继续（防猛扑）。正常跟随不介入。
+    homing_track_state: true
+    homing_follow_tol: 0.25
     print_latency: true
     latency_print_interval: 2.0
     publish_tune: true

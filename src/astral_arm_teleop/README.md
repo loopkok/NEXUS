@@ -307,7 +307,22 @@ ros2 service call /astral_arm_teleop_right/home std_srvs/srv/Trigger
 
 web 端操作：系统页预设管理区 **HOME** 按钮（或 `POST /api/v1/teleop/home`）。
 
-## 频率
+### 手动硬件模式 vs 命令源（阻尼 → 归零/一键就绪的"抢占"坑）
+
+归零/一键就绪是 **driver 一次性目标**，而有两种"持续命令源"会在臂切回 POSITION 后立刻把
+**阻尼释放前的旧目标 P** 重新压上来、覆盖归零：
+
+1. driver 100Hz 控制定时器在 `command_timeout_s` 新鲜窗口内重发缓存目标（`astral_robot_driver`
+   已在 `~/ready`/`~/home`/`~/damping`/`~/estop`/`~/enable` 内清缓存修复）；
+2. 本节点仍在 armed 或**启动归位 homing 进行中**持续发流——本节点已修复：收到 operator
+   **disarm（web 暂停 / 急停 / 阻尼 / 就绪 / 归零 / 位置保持都会先发）即取消进行中的
+   homing/park**，停止下发陈旧轨迹，臂保持当前目标，等新的 `/teleop/start` / `/teleop/home`。
+
+因此手动拖臂/阻尼后的标准操作是：**web 点「阻尼释放」（自动 disarm）→ 手动拖回 → 「归零」或
+「一键就绪」**；之后要用遥操重新点「开始遥操」。CLI 手调请先 `ros2 topic pub --once
+/teleop/disarm std_msgs/msg/Bool '{data: true}'` 再调 driver 服务。
+
+   316|## 频率
 
 默认遥操 / 驱动均为 **50 Hz**。有效落板频率 ≈ `min(teleop, driver)`。
 
@@ -382,8 +397,11 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 
 `use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。
 
-`homing_track_state`（默认 true）：**HOME park** 每拍把**实测** joint_states 作为迈步基准
-（fresh 且贴近 q_cmd 时），机器人不动则 q_cmd 不"内部空跑"——电机失能/使能晚到（急停后）时等
-使能后从真实位姿继续走收回零位，避免猛扑。**仅 HOME park 生效**：启动 init 归位保持改前开环
-逐拍推进（web「停止→启动」只拉栈、使能交给 driver auto_ready，臂不应因实测没动而卡在原地）。
-关掉则 HOME park 也退化为纯开环 q_cmd 累加。
+`homing_track_state`（默认 true）+ `homing_follow_tol`（默认 0.25 rad）：**HOME park 与启动 init 一样
+纯开环匀速推进**（这是唯一被实机验证的平滑路径）——**不再**"每拍从实测位姿迈步"，那会把平滑位置
+控制变成"等实测挪一步才挪一步"的阶梯采样（命令永远只领先实测一个 tick 步长），实机表现 = 慢慢
+一卡一卡 + 突然抽一下。反馈只做**跟随便用**：park 运行时实测落后指令超过 `homing_follow_tol`
+（电机失能/堵转、没在跟随）→ **冻结轨迹**，q_cmd 不"内部空跑"一路领先到零位；等实测追近
+（电机恢复跟随）后自动解除继续收回——领先被钳在 tol 内，不会猛扑。正常跟随稳态滞后远小于
+tol，守卫完全不介入。启动 init 归位不受此守卫影响（保持改前纯开环逐拍推进）。关掉
+`homing_track_state` 则 park 也完全退化为纯开环（无冻结守卫）。

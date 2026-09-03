@@ -5,8 +5,12 @@
 ``init_pose → init_waypoints → 零位`` (the reverse of the startup init
 homing), sharing the ``_homing_*`` machinery. ``_finish_homing`` in "park"
 mode must end at zero on arrival but *never* hard-command a zero target on
-timeout. Tests instantiate the node class via ``__new__`` (no rclpy spin)
-and stub ``pose``/``ik``/``safety``/logger/parameters, matching
+timeout. Park homing runs the same smooth open-loop stepper as startup init;
+measured state is used only as a *follow guard* — when the robot demonstrably
+is not following (measured lags q_cmd beyond ``homing_follow_tol``), the
+trajectory freezes instead of running ahead and lunging on late enable.
+Tests instantiate the node class via ``__new__`` (no rclpy spin) and stub
+``pose``/``ik``/``safety``/logger/parameters, matching
 ``test_reanchor_teleop.py``.
 
 Runs only where rclpy is importable (ROS-sourced system python); otherwise
@@ -70,9 +74,13 @@ class _FakeSafety:
 class _FakeLog:
     def __init__(self):
         self.warns = []
+        self.infos = []
 
     def warn(self, msg, *a, **k):
         self.warns.append(msg)
+
+    def info(self, msg, *a, **k):
+        self.infos.append(msg)
 
 
 INIT_Q = np.array([0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00])
@@ -99,6 +107,8 @@ def _make_node():
     node._homing_path = []
     node._homing_mode = "init"
     node._track_homing_state = True
+    node._homing_follow_tol = 0.25
+    node._park_frozen = False
     node._init_arrive_tol = 0.05
     node._init_timeout = 15.0
     node.q_cmd = np.array([0.40, 0.30, -0.90, -1.20, 0.60, 0.00, 0.00])
@@ -188,16 +198,21 @@ def test_on_home_ignores_low_level():
     assert node._homing_mode == "park"
 
 
-def _tick_toward(node, target: np.ndarray, ticks: int, mode: str = "init") -> float:
-    """Drive ``_homing_tick`` toward *target* with a *frozen* state.
+def _tick_toward(
+    node, target: np.ndarray, ticks: int, mode: str = "init", follow: str = "frozen"
+) -> float:
+    """Drive ``_homing_tick`` toward *target*.
 
-    State is seeded once and never advanced, simulating a motor that is not
-    yet following (web start after e-stop / enable racing). Returns the final
-    max per-joint error to *target*.
+    State seeding / follow modes simulate the closed loop:
+      * follow="frozen"  — measured seeded at the initial q_cmd and never
+        advances (motor off / stuck at the command pose)
+      * follow="perfect" — measured snaps to q_cmd every tick (healthy tracking)
+    Returns the final max per-joint error to *target*.
     """
     node._homing_mode = mode
     node._homing_started = False
     node._homing_seeded = False
+    node._park_frozen = False
     node._homing_i = 0
     node._homing_path = [np.asarray(target, dtype=float)]
     node._init_joint_vel = 0.2
@@ -207,12 +222,14 @@ def _tick_toward(node, target: np.ndarray, ticks: int, mode: str = "init") -> fl
     node._state_t = time.monotonic()
     node.data_timeout = 0.0  # measured state always "fresh"
     node._init_arrive_tol = 1e-6  # don't finish early; only measure stepping
-    node.state_q = node.q_cmd.copy()  # robot sits still
+    node.state_q = node.q_cmd.copy()
     node.cmd_pub = _FakePub()
     node.names = [f"j{i}" for i in range(7)]
     node._last_vr_stamp = object()
     node._publish_q = lambda: None  # publish path not under test
     for i in range(ticks):
+        if follow == "perfect":
+            node.state_q = node.q_cmd.copy()  # 健康跟随：实测追平指令
         node._homing_tick(now=0.001 + i * 0.01, dt=0.01)
     return float(np.max(np.abs(target - node.q_cmd)))
 
@@ -223,19 +240,115 @@ def test_init_homing_advances_even_when_state_frozen():
     # 后使能晚到），q_cmd 也必须逐拍朝 init 目标推进，否则臂会"原地不动"。
     node = _make_node()
     node.q_cmd = INIT_Q + 0.30
-    err = _tick_toward(node, INIT_Q, ticks=50, mode="init")
+    err = _tick_toward(node, INIT_Q, ticks=50, mode="init", follow="frozen")
     assert err < 0.30 - 8e-3  # 50 ticks × 0.2 rad/s × 0.01s = 0.10 rad 推进
 
 
-def test_park_homing_holds_until_robot_moves():
-    # HOME park = 贴实测钳制：收回零位前先 ~/enable，但仍可能电机晚到。
-    # 机器人没动时 q_cmd 不许"内部空跑"领先实体（防猛扑）——同样 50 ticks
-    # 下 max 步进 = vel×dt，误差基本不动。
+def test_park_homing_advances_smoothly_when_following():
+    # HOME park 正常路径 = 与 init 一致的纯开环匀速推进（实机反馈只做跟随
+    # 守卫，正常跟随稳态滞后远小于 follow_tol 时不介入）——不得把命令钉在
+    # "实测+一步"上变成阶梯采样（那会导致一卡一卡 + 慢）。健康跟随 50 ticks
+    # 下 q_cmd 应推进 ~0.10 rad（与 init 相同）。
     node = _make_node()
     node.q_cmd = INIT_Q + 0.30
-    err = _tick_toward(node, INIT_Q, ticks=50, mode="park")
-    # init 模式会推进 ~0.10；park 模式只允许一拍的步进量（0.2×0.01=2e-3）
-    assert err > 0.30 - 3e-3
+    err = _tick_toward(node, INIT_Q, ticks=50, mode="park", follow="perfect")
+    assert err < 0.30 - 8e-3
+
+
+def _park_run(node, target: np.ndarray, ticks: int, follow: str) -> float:
+    """Run a *seeded* park homing (no re-seeding) toward *target*.
+
+    ``_homing_started/_seeded`` stay True so the initial seed doesn't overwrite
+    ``q_cmd`` — the robot is assumed mid-run. ``follow``:
+      * "frozen"  — measured pinned at its first value (robot stopped moving)
+      * "perfect" — measured snaps to q_cmd every tick (healthy tracking)
+    Returns the final max per-joint error to *target*.
+    """
+    node._homing_mode = "park"
+    node._homing_started = True
+    node._homing_seeded = True
+    node._homing = True
+    node._park_frozen = False
+    node._homing_i = 0
+    node._homing_path = [np.asarray(target, dtype=float)]
+    node._init_joint_vel = 0.2
+    node._init_timeout = 600.0
+    node._track_homing_state = True
+    node._got_state = True
+    node._state_t = time.monotonic()
+    node.data_timeout = 0.0
+    node._init_arrive_tol = 1e-6
+    node.cmd_pub = _FakePub()
+    node.names = [f"j{i}" for i in range(7)]
+    node._last_vr_stamp = object()
+    node._publish_q = lambda: None
+    for i in range(ticks):
+        if follow == "perfect":
+            node.state_q = node.q_cmd.copy()
+        node._homing_tick(now=0.001 + i * 0.01, dt=0.01)
+        if not node._homing:
+            break  # 到达/超时已结束 park（真实 _loop 此后不再调 _homing_tick）
+    return float(np.max(np.abs(target - node.q_cmd)))
+
+
+def test_park_freezes_when_robot_stops_following():
+    # HOME park 冻结守卫：运行中机器人（实测）停住不动，q_cmd 开环领先一旦
+    # 超过 homing_follow_tol（电机失能/堵转没在跟随）→ 轨迹冻结，q_cmd 不许
+    # "内部空跑"一路领先到零位；否则等电机恢复时从远处猛扑过来。
+    node = _make_node()
+    node.q_cmd = np.full(7, 0.5)  # 距零位 0.5 rad
+    node.state_q = node.q_cmd.copy()  # 起初健康跟随
+    err = _park_run(node, np.zeros(7), ticks=300, follow="frozen")
+    assert node._park_frozen is True  # 实测停住 → 冻结
+    # 冻结后 q_cmd 不会一路跑到零位：领先被钳在 tol 附近
+    gap = float(np.max(np.abs(node.state_q - node.q_cmd)))
+    assert gap <= node._homing_follow_tol + 0.02
+    assert err > 0.20  # 没跑到零位（冻结在 ~0.25 处）
+    assert any("冻结" in w for w in node._log.warns)
+
+
+def test_park_resumes_when_measured_catches_up():
+    # 冻结解除：实测追近指令（电机恢复跟随）→ 冻结解除，继续开环推进到零位。
+    node = _make_node()
+    node.q_cmd = np.full(7, 0.5)
+    node.state_q = node.q_cmd.copy()
+    _park_run(node, np.zeros(7), ticks=300, follow="frozen")
+    assert node._park_frozen is True
+    err = _park_run(node, np.zeros(7), ticks=400, follow="perfect")
+    assert node._park_frozen is False  # 恢复跟随 → 解除冻结
+    assert err < 0.05  # 从冻结处继续走完，接近零位
+
+
+class _Bool:
+    def __init__(self, data):
+        self.data = data
+
+
+def test_disarm_cancels_in_progress_homing():
+    # 硬件模式按钮（web 阻尼/就绪/归零等）会先发 /teleop/disarm。若启动
+    # init 归位或 HOME park 仍在发流，必须取消——否则这条陈旧轨迹会持续
+    # 下发，把 driver 后来显式下发的归零目标覆盖掉（臂回到阻尼前位姿）。
+    node = _make_node()
+    node._homing = True
+    node._homing_started = True
+    node._armed = True
+    node._on_disarm(_Bool(False))  # level-low must be ignored
+    assert node._homing is True  # stale False must not cancel anything
+    node._on_disarm(_Bool(True))
+    assert node._homing is False
+    assert node._homing_started is False
+    assert node._armed is False
+    assert node._disarm_reason == "operator"
+    assert any("homing cancelled" in w for w in node._log.warns)
+
+
+def test_disarm_noop_when_not_homing():
+    node = _make_node()
+    node._armed = True
+    node._on_disarm(_Bool(True))
+    assert node._homing is False
+    assert node._armed is False
+    assert node._disarm_reason == "operator"
 
 
 def _run_all():
@@ -246,7 +359,11 @@ def _run_all():
         test_home_park_timeout_holds_current_never_zero,
         test_on_home_ignores_low_level,
         test_init_homing_advances_even_when_state_frozen,
-        test_park_homing_holds_until_robot_moves,
+        test_park_homing_advances_smoothly_when_following,
+        test_park_freezes_when_robot_stops_following,
+        test_park_resumes_when_measured_catches_up,
+        test_disarm_cancels_in_progress_homing,
+        test_disarm_noop_when_not_homing,
     ]
     failed = 0
     for t in tests:

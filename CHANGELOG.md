@@ -6,6 +6,41 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-03
 
+**HOME 归零卡顿/抽动修复：park 从"贴实测迈步"改纯开环 + 冻结守卫**——`astral_arm_teleop`。
+**现象**：上一轮修好"电机未使能"后 HOME 第一次真正跑起来，但臂**慢慢的一卡一卡**地动，还
+**突然抽一下**，和当初启动归位被贴实测钳制时的异常很像。**根因**：HOME park 分支每拍
+`base = 实测关节 state_q`、`q_cmd = 实测 + 一个 tick 步长`——命令永远只领先实测一个 tick 步长，
+等于把平滑位置控制改成"等实测挪一步才挪一步"的**阶梯采样**：实测经板端读码→UDP→ROS→节点有
+几十 ms 延迟，q_cmd 实际推进被实测采样节拍门控 → 速度被压到远低于设定的 0.6 rad/s（慢）；
+命令按实测帧节拍一跳一跳 → 粘滑/卡顿，静摩擦突破时"抽一下"。这套"贴实测"钳制当初为启动 init
+引入、因同样症状已回退成开环，但 **park 保留至今，而 HOME 此前从未真正成功跑过**（先报未使能、
+再被陈旧命令流抢目标），直到这次才暴露。**做法**：① park 与 init 一致改**纯开环匀速推进**
+（base = q_cmd，唯一被实机验证的平滑路径）；② 反馈只做**跟随便用**——新增参数
+`homing_follow_tol`（默认 0.25 rad）：park 运行中实测落后指令超过阈值（电机失能/堵转没在跟随）
+→ **冻结轨迹**，q_cmd 不空跑一路领先到零位，领先被钳在 tol 内；实测追近（恢复跟随）自动解除
+继续收回，不会猛扑；正常跟随稳态滞后远小于 tol，守卫不介入；③ 状态字段 `_park_frozen` 每次
+`_go_home` 重置。**验证**：`test_home_park.py` 7→**11 例**全绿——新增健康跟随开环平滑推进、
+实测停住轨迹冻结（领先钳在 tol 内）、实测追近后解冻继续收回三例；reanchor 5 例全绿；README
+`homing_track_state` 语义说明同步。
+
+**阻尼/归零/一键就绪"陈旧命令流抢占"修复**——`astral_robot_control` × `astral_arm_teleop`
+× `astral_web_monitor`。**现象**：启动后点「阻尼释放」正常，手动拖臂后再点「一键就绪」，
+臂直接回到**阻尼释放前的位姿**；阻尼释放后点「归零」**无效**。**根因**（非重复使能）：
+① 阻尼 = 板端 motion_mode=0，位置指令被忽略——`~/home` 只发一次性 `set_all_joints_zero`，
+在阻尼态静默无效；② 归零/一键就绪只是**一次性目标**，而 100Hz 控制定时器在
+`command_timeout_s` 新鲜窗口内持续重发缓存的"阻尼前目标 P"，或遥操臂节点仍在 armed/
+启动归位 homing 持续发流——一旦运动模式切回 POSITION，陈旧 P 立刻重新接管、覆盖刚下发的
+归零 → 臂回到阻尼前位姿。**做法**（三层）：① driver `_srv_home` **先切回 POSITION**
+（motion_mode=1）再归零（阻尼后归零生效），未上电明确报"先 ~/ready"而非静默；② driver
+新增 `_clear_cmd_cache()`——`~/ready`/`~/home`/`~/damping`/`~/estop`/`~/enable` 执行时清掉
+缓存目标，100Hz 重发只复读显式目标（零位），不再把陈旧 P 顶回去；③ 臂节点 **operator
+disarm 取消进行中的 homing/park**（`_on_disarm` 中 `_homing=False`，否则取消命令流仍持续
+下发覆盖后续归零）；④ web 五个硬件模式端点（急停/阻尼/一键就绪/归零/位置保持）**先自动
+发布 `/teleop/disarm`** 再调 driver（与 HOME 端点同款）——手动模式即交还控制，之后用
+「开始遥操」重新捕获 vr_init。**验证**：`test_driver_services.py` 7→**13 例**全绿（阻尼中
+归零先切 POSITION/缓存清理/未上电报错）；`test_home_park.py` 7→**9 例**全绿（disarm 取消
+进行中 homing）；reanchor 5 例、web monitor 4 例全绿；前端提示同步并重编 dist。
+
 **HOME 使能修复：~/enable 幂等化 + 板端在线即算下发成功**——`astral_robot_control` ×
 `astral_web_monitor`。**现象**：启动正常到设定位置（电机已使能）后点 web **HOME**，报
 "电机未使能"、HOME 不下发。**根因**：HOME 端点先调 driver `~/enable`，而 SDK `enable()`
