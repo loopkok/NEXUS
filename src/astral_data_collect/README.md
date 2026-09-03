@@ -106,9 +106,17 @@ ros2 run astral_data_collect validate_data -- --session ~/astral_data/pick_place
 ros2 run astral_data_collect convert_to_lerobot -- \
     --session ~/astral_data/pick_place --output ~/astral_data/lerobot/pick_place
 
+# ③b 升版 v2.1 → v3.0（可选，目标=现代 lerobot ACT 等策略，见 §5b；源 v2.1 只读）
+python3 -m astral_data_collect.convert_to_lerobot_v3 \
+    --v21-root ~/astral_data/lerobot/pick_place \
+    --output ~/astral_data/lerobot_v3/pick_place
+
 # ④ 回放（Rerun：图像 + 关节曲线 + 时间轴）
 ros2 run astral_data_collect replay_rerun -- --session ~/astral_data/pick_place --episode 0
 ```
+
+一键脚本 `astral_ws/scripts/vla_process_session.sh` 可串起 ①→②→③
+（加 `--act-output <dir>` 再跑 ③b）。
 
 校验规则（fail 必须处理 / warn 人工过目）：F1 文件缺失、F2 流缺失或为空、
 F3 NaN/Inf、F4 时间戳非递增、F5 时长 <2s；W1 频率不足、W2 采样空洞、
@@ -122,9 +130,14 @@ W3 关节跳变 >0.5rad、W4 JPEG 不可解码、W5 armed 覆盖率 <50%、W6 �
 `meta/{tasks,episodes,episodes_stats}.jsonl`、`meta/stats.json`、
 `data/chunk-000/episode_XXXXXX.parquet`、`videos/chunk-000/{key}/episode_XXXXXX.mp4`。
 
-- parquet 视频列 = `struct{path: string, timestamp: float32}`（VideoFrame 同构）
-- 视频编码默认 libsvtav1（crf=30, g=2, yuv420p），不可用自动回退 h264
-- 图像原始分辨率入库，resize 到 224×224 由 openpi 训练 transform 完成
+- **parquet 只含非视频列**（v2.1 规范）：视频帧由读取侧按 `timestamp` 列 +
+  meta 的 `video_path` 模板解析。写 `struct{path,timestamp}` 视频列会让 openpi
+  锁定的 lerobot 0.1.0 在 `torch.tensor(dict)` 处崩（有回归断言禁止该列）。
+- 视频编码默认 libsvtav1（crf=30, g=2, yuv420p；限内存参数 `lp=2:lookahead=16`），
+  不可用自动回退 h264；同相机各段 mp4 时间基/分辨率一致（后续升版按此假设串接）。
+- 图像默认在**转换期** letterbox 到 224×224（等比+对称黑边，复刻 openpi
+  `resize_with_pad` 几何），`--image-size 0` 保留原分辨率；训练侧
+  `ResizeImages(224,224)` 变恒等操作，解码后不再缩放。
 
 OpenPI 侧配置示例（state/action 维度 = 你的 schema 实维，padding 在 openpi config 里做）：
 
@@ -147,6 +160,41 @@ from openpi.training.data_loader import create_data_loader
 "
 ```
 
+## 5b. ACT 目标：v2.1 → v3.0 升版
+
+OpenPI（pinned lerobot 0.1.0）只认 v2.1；现代 lerobot（`VLA/lerobot`，>=0.6，
+ACT 等策略共用同一读取管线）的数据集 `codebase_version` 已是 **v3.0**，读取侧对
+v2.1 直接 `raise BackwardCompatibilityError`。`convert_to_lerobot_v3.py` 把上面
+的 v2.1 产物**原样升版**为 v3.0（源目录只读，输出独立目录），布局逐字段镜像官方
+`VLA/lerobot/scripts/convert_dataset_v21_to_v30.py`：
+
+```bash
+# 用法：--output 已存在需 --overwrite（不会覆盖 --v21-root）
+python3 -m astral_data_collect.convert_to_lerobot_v3 \
+    --v21-root ~/astral_data/lerobot/pick_place \
+    --output   ~/astral_data/lerobot_v3/pick_place
+```
+
+升版后即现代 lerobot 数据集：`videos/{cam}/chunk-*/file-*.mp4`（同 chunk 的段
+用 PyAV ffconcat **流拷贝串接、不重编码**，元数据时间窗按各段实测时长叠加）、
+`data/chunk-*/file-*.parquet`、`meta/{tasks.parquet, episodes/chunk-*/file-*.parquet,
+info.json, stats.json}`（stats 原样沿用，无需重算）。
+
+ACT 训练（conda lerobot 环境，GPU）。`--dataset.root` **直接指向升版产出的数据集
+目录**（给 root 后即按本地加载，`--dataset.repo_id` 仅作本地标识名）：
+
+```bash
+HF_LEROBOT_HOME=~/lerobot_home lerobot-train \
+    --dataset.root=~/astral_data/lerobot_v3/pick_place \
+    --dataset.repo_id=astral/pick_place \
+    --policy.type=act --steps=100000 --batch_size=64 --job_name=astral_act
+```
+
+已用真实 v2.1 数据验证：产物与官方转换脚本逐文件一致、现代 `LeRobotDataset`
+加载并逐帧解码成功、`lerobot-train` ACT 冒烟（2 步）真实跑通并落 checkpoint。
+状态/动作语义与 v2.1 完全相同（`action` 绝对关节角 + `_ee_` 末端绝对）；
+若想训 delta action，属**训练前数据变换**范畴，改数据处理而非本转换。
+
 ## 6. 数据格式（raw）
 
 ```
@@ -166,10 +214,13 @@ aligned_data.h5：`observation/state (T,D)`、`action (T,D)`、`timestamps`、
 
 ```bash
 cd src/astral_data_collect/test
-/usr/bin/python3 -m pytest test_schema.py test_align.py test_validate.py \
-    test_convert_lerobot.py -p no:anyio            # 离线 35 项
-source /opt/ros/humble/setup.bash
-/usr/bin/python3 -m pytest test_collect_smoke.py -p no:anyio   # 采集冒烟（假话题全流程）
+# 纯离线模块（无 ROS 依赖；在 VLA/openpi uv venv 跑，行数/命令细节见 CLAUDE.md「测试」）
+uv run --project ../../../../../VLA/openpi pytest test_schema.py test_align.py \
+    test_validate.py test_convert_lerobot.py test_convert_lerobot_v3.py \
+    test_adversarial_configs.py -q -p no:anyio
+# 节点类（需 ROS 环境，系统 3.10；rclpy 只在 /usr/bin/python3 有）
+/usr/bin/python3 -m pytest test_node_guards.py test_collect_smoke.py \
+    test_replay.py -q -p no:anyio
 ```
 
-注意用 `/usr/bin/python3`（系统 3.10 有 rclpy）；conda python3.13 无法 import rclpy。
+conda python3.13 无法 import rclpy，故节点测试用 `/usr/bin/python3`（系统 3.10）。

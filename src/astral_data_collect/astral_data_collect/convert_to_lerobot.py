@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from fractions import Fraction
 from typing import Any, Iterable
@@ -375,6 +376,14 @@ def convert_session(
     if not episode_dirs:
         raise RuntimeError(f"no aligned episodes under {session_dir} (run align_data first)")
 
+    # 输出目录 = 一个数据集的专属目录：重跑（改 schema / 换 codec / 段数变少）
+    # 必须清掉上次的 data/videos，否则旧 episode 文件残留——后续升版 v3.0 按
+    # 目录遍历时会混入旧布局的行（见 convert_to_lerobot_v3 的严格校验）。
+    # meta/*.jsonl 本就是"w"截断重写，无需单独清理。
+    for _sub in ("data", "videos"):
+        _old = os.path.join(output_dir, _sub)
+        if os.path.isdir(_old):
+            shutil.rmtree(_old)
     os.makedirs(os.path.join(output_dir, "meta"), exist_ok=True)
 
     # -- 第一遍：读 schema / task / 尺寸，建 tasks 表 -----------------------------
