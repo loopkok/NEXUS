@@ -38,6 +38,8 @@ export const api = {
   pause: () => post<unknown>('/api/v1/pause'),
   resume: () => post<unknown>('/api/v1/resume'),
   teleopStart: () => post<unknown>('/api/v1/teleop/start'),
+  // HOME / park-to-zero：双臂沿 init_pose → init_waypoints → 零位 收回（先使能电机）
+  teleopHome: () => post<unknown>('/api/v1/teleop/home'),
   restart: () => post<unknown>('/api/v1/restart'),
   // Robot hardware mode (driver services — real hardware actions)
   robotReady: () => post<unknown>('/api/v1/robot/ready'),

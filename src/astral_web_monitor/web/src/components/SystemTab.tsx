@@ -63,6 +63,17 @@ export function SystemTab({ state, presets, onAction }: Props) {
           <button style={btn('#3b82f6')} disabled={!canRestart} onClick={restart}>
             重启
           </button>
+          <button
+            style={homeBtn}
+            title="先确保电机使能，再让双臂沿 init_pose → init_waypoints → 零位 慢速收回"
+            disabled={!canRestart}
+            onClick={() => {
+              if (!confirm('确认 HOME？双臂将从当前位姿经 init_pose → init_waypoints 收回零位（期间会 disarm，需重新启动/一键就绪再遥操）')) return
+              void run(() => api.teleopHome(), 'HOME 已下发')
+            }}
+          >
+            HOME
+          </button>
         </div>
         <div style={hintStyle}>
           非侵入：仅通过子进程管理 <code>ros2 launch</code>（启动/停止/重启），不直接控制硬件。
@@ -145,5 +156,16 @@ const estopBtn: React.CSSProperties = {
   fontSize: '13px',
   fontWeight: 800,
   cursor: 'pointer',
+}
+const homeBtn: React.CSSProperties = {
+  background: '#7c3aed',
+  color: 'white',
+  border: 'none',
+  borderRadius: '6px',
+  padding: '7px 16px',
+  fontSize: '13px',
+  fontWeight: 600,
+  cursor: 'pointer',
+  marginLeft: '4px',
 }
 const hintStyle: React.CSSProperties = { color: '#6b7280', fontSize: '12px', lineHeight: 1.5 }

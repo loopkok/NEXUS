@@ -35,8 +35,10 @@ from .config import (
     TOPIC_ARMED,
     TOPIC_DISARM,
     TOPIC_START,
+    TOPIC_HOME,
     EXPECTED_RATES_HZ,
     DRIVER_SRV_READY,
+    DRIVER_SRV_ENABLE,
     DRIVER_SRV_HOME,
     DRIVER_SRV_ESTOP,
     DRIVER_SRV_DAMPING,
@@ -123,6 +125,9 @@ class MonitorNode(Node):
             durability=rclpy.qos.DurabilityPolicy.VOLATILE,
         )
         self._pub_start = self.create_publisher(Bool, TOPIC_START, start_qos)
+        # One-shot HOME / park-to-zero trigger (volatile, same rationale as
+        # TOPIC_START: a latched HOME would auto-park late-joining arm nodes).
+        self._pub_home = self.create_publisher(Bool, TOPIC_HOME, start_qos)
 
         # Video gate: latched active-cameras publisher + gate_state mirror.
         self._pub_video_cameras = self.create_publisher(String, VIDEO_TOPIC_CAMERAS, qos)
@@ -471,13 +476,23 @@ class MonitorNode(Node):
         """One-shot /teleop/start: arm teleop captures vr_init and arms."""
         self._pub_start.publish(Bool(data=True))
 
+    def publish_home(self) -> None:
+        """One-shot /teleop/home: both arm nodes park to zero via the HOME path.
+
+        The arm nodes are the authority: they reject while homing/busy and log a
+        warning, so publishing unconditionally is safe (mirrors publish_start).
+        """
+        self._pub_home.publish(Bool(data=True))
+
     # --- driver service calls (hardware mode) -----------------------------
     # The driver node (astral_robot_control) already exposes Trigger services
-    # for one_click_ready / home / e_stop / damping / position. The monitor
-    # calls them as a client — non-intrusive (the driver owns the hardware).
-    # Clients are cached; the background spin thread completes the futures.
+    # for one_click_ready / enable / home / e_stop / damping / position. The
+    # monitor calls them as a client — non-intrusive (the driver owns the
+    # hardware). Clients are cached; the background spin thread completes the
+    # futures.
     _DRIVER_SERVICES = {
         "ready": DRIVER_SRV_READY,
+        "enable": DRIVER_SRV_ENABLE,
         "home": DRIVER_SRV_HOME,
         "estop": DRIVER_SRV_ESTOP,
         "damping": DRIVER_SRV_DAMPING,

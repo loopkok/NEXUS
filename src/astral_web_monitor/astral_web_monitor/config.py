@@ -126,6 +126,10 @@ TOPIC_DISARM = "/teleop/disarm"
 # require_start_signal is true. Deliberately volatile (not latched) so a
 # late-joining arm node does not auto-start from a stale start signal.
 TOPIC_START = "/teleop/start"
+# One-shot HOME / park-to-zero trigger (both arm nodes): 当前位姿 →
+# init_pose → init_waypoints → 零位。同样 volatile——晚启动节点不得被
+# 历史 HOME 信号误触发（与 /teleop/start 同理）。
+TOPIC_HOME = "/teleop/home"
 
 # --- Driver ROS services (call, robot hardware mode) -----------------------
 # These services already exist on astral_robot_control's driver node. Calling
@@ -134,10 +138,17 @@ TOPIC_START = "/teleop/start"
 # driver is remapped.
 DRIVER_NODE = os.environ.get("ASTRAL_WEB_MONITOR_DRIVER_NODE", "astral_robot_driver")
 DRIVER_SRV_READY = f"/{DRIVER_NODE}/ready"
+# 上电不回零（遥操启动/恢复归位路径用，避免与 teleop 轨迹抢目标）
+DRIVER_SRV_ENABLE = f"/{DRIVER_NODE}/enable"
 DRIVER_SRV_HOME = f"/{DRIVER_NODE}/home"
 DRIVER_SRV_ESTOP = f"/{DRIVER_NODE}/estop"
 DRIVER_SRV_DAMPING = f"/{DRIVER_NODE}/damping"
 DRIVER_SRV_POSITION = f"/{DRIVER_NODE}/position"
+
+# --- Driver-enable wait after launch (start/restart/home) -------------------
+# 启动带 driver 的预设后，monitor 等待 ~/enable 服务可用并调用，确保电机
+# 使能不静默失败（急停后 driver auto_ready 可能没确认上电）。总预算上限。
+DRIVER_ENABLE_WAIT_S = float(os.environ.get("ASTRAL_WEB_MONITOR_ENABLE_WAIT_S", "12.0"))
 
 # --- Video return (quest3_video_streamer) runtime gate ----------------------
 # The streamer exposes a SetBool master switch and a latched String topic with

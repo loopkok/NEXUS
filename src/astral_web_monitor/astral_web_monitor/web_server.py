@@ -201,6 +201,17 @@ async def start(req: StartRequest) -> ApiEnvelope:
     ok, msg = _launch_mgr.start(preset)
     if not ok:
         raise HTTPException(status_code=409, detail=msg)
+    # 真机预设：启动后补发一次 ~/enable（不回零），电机使能不静默失败——
+    # 否则急停→停止→再启动会因 driver auto_ready 未确认上电而"锁在当前位置"。
+    if _preset_has_driver(preset):
+        confirmed, emsg = await asyncio.to_thread(
+            _ensure_driver_enabled, config.DRIVER_ENABLE_WAIT_S
+        )
+        if not confirmed:
+            raise HTTPException(
+                status_code=503,
+                detail=f"{msg}；但电机使能未确认——{emsg}（进程已运行，可点一键就绪/HOME 重试）",
+            )
     return ApiEnvelope(ok=True, message=msg)
 
 
@@ -257,6 +268,40 @@ async def teleop_start() -> ApiEnvelope:
     )
 
 
+@app.post("/api/v1/teleop/home")
+async def teleop_home() -> ApiEnvelope:
+    """HOME（归零 / park-to-zero）：双臂从当前位姿沿
+    init_pose → init_waypoints → 零位 慢速收回并停在零位。
+
+    Sequence: ① 真机预设先确保电机上电（~/enable 不回零，幂等；急停失能后
+    正好借这次使能）② 发布 /teleop/disarm + /teleop/home——臂节点收到 HOME
+    会自己 disarm 并走轨迹（遥操中/未校准都会忽略之外的输入）。之后要再遥操
+    需重新 /teleop/start。仅当前 launch 运行中可用。
+    """
+    if _launch_mgr.state not in (RUNNING, PAUSED):
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前状态 {_launch_mgr.state} 无法 HOME（需遥操运行中）",
+        )
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    preset = _current_preset()
+    if _preset_has_driver(preset):
+        confirmed, emsg = await asyncio.to_thread(
+            _ensure_driver_enabled, config.DRIVER_ENABLE_WAIT_S
+        )
+        if not confirmed:
+            raise HTTPException(status_code=503, detail=f"电机使能失败，不能 HOME：{emsg}")
+    node.publish_disarm()
+    await asyncio.sleep(0.1)
+    node.publish_home()
+    return ApiEnvelope(
+        ok=True,
+        message="已下发 HOME：双臂收回 init_pose → init_waypoints → 零位",
+    )
+
+
 @app.post("/api/v1/restart")
 async def restart() -> ApiEnvelope:
     """Restart the current preset: stop then start the same preset.
@@ -273,6 +318,15 @@ async def restart() -> ApiEnvelope:
     ok_start, msg = _launch_mgr.start(_presets[name])
     if not ok_start:
         raise HTTPException(status_code=409, detail=msg)
+    if _preset_has_driver(_presets[name]):
+        confirmed, emsg = await asyncio.to_thread(
+            _ensure_driver_enabled, config.DRIVER_ENABLE_WAIT_S
+        )
+        if not confirmed:
+            raise HTTPException(
+                status_code=503,
+                detail=f"已重启预设: {name}；但电机使能未确认——{emsg}（可点一键就绪/HOME 重试）",
+            )
     return ApiEnvelope(ok=True, message=f"已重启预设: {name}")
 
 
@@ -286,6 +340,50 @@ def _driver_call(name: str) -> tuple[bool, str]:
     if node is None:
         return False, "ROS 节点未就绪"
     return node.call_driver_service(name)
+
+
+# --- Driver-enable helpers (start / restart / HOME) ------------------------
+def _preset_has_driver(preset) -> bool:
+    """该预设是否把 astral_robot_control（真机 driver）拉起来。"""
+    if preset is None:
+        return False
+    wa = str(preset.args.get("with_arm_driver", "")).lower()
+    if wa in ("true", "1", "yes"):
+        return True
+    return preset.package == "astral_robot_control"
+
+
+def _current_preset():
+    name = _launch_mgr.preset
+    return _presets.get(name) if name else None
+
+
+def _ensure_driver_enabled(timeout_s: float) -> tuple[bool, str]:
+    """确保真机电机已使能（**不回零**：~/enable = WORK→POSITION→enable）。
+
+    在启动带 driver 的预设后调用：等 driver 的 ~/enable 服务出现并调用
+    （幂等，已上电时立即成功）。解决"急停失能后重启，auto_ready 没确认上电
+    导致机器人锁住不归位"的静默失败。服务在超时内一直未出现视为无需使能
+    （无 driver / sim），不算错误。
+    """
+    node = get_node()
+    if node is None:
+        return False, "ROS 节点未就绪"
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    retryable = ("未就绪", "超时", "not confirmed", "unavailable", "robot not connected")
+    last = ""
+    while time.monotonic() < deadline:
+        ok, msg = node.call_driver_service("enable", timeout_s=3.0)
+        if ok:
+            return True, "电机已使能"
+        last = msg
+        if not any(t in msg for t in retryable):
+            return False, f"使能失败: {msg}"
+        time.sleep(0.4)
+    if last and "未就绪" in last:
+        # ~/enable 服务一直没出现：该预设没拉 driver（sim/调试）→ 跳过
+        return True, "跳过（无 driver 服务）"
+    return False, f"使能超时: {last or '~/enable 服务未出现'}"
 
 
 @app.post("/api/v1/robot/ready")

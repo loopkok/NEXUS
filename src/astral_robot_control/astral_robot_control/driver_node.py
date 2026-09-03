@@ -18,6 +18,9 @@ Contract (default)::
   Pub  /{left,right}_gripper/joint_states   (last commanded; not OBS 0x31/0x32)
 
   Srv  ~/ready    Trigger  — one_click_ready (WORK→POSITION→enable→zero)
+  Srv  ~/enable   Trigger  — WORK→POSITION→enable，**不回零**
+                             （遥操启动/恢复归位路径用：只使能，不抢
+                             teleop 正在发布的 joint_commands 目标）
   Srv  ~/home     Trigger  — set_all_joints_zero
   Srv  ~/estop    Trigger  — disable / e-stop (真断电)
   Srv  ~/damping  Trigger  — motion_mode=0 阻尼释放（可手动拖拽）
@@ -81,7 +84,8 @@ class AstralRobotDriverNode(Node):
         self.declare_parameter("obs_hz", 50)
         self.declare_parameter("ctrl_hz", 50)
         self.declare_parameter("lpf_enable", True)
-        self.declare_parameter("lpf_alpha", 0.35)
+        # 代码默认 0.85≈近直通（配 teleop 平滑 0.25）；config/astral_robot.yaml 会覆盖。
+        self.declare_parameter("lpf_alpha", 0.85)
         self.declare_parameter("auto_ready", True)
         self.declare_parameter("dry_run", False)
         self.declare_parameter("enable_full_body_cmd", True)
@@ -217,6 +221,7 @@ class AstralRobotDriverNode(Node):
             )
 
         self.create_service(Trigger, "~/ready", self._srv_ready)
+        self.create_service(Trigger, "~/enable", self._srv_enable)
         self.create_service(Trigger, "~/home", self._srv_home)
         self.create_service(Trigger, "~/estop", self._srv_estop)
         self.create_service(Trigger, "~/damping", self._srv_damping)
@@ -602,6 +607,36 @@ class AstralRobotDriverNode(Node):
             self._apply_lpf()
             res.success = bool(ok)
             res.message = "one_click_ready OK" if ok else "enable not confirmed"
+        except Exception as exc:  # noqa: BLE001
+            res.success = False
+            res.message = str(exc)
+        return res
+
+    def _srv_enable(self, _req, res):
+        """上电使能、**不回零**：WORK→POSITION→enable。
+
+        与 ``~/ready``（one_click_ready 末尾 set_all_joints_zero）的区别：
+        遥操启动/急停后恢复时 teleop 正沿 init_waypoints→init_pose 走关节
+        轨迹，此刻回零会与轨迹目标抢——本服务只把电机使能起来，目标完全交给
+        teleop 的 joint_commands。
+        """
+        if self.dry_run:
+            res.success = True
+            res.message = "dry_run: skipped enable"
+            return res
+        if self._robot is None:
+            res.success = False
+            res.message = "robot not connected"
+            return res
+        try:
+            self._robot.set_system_mode("work")
+            time.sleep(0.05)
+            self._robot.set_motion_mode(1)
+            time.sleep(0.05)
+            ok = self._robot.enable(enable_timeout_s=3.0)
+            self._apply_lpf()
+            res.success = bool(ok)
+            res.message = "enable OK (不回零)" if ok else "enable not confirmed"
         except Exception as exc:  # noqa: BLE001
             res.success = False
             res.message = str(exc)
