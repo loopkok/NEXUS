@@ -96,13 +96,13 @@
 | GET | `/api/v1/presets` | 启动预设列表 |
 | GET | `/api/v1/state` | 当前快照（同步，含 health + state_rates_hz） |
 | GET | `/api/v1/logs` | Launch 环形缓冲全量（默认 8000 行；WS `log_tail` 只推尾 800） |
-| POST | `/api/v1/start` | `{preset: "..."}` 启动指定预设（带真机 driver 的预设启动后自动等 `~/enable` 服务并幂等使能电机——修复"急停→重启后不使能"的静默失败；12s 未确认则 503 提示） |
+| POST | `/api/v1/start` | `{preset: "..."}` 启动指定预设（只把遥操栈拉起来；使能交给 driver auto_ready/一键就绪——曾自动等 `~/enable` 导致启动即 503，已回退） |
 | POST | `/api/v1/stop` | SIGINT 停止 launch（30s 超时 SIGKILL） |
 | POST | `/api/v1/pause` | 发 `/teleop/disarm`（软暂停，节点保持运行） |
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
 | POST | `/api/v1/teleop/start` | 发 `/teleop/start`（一次性，记录 `vr_init` 并 arm；配合 `require_start_signal`；无条件发送，臂节点自行判断有效性） |
 | POST | `/api/v1/teleop/home` | HOME 归位：先 `~/enable` 使能（真机预设），再 disarm + 发 `/teleop/home`（双臂沿 init_pose → init_waypoints → 零位 收回；仅 RUNNING/PAUSED 可用） |
-| POST | `/api/v1/restart` | 重启当前预设（停止后重新启动；带 driver 预设同样自动使能；仅对经本监控启动的预设有效） |
+| POST | `/api/v1/restart` | 重启当前预设（停止后重新启动；同样只拉栈不自动使能；仅对经本监控启动的预设有效） |
 | POST | `/api/v1/robot/ready` | 调 driver `~/ready`（one_click_ready，上电+零位） |
 | POST | `/api/v1/robot/home` | 调 driver `~/home`（全关节归零） |
 | POST | `/api/v1/robot/position` | 调 driver `~/position`（motion_mode=1，位置保持） |
@@ -184,8 +184,8 @@ stopped ──start──► starting ──2s暖机──► running
 - **视频回传卡片**：调 `quest3_video_streamer` 的运行时门控（`~/set_push_enabled` + latched `~/active_cameras`）。总开关关掉后所有轨发 2fps 黑帧（几乎不占带宽，Quest 面板变黑）；逐路勾选决定哪些相机推流；「路数」下拉是快捷选择（选 n = 勾前 n 路，逐路勾选后显示"自定义"）。**相机列表不写死**：streamer 默认 `auto_scan` 自动扫描主机采集设备（label = `videoN`），卡片在线时显示其扫描结果（含 `/dev/videoN` 与 sysfs 设备名，未接置灰）；**离线时卡片自行扫描主机设备，可预选**——latched 话题会在 streamer 启动后生效（总开关服务需在线）。在线判定看 `~/gate_state` 是否还有活发布者，streamer 死掉会正确显示"离线"。启动后才插入的相机需重启栈进入 track 集合。**实时画面**：勾选「实时画面」后，在线且勾选的每路相机显示 MJPEG 实时预览（streamer 抽帧 10fps/640宽/q65 JPEG，独立线程编码经 `~/preview/{label}` 转发，延迟约 0.2~0.4s，仅供监控；取消勾选的路预览同步停止，不勾不耗资源）
 
 - **急停（真断电）**：红色常驻按钮，确认后调 driver `~/estop` → SDK `e_stop()`/`disable()`，臂失去保持力；恢复需重新「一键就绪」。区别于「暂停」（软 disarm，臂仍上电保持位姿）
-- **启动/重启自动使能（修复急停恢复）**：启动/重启带真机 driver 的预设后，后端自动等 driver `~/enable` 服务出现并幂等调用（上电**不回零**，目标交给遥操归位轨迹；sim/无 driver 预设自动跳过）。因此**急停 → 停止 → 启动**后电机已使能，臂节点归位不再"空跑"锁死
-- **HOME（归位到零）**：预设管理区紫色按钮，确认后调 `POST /api/v1/teleop/home`——先 `~/enable` 使能，再 disarm + 发 `/teleop/home`，双臂沿 init_pose → init_waypoints → 零位 慢速收回并停在零位；之后需「一键就绪/开始遥操」才能继续。仅遥操 RUNNING/PAUSED 时可用
+- **启动/重启只拉栈**：`/start`、`/restart` 恢复改前语义——只把遥操栈拉起来，**不**自动调 `~/enable`（曾导致启动即 503 + 臂不动，已回退）。电机使能由 driver `auto_ready`/「一键就绪」负责；**急停 → 停止 → 启动**后的恢复收敛到 HOME 按钮
+- **HOME（归位到零）**：预设管理区紫色按钮，确认后调 `POST /api/v1/teleop/home`——先 `~/enable` 使能（仅此端点使用，上电**不回零**），再 disarm + 发 `/teleop/home`，双臂沿 init_pose → init_waypoints → 零位 慢速收回并停在零位；之后需「一键就绪/开始遥操」才能继续。仅遥操 RUNNING/PAUSED 时可用
 - **阻尼释放**：调 driver `~/damping` → `motion_mode=0`，电机仍上电、关节可手动拖拽。典型流程：遥操中 → 停止（臂保持末位姿）→ 阻尼释放（手动拖回 home）→ 位置保持/归零
 
 > **机器人模式按钮的可用时机（重要）**：急停/阻尼释放/位置保持/一键就绪/归零 这五个按钮调的都是 **driver 节点（astral_robot_driver）的 ROS 服务**，driver 随遥操栈启停：

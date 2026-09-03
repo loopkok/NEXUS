@@ -146,9 +146,10 @@ class AstralTeleopArmNode(Node):
             False,
         )
         self.declare_parameter("use_joint_state_seed", True)
-        # Homing 逐拍贴实测 joint_states（fresh 且与 q_cmd 接近时）：电机失能
-        # （急停后未使能）时 q_cmd 不再"内部空跑"领先机器人，而是等使能后
-        # 从真实位姿继续走，避免使能晚到瞬间机器人猛扑。
+        # HOME park 逐拍贴实测 joint_states（fresh 且与 q_cmd 接近时）：电机
+        # 失能/使能晚到（急停后）时 q_cmd 不"内部空跑"领先机器人，等使能后
+        # 从真实位姿继续走收回零位，避免猛扑。启动 init 归位**不**用（保持改前
+        # 开环推进）。
         self.declare_parameter("homing_track_state", True)
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
@@ -1129,12 +1130,17 @@ class AstralTeleopArmNode(Node):
             )
             self._homing_seeded = True
 
-        # Feedback-clamped base: 电机正常跟随时（实测 fresh 且贴近 q_cmd）每拍
-        # 从*实测位姿*迈步，而不是从内部 q_cmd 累加——急停后电机失能、机器人
-        # 不动时，q_cmd 不会"内部空跑"领先实体，使能晚到也不会让机器人猛扑，
-        # 而是原地等待、使能后继续沿轨迹走。
+        # base = q_cmd（启动 init 归位保持改前开环推进：web 启动已回退自动
+        # enable，启动归位就按原样逐拍朝轨迹推进，不因实测没动而卡住）。
+        # HOME park 才用反馈钳制：电机正常跟随时从*实测位姿*迈步，避免使能
+        # 晚到/失能时 q_cmd"内部空跑"领先实体，收回零位时不会猛扑。
         base = self.q_cmd
-        if self._track_homing_state and self._got_state and self._state_t is not None:
+        if (
+            self._homing_mode == "park"
+            and self._track_homing_state
+            and self._got_state
+            and self._state_t is not None
+        ):
             state_fresh = self.data_timeout <= 0.0 or (
                 now - self._state_t <= max(self.data_timeout, 1.0)
             )
@@ -1180,15 +1186,17 @@ class AstralTeleopArmNode(Node):
             self._publish_q()
             return
         if elapsed >= self._init_timeout:
-            note = (
-                "hold at current q"
-                if self._homing_mode == "park"
-                else "VR zero uses current q"
-            )
-            self.get_logger().warn(
-                f"[{self.side}] Home timeout ({self._init_timeout:.0f}s), "
-                f"error={max_abs:.3f} rad — {note}"
-            )
+            if self._homing_mode == "park":
+                self.get_logger().warn(
+                    f"[{self.side}] Home timeout ({self._init_timeout:.0f}s), "
+                    f"error={max_abs:.3f} rad — hold at current q"
+                )
+            else:
+                # 启动 init 归位保持改前措辞与语义：超时即用当前 q 作 VR 零点。
+                self.get_logger().warn(
+                    f"[{self.side}] Init pose timeout ({self._init_timeout:.0f}s), "
+                    f"error={max_abs:.3f} rad — VR zero uses current q"
+                )
             T0 = self.ik.fk(self._flip_q(self.q_cmd))
             self.robot_init_pos = T0[:3, 3].copy()
             self.robot_init_rot = T0[:3, :3].copy()

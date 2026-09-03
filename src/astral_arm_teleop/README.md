@@ -301,7 +301,8 @@ ros2 service call /astral_arm_teleop_right/home std_srvs/srv/Trigger
 ```
 
 > 归位需电机上电。急停（真断电）后请先用 driver `~/enable`（使能**不回零**，避免与轨迹目标抢）
-> 再发 HOME——web 端「启动/重启/HOME」已自动做这一步。
+> 再发 HOME——web 端 **HOME 按钮**（`POST /api/v1/teleop/home`）已自动做这一步（先 enable 后
+> disarm+home）。注意 web「启动/重启」只拉栈、不再自动 enable（曾导致 503/臂不动，已回退）。
 
 web 端操作：系统页预设管理区 **HOME** 按钮（或 `POST /api/v1/teleop/home`）。
 
@@ -380,6 +381,8 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 
 `use_joint_state_seed`：单臂节点会订 `joint_states` 但控制环目前仍用 `q_cmd` 做 warm-start（开环种子）。数值 IK 同样用上一帧 `q` 作 LM 初值。
 
-`homing_track_state`（默认 true）：归位（启动 init 与 HOME park）每拍把**实测** joint_states 作为迈步基准
-（fresh 且贴近 q_cmd 时），机器人不动则 q_cmd 不"内部空跑"——电机失能（急停后未使能）时等使能后从真实
-位姿继续走，避免使能晚到瞬间猛扑。关掉则退化为纯开环 q_cmd 累加（旧行为）。
+`homing_track_state`（默认 true）：**HOME park** 每拍把**实测** joint_states 作为迈步基准
+（fresh 且贴近 q_cmd 时），机器人不动则 q_cmd 不"内部空跑"——电机失能/使能晚到（急停后）时等
+使能后从真实位姿继续走收回零位，避免猛扑。**仅 HOME park 生效**：启动 init 归位保持改前开环
+逐拍推进（web「停止→启动」只拉栈、使能交给 driver auto_ready，臂不应因实测没动而卡在原地）。
+关掉则 HOME park 也退化为纯开环 q_cmd 累加。

@@ -6,6 +6,21 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-03
 
+**web 启动流程回退（急停恢复方案收敛到 HOME 按钮）**——`astral_web_monitor` ×
+`astral_arm_teleop`。**现象**：上一条「启动/重启自动调 `~/enable` + 启动归位贴实测」实机
+验证无效——web「停止→启动」后直接 **503 service** 且臂不动。**根因**：① `/start` `/restart`
+在 launch 起来后同步等 `~/enable` 确认（12s 预算），driver 尚未 ready 时超时抛 503——启动本应
+"只把栈拉起来"；② 启动 init 归位也被 `homing_track_state` 钳到实测关节，电机一旦没立刻跟上，
+q_cmd 逐拍被实测拽回 → 臂"原地不动"。**做法（回退 + 保留）**：① `/start` `/restart` **回退**
+到改前——不再自动调 `~/enable`、不再 503；`~/enable` 服务本身保留，仅 **HOME** 端点使用
+（先使能再 disarm+收回零位）；② 臂节点 `_homing_tick` 的贴实测钳制**收窄到 HOME park 专用**
+（`self._homing_mode == "park"`），启动 init 归位恢复改前**开环逐拍推进**——web 启动只拉栈，
+电机使能交给 driver auto_ready/一键就绪，臂正常往 init 走；急停后的"使能+收回零位"统一走 HOME
+按钮。**验证**：`test_home_park.py` 由 5 例扩到 7 例——新增 `test_init_homing_advances_even_
+when_state_frozen`（实测冻结时 init 仍开环推进，50 tick 前进 ~0.1 rad）与 `test_park_homing_
+holds_until_robot_moves`（park 模式下实测不动 q_cmd 不空跑，50 tick 误差不动），全绿；arm teleop
+回归 13 例通过；web monitor 单测 4 例通过。
+
 **真机遥操手感调参：两级低通串联改单级**——`astral_arm_teleop` × `astral_robot_control`。
 **现象**：遥操小动作"先顿后冲"（先迟钝一下再冲上去），静止又有发颤。**原因**：teleop
 `pos/rot_smoothing` 与 driver 板卡 `lpf` 是**两级串联低通**，时间常数叠加、噪声抑制与跟手
@@ -22,17 +37,19 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 （WORK→POSITION→enable，**不回零**——遥操恢复归位路径专用，避免与 teleop 正在发布的
 joint_commands 轨迹目标抢）；② 启动/重启带真机 driver 的预设后，monitor 等待 `~/enable`
 服务出现并幂等调用（`DRIVER_ENABLE_WAIT_S` 12s 预算，无 driver/sim 自动跳过）——
-`_preset_has_driver` 按 `with_arm_driver` 或 package 判定；③ 臂节点归位贴实测 joint_states
+`_preset_has_driver` 按 `with_arm_driver` 或 package 判定（**实机 503/臂不动后已回退**：
+web 启动只拉栈、不再自动 enable，见当日顶部条目）；③ 臂节点归位贴实测 joint_states
 （新参数 `homing_track_state` 默认 true）：fresh 且贴近 q_cmd 时每拍从实测位姿迈步，电机未使能
-不动时 q_cmd 不再空跑，使能晚到不会猛扑；④ 新增 **HOME / park-to-zero**：臂节点订阅
+不动时 q_cmd 不再空跑，使能晚到不会猛扑（**启动 init 路径已回退开环**，此钳制仅保留 HOME park，
+见当日顶部条目）；④ 新增 **HOME / park-to-zero**：臂节点订阅
 `/teleop/home`（一次性 volatile，语义同 `/teleop/start`）+ `~/home` 服务，`_go_home` disarm
 后沿 **init_pose → init_waypoints → 零位** 慢速收回，到零位把机器人原点锚到 FK(零)，超时保持
 当前 q_cmd 绝不硬发零目标（新单臂/双臂通用测试 `test_home_park.py` 5 例全绿）；⑤ web monitor
 `config.py` 增 `TOPIC_HOME`/`DRIVER_SRV_ENABLE`，monitor_node 发布 `publish_home` 并把
 `enable` 纳入 `_DRIVER_SERVICES`；⑥ `web_server.py` 新增 `POST /api/v1/teleop/home`（先使能
 后 disarm+home，仅 RUNNING/PAUSED 可用），前端预设管理区「启动/停止/重启」旁加 **HOME** 按钮
-（`api.teleopHome`，purple，与急停区分）。真机流程：急停→停止→启动（自动使能）→ 按需 HOME 收回
-零位 → 一键就绪/`/teleop/start` 重新遥操。
+（`api.teleopHome`，purple，与急停区分）。真机流程：急停→停止→启动（拉起栈，不再自动使能）→
+按需点 **HOME**（自动 enable + 收回零位）→ 一键就绪/`/teleop/start` 重新遥操。
 
 **新增推理功能包 `astral_policy_inference`（策略部署 / 数据真机回放 / 人在环路）**。
 本包接遥操数采与训练上游做推理闭环：模型无关后端（openpi 远程 ws `host/port` / lerobot ACT 进程内

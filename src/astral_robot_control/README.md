@@ -41,14 +41,15 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 | 服务 | 说明 |
 |------|------|
 | `/astral_robot_driver/ready` | `one_click_ready`（WORK→POSITION→enable→zero） |
-| `/astral_robot_driver/enable` | WORK→POSITION→enable，**不回零**（遥操启动/急停恢复路径用，避免抢 teleop 轨迹目标） |
+| `/astral_robot_driver/enable` | WORK→POSITION→enable，**不回零**（HOME/急停恢复用，避免抢 teleop 轨迹目标） |
 | `/astral_robot_driver/home` | `set_all_joints_zero`（全关节归零） |
 | `/astral_robot_driver/estop` | **真急停**：`e_stop` / disable（断电，臂失去保持力） |
 | `/astral_robot_driver/damping` | 阻尼释放：`motion_mode=0`（电机仍上电、关节可手动拖拽） |
 | `/astral_robot_driver/position` | 位置保持：`motion_mode=1`（恢复位置保持） |
 
 > 典型遥操收尾流程：遥操中 → 停止（臂保持末位姿）→ `damping`（手动拖回 home）→ `position` 或 `home`。
-> 真急停 `estop` 会断电，恢复需重新 `ready`（遥操恢复则靠启动后的 `enable` + 臂节点 HOME/init 归位轨迹，见 astral_arm_teleop）。
+> 真急停 `estop` 会断电，恢复需重新 `ready`（遥操恢复则靠 HOME 端点先 `~/enable` 再 disarm+收回零位，
+> 见 astral_arm_teleop 与 astral_web_monitor；web 启动/重启只拉栈、不自动 enable）。
 
 ## 依赖
 

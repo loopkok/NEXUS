@@ -201,17 +201,6 @@ async def start(req: StartRequest) -> ApiEnvelope:
     ok, msg = _launch_mgr.start(preset)
     if not ok:
         raise HTTPException(status_code=409, detail=msg)
-    # 真机预设：启动后补发一次 ~/enable（不回零），电机使能不静默失败——
-    # 否则急停→停止→再启动会因 driver auto_ready 未确认上电而"锁在当前位置"。
-    if _preset_has_driver(preset):
-        confirmed, emsg = await asyncio.to_thread(
-            _ensure_driver_enabled, config.DRIVER_ENABLE_WAIT_S
-        )
-        if not confirmed:
-            raise HTTPException(
-                status_code=503,
-                detail=f"{msg}；但电机使能未确认——{emsg}（进程已运行，可点一键就绪/HOME 重试）",
-            )
     return ApiEnvelope(ok=True, message=msg)
 
 
@@ -318,15 +307,6 @@ async def restart() -> ApiEnvelope:
     ok_start, msg = _launch_mgr.start(_presets[name])
     if not ok_start:
         raise HTTPException(status_code=409, detail=msg)
-    if _preset_has_driver(_presets[name]):
-        confirmed, emsg = await asyncio.to_thread(
-            _ensure_driver_enabled, config.DRIVER_ENABLE_WAIT_S
-        )
-        if not confirmed:
-            raise HTTPException(
-                status_code=503,
-                detail=f"已重启预设: {name}；但电机使能未确认——{emsg}（可点一键就绪/HOME 重试）",
-            )
     return ApiEnvelope(ok=True, message=f"已重启预设: {name}")
 
 
@@ -342,7 +322,10 @@ def _driver_call(name: str) -> tuple[bool, str]:
     return node.call_driver_service(name)
 
 
-# --- Driver-enable helpers (start / restart / HOME) ------------------------
+# --- Driver-enable helpers (HOME only) ------------------------------------
+# 启动/重启端点**不**再自动调 ~/enable（曾导致"启动后即 503 / 臂不动"，
+# 已回退：启动只是把栈拉起来，使能交给 driver auto_ready/一键就绪）。
+# 这里仅 HOME 端点使用：先把电机使能起来，再 disarm + 走收回轨迹。
 def _preset_has_driver(preset) -> bool:
     """该预设是否把 astral_robot_control（真机 driver）拉起来。"""
     if preset is None:
@@ -361,10 +344,8 @@ def _current_preset():
 def _ensure_driver_enabled(timeout_s: float) -> tuple[bool, str]:
     """确保真机电机已使能（**不回零**：~/enable = WORK→POSITION→enable）。
 
-    在启动带 driver 的预设后调用：等 driver 的 ~/enable 服务出现并调用
-    （幂等，已上电时立即成功）。解决"急停失能后重启，auto_ready 没确认上电
-    导致机器人锁住不归位"的静默失败。服务在超时内一直未出现视为无需使能
-    （无 driver / sim），不算错误。
+    仅 HOME 端点使用：HOME 需要电机带载走收回轨迹，先调用本函数确认上电。
+    服务在超时内一直未出现视为无需使能（无 driver / sim），不算错误。
     """
     node = get_node()
     if node is None:
