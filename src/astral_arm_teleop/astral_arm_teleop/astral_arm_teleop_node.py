@@ -663,6 +663,18 @@ class AstralTeleopArmNode(Node):
         # pause must not downgrade it (pause→resume would bypass re-centering).
         if self._disarm_reason != "fault":
             self._disarm_reason = "operator"
+        if self._homing:
+            # Operator disarm while a homing/park is running must cancel it:
+            # otherwise the node keeps streaming the stale joint trajectory
+            # (e.g. the slow startup init move), which would override a later
+            # driver ~/home / ~/ready zero once motion mode returns to POSITION
+            # (症状: 阻尼释放后点一键就绪，臂回到阻尼前位姿). The arm simply
+            # holds its last commanded pose; a later /teleop/start re-captures.
+            self._homing = False
+            self._homing_started = False
+            self.get_logger().warn(
+                f"[{self.side}] homing cancelled by disarm — hold current pose"
+            )
 
     def _on_start(self, msg: Bool) -> None:
         if msg.data:

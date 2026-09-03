@@ -314,12 +314,32 @@ async def restart() -> ApiEnvelope:
 # These call the driver's already-exposed Trigger services. The driver is the
 # hardware authority; the monitor only invokes its services (non-intrusive).
 # All run in a worker thread so the ROS spin thread can complete the future.
+#
+# 手动硬件模式按钮（急停/阻尼/一键就绪/归零/位置保持）会改变臂的受控目标或
+# 释放臂。若遥操臂节点仍在 armed 或启动归位(homing)中持续发流，driver 显式
+# 下发的一次性目标会被其下一帧命令覆盖（症状：阻尼后点一键就绪，臂回到阻尼
+# 前位姿 / 阻尼中归零无效）。因此每次先发 /teleop/disarm 把臂节点带出轨迹，
+# 再调 driver 服务；之后要遥操需重新 /teleop/start。
 
 def _driver_call(name: str) -> tuple[bool, str]:
     node = get_node()
     if node is None:
         return False, "ROS 节点未就绪"
     return node.call_driver_service(name)
+
+
+def _disarm_before_hardware() -> None:
+    """硬件模式前置：发布 /teleop/disarm（臂节点同时取消进行中的 homing）。
+
+    若当前没跑遥操（无订阅者）发布是无害空操作；对 CLI 起的遥操同样生效。
+    """
+    node = get_node()
+    if node is None:
+        return
+    try:
+        node.publish_disarm()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # --- Driver-enable helpers (HOME only) ------------------------------------
@@ -372,6 +392,8 @@ def _ensure_driver_enabled(timeout_s: float) -> tuple[bool, str]:
 
 @app.post("/api/v1/robot/ready")
 async def robot_ready() -> ApiEnvelope:
+    """一键就绪：先 disarm 遥操（停掉 homing/armed 发流），再 driver one_click_ready。"""
+    _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "ready")
     if not ok:
         raise HTTPException(status_code=503, detail=msg)
@@ -380,6 +402,8 @@ async def robot_ready() -> ApiEnvelope:
 
 @app.post("/api/v1/robot/home")
 async def robot_home() -> ApiEnvelope:
+    """归零：先 disarm 遥操，再 driver ~/home（阻尼中会自动切回 POSITION 再归零）。"""
+    _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "home")
     if not ok:
         raise HTTPException(status_code=503, detail=msg)
@@ -388,7 +412,8 @@ async def robot_home() -> ApiEnvelope:
 
 @app.post("/api/v1/robot/estop")
 async def robot_estop() -> ApiEnvelope:
-    """真急停：调 driver ~/estop → SDK disable()（断电）。"""
+    """真急停：先 disarm 遥操（断电后不能让陈旧命令流挂着），再 driver ~/estop。"""
+    _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "estop")
     if not ok:
         raise HTTPException(status_code=503, detail=msg)
@@ -397,7 +422,8 @@ async def robot_estop() -> ApiEnvelope:
 
 @app.post("/api/v1/robot/damping")
 async def robot_damping() -> ApiEnvelope:
-    """阻尼释放：调 driver ~/damping → motion_mode=0，可手动拖拽。"""
+    """阻尼释放：先 disarm 遥操，再 driver ~/damping → motion_mode=0，可手动拖拽。"""
+    _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "damping")
     if not ok:
         raise HTTPException(status_code=503, detail=msg)
@@ -406,7 +432,8 @@ async def robot_damping() -> ApiEnvelope:
 
 @app.post("/api/v1/robot/position")
 async def robot_position() -> ApiEnvelope:
-    """位置保持：调 driver ~/position → motion_mode=1，恢复位置保持。"""
+    """位置保持：先 disarm 遥操，再 driver ~/position → motion_mode=1。"""
+    _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "position")
     if not ok:
         raise HTTPException(status_code=503, detail=msg)

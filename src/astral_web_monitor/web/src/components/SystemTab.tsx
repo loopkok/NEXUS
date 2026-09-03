@@ -93,7 +93,7 @@ export function SystemTab({ state, presets, onAction }: Props) {
           <button style={btn('#3b82f6')} onClick={() => run(() => api.robotPosition(), '位置保持')}>
             位置保持
           </button>
-          <button style={btn('#f59e0b')} onClick={() => { if (confirm('阻尼释放后可手动拖拽臂，确认？')) run(() => api.robotDamping(), '阻尼释放') }}>
+          <button style={btn('#f59e0b')} onClick={() => { if (confirm('阻尼释放会先自动 disarm 遥操，之后可手动拖拽臂，确认？')) run(() => api.robotDamping(), '阻尼释放') }}>
             阻尼释放
           </button>
           <button style={estopBtn} onClick={() => { if (confirm('确认急停断电？')) run(() => api.robotEstop(), '已断电') }}>
@@ -102,8 +102,9 @@ export function SystemTab({ state, presets, onAction }: Props) {
         </div>
         <div style={hintStyle}>
           调用 <code>astral_robot_control</code> driver 已有的 Trigger 服务（~/ready · ~/home · ~/position · ~/damping · ~/estop）。
-          典型流程：遥操中 → <b>停止</b>（臂保持末位姿）→ <b>阻尼释放</b>（手动拖回 home）→ <b>位置保持</b>或<b>归零</b>。
-          急停=真断电（disable），臂失去保持力；恢复需重新<b>一键就绪</b>。
+          每个按钮都会<b>先自动 disarm 遥操</b>（把臂节点带出 armed/homing 轨迹），再切驱动模式——避免陈旧命令流覆盖本次目标（如阻尼后归零/一键就绪无效）。
+          典型流程：遥操中 → <b>阻尼释放</b>（自动 disarm，手动拖回 home）→ <b>位置保持</b>或<b>归零</b>。
+          之后要用遥操需重新点<b>开始遥操</b>。急停=真断电（disable），臂失去保持力；恢复需重新<b>一键就绪</b>。
         </div>
       </div>
 

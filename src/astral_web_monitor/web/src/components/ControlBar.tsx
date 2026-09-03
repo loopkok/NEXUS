@@ -32,7 +32,7 @@ export function ControlBar({ state, onAction }: Props) {
     void run(() => api.robotEstop(), '已断电 (e_stop)')
   }
   function damping() {
-    if (!confirm('确认阻尼释放？切换运动模式=阻尼，可手动拖拽臂回 home（电机仍上电）。')) return
+    if (!confirm('确认阻尼释放？会先自动 disarm 遥操，切换运动模式=阻尼，可手动拖拽臂回 home（电机仍上电）。')) return
     void run(() => api.robotDamping(), '阻尼释放 (可手动拖拽)')
   }
 

@@ -17,6 +17,7 @@ the whole suite skips with exit 0.
 """
 
 import sys
+import threading
 
 try:
     import rclpy  # noqa: F401
@@ -45,11 +46,22 @@ class _FakeRobot:
         self.calls.append(("set_system_mode", mode))
 
     def set_motion_mode(self, mode):
+        self._motion_mode = mode
         self.calls.append(("set_motion_mode", mode))
 
     def enable(self, enable_timeout_s=2.0):
         self.calls.append(("enable", enable_timeout_s))
         return self._enable_ok
+
+    def set_all_joints_zero(self):
+        self.calls.append(("set_all_joints_zero",))
+
+    def e_stop(self):
+        self.calls.append(("e_stop",))
+
+    def one_click_ready(self, enable_timeout_s=3.0):
+        self.calls.append(("one_click_ready", enable_timeout_s))
+        return True
 
 
 def _make_node(robot=None, dry_run=False):
@@ -57,7 +69,38 @@ def _make_node(robot=None, dry_run=False):
     node.dry_run = dry_run
     node._robot = robot
     node._apply_lpf = lambda: None
+    node._lock = threading.Lock()
+    node._left_cmd = None
+    node._right_cmd = None
+    node._full_cmd = None
+    node._head_cmd = None
+    node._left_cmd_t = 0.0
+    node._right_cmd_t = 0.0
+    node._full_cmd_t = 0.0
+    node._head_cmd_t = 0.0
+    node._use_full_priority = False
     return node
+
+
+def _seed_cache(node):
+    """模拟遥操/启动归位刚发过的"阻尼前的陈旧目标"（仍处新鲜窗口）。"""
+    with node._lock:
+        node._left_cmd = [0.1] * 7
+        node._left_cmd_t = 1234.0
+        node._right_cmd = [0.2] * 7
+        node._right_cmd_t = 1234.0
+        node._full_cmd = None
+        node._full_cmd_t = 0.0
+        node._head_cmd = [0.0, 0.0]
+        node._head_cmd_t = 1234.0
+
+
+def _cache_empty(node):
+    with node._lock:
+        return all(
+            v is None
+            for v in (node._left_cmd, node._right_cmd, node._full_cmd, node._head_cmd)
+        )
 
 
 def test_dry_run_skips():
@@ -126,6 +169,81 @@ def test_offline_board_is_hard_failure():
     assert "not confirmed" in res.message
 
 
+# --- 阻尼/归零/一键就绪：缓存清理 + 阻尼中归零先切 POSITION ------------------
+
+def test_home_in_damping_restores_position_then_zero_and_clears_cache():
+    # 阻尼（motion=0）下板端忽略位置目标 → home 必须先切回 POSITION 再归零，
+    # 且清掉"阻尼前的陈旧目标"，防止 100Hz 重发把它顶回去。
+    robot = _FakeRobot(powered=True, motion_mode=0)
+    node = _make_node(robot=robot)
+    _seed_cache(node)
+    res = _FakeRes()
+    node._srv_home(None, res)
+    assert res.success is True
+    assert robot._motion_mode == 1
+    assert ("set_motion_mode", 1) in robot.calls
+    assert ("set_all_joints_zero",) in robot.calls
+    assert _cache_empty(node)
+
+
+def test_home_in_position_skips_motion_mode_switch():
+    robot = _FakeRobot(powered=True, motion_mode=1)
+    node = _make_node(robot=robot)
+    _seed_cache(node)
+    res = _FakeRes()
+    node._srv_home(None, res)
+    assert res.success is True
+    assert [c for c in robot.calls if c[0] == "set_motion_mode"] == []
+    assert ("set_all_joints_zero",) in robot.calls
+    assert _cache_empty(node)
+
+
+def test_home_unpowered_fails_with_ready_hint():
+    # 急停下电后单靠 home 归不了零（没上电位置环不生效）：给明确提示而非静默。
+    robot = _FakeRobot(powered=False, motion_mode=1)
+    node = _make_node(robot=robot)
+    res = _FakeRes()
+    node._srv_home(None, res)
+    assert res.success is False
+    assert "先 ~/ready" in res.message
+    assert robot.calls == []
+
+
+def test_ready_clears_cached_target_before_zero():
+    # 一键就绪前清缓存：one_click_ready 的归零是显式目标，随后 100Hz 重发
+    # 只该复读零位，不能把阻尼前的陈旧位姿重新顶上来（症状：回到阻尼前位姿）。
+    robot = _FakeRobot(powered=False, online=True, enable_ok=True)
+    node = _make_node(robot=robot)
+    _seed_cache(node)
+    res = _FakeRes()
+    node._srv_ready(None, res)
+    assert res.success is True
+    assert ("one_click_ready", 3.0) in robot.calls
+    assert _cache_empty(node)
+
+
+def test_damping_clears_cached_target():
+    robot = _FakeRobot(powered=True, motion_mode=1)
+    node = _make_node(robot=robot)
+    _seed_cache(node)
+    res = _FakeRes()
+    node._srv_damping(None, res)
+    assert res.success is True
+    assert robot._motion_mode == 0
+    assert _cache_empty(node)
+
+
+def test_estop_clears_cached_target():
+    robot = _FakeRobot(powered=True, motion_mode=1)
+    node = _make_node(robot=robot)
+    _seed_cache(node)
+    res = _FakeRes()
+    node._srv_estop(None, res)
+    assert res.success is True
+    assert ("e_stop",) in robot.calls
+    assert _cache_empty(node)
+
+
 def _run_all():
     tests = [
         test_dry_run_skips,
@@ -135,6 +253,12 @@ def _run_all():
         test_enable_confirmed_ok,
         test_power_bit_unconfirmed_but_online_is_success,
         test_offline_board_is_hard_failure,
+        test_home_in_damping_restores_position_then_zero_and_clears_cache,
+        test_home_in_position_skips_motion_mode_switch,
+        test_home_unpowered_fails_with_ready_hint,
+        test_ready_clears_cached_target_before_zero,
+        test_damping_clears_cached_target,
+        test_estop_clears_cached_target,
     ]
     failed = 0
     for t in tests:

@@ -18,13 +18,16 @@ Contract (default)::
   Pub  /{left,right}_gripper/joint_states   (last commanded; not OBS 0x31/0x32)
 
   Srv  ~/ready    Trigger  — one_click_ready (WORK→POSITION→enable→zero)
+                             （先清空缓存目标：归零后 100Hz 重发只复读零位，
+                             不把阻尼前的陈旧位姿顶回来）
   Srv  ~/enable   Trigger  — WORK→POSITION→enable，**不回零**
                              （遥操恢复归位路径用：只使能，不抢 teleop 正在
                              发布的 joint_commands 目标；已上电直接成功跳过，
                              电源位未确认但板端在线也算下发成功）
-  Srv  ~/home     Trigger  — set_all_joints_zero
-  Srv  ~/estop    Trigger  — disable / e-stop (真断电)
-  Srv  ~/damping  Trigger  — motion_mode=0 阻尼释放（可手动拖拽）
+  Srv  ~/home     Trigger  — 归零：已在阻尼先切回 POSITION，再 set_all_joints_zero
+                             并清缓存（未上电直接报"先 ~/ready"，不静默）
+  Srv  ~/estop    Trigger  — disable / e-stop (真断电)，同时清缓存
+  Srv  ~/damping  Trigger  — motion_mode=0 阻尼释放（可手动拖拽），同时清缓存
   Srv  ~/position Trigger  — motion_mode=1 位置保持
 """
 
@@ -455,6 +458,27 @@ class AstralRobotDriverNode(Node):
                 f"move_head_js failed: {exc}", throttle_duration_sec=1.0
             )
 
+    def _clear_cmd_cache(self) -> None:
+        """Drop cached upstream targets so the control timer won't replay a stale pose.
+
+        The control timer re-sends the last upstream joint target at control rate
+        while it is "fresh" (command_timeout_s). Manual-mode services
+        (ready/home/damping/estop/enable) change what the arm should do next — a
+        stale cached pose (e.g. the pose right before 阻尼释放) must not be re-asserted
+        once motion mode returns to POSITION, or it overrides the explicit target
+        (zero / hold) and the arm snaps back to the pre-damping pose.
+        """
+        with self._lock:
+            self._left_cmd = None
+            self._right_cmd = None
+            self._full_cmd = None
+            self._head_cmd = None
+            self._left_cmd_t = 0.0
+            self._right_cmd_t = 0.0
+            self._full_cmd_t = 0.0
+            self._head_cmd_t = 0.0
+            self._use_full_priority = False
+
     def _on_control_timer(self) -> None:
         now = time.monotonic()
         with self._lock:
@@ -604,6 +628,9 @@ class AstralRobotDriverNode(Node):
             res.message = "robot not connected"
             return res
         try:
+            # 清掉缓存里的陈旧上游目标：一键就绪后 driver 的 100Hz 重发只应
+            # 复读"归零"，不能把阻尼释放前残留的旧位姿重新顶上来。
+            self._clear_cmd_cache()
             ok = self._robot.one_click_ready(enable_timeout_s=3.0)
             self._apply_lpf()
             res.success = bool(ok)
@@ -652,6 +679,9 @@ class AstralRobotDriverNode(Node):
             time.sleep(0.05)
             ok = robot.enable(enable_timeout_s=3.0)
             self._apply_lpf()
+            # 下电（急停/失能）前缓存的上游目标此刻已陈旧：清掉，避免上电瞬间
+            # 控制定时器把旧位姿重发出去，与本次 enable 后的新工作流抢目标。
+            self._clear_cmd_cache()
             online = bool(robot.is_online)
             if ok:
                 res.success = True
@@ -679,7 +709,22 @@ class AstralRobotDriverNode(Node):
             res.message = "robot not connected"
             return res
         try:
-            self._robot.set_all_joints_zero()
+            robot = self._robot
+            powered = bool(getattr(robot, "_robot_powered", False))
+            # 急停下电后单靠 home 无法归零（没上电位置环不生效），给明确提示
+            # 而不是静默无动作。
+            if not powered:
+                res.success = False
+                res.message = "robot not powered — 先 ~/ready（一键就绪）再归零"
+                return res
+            if getattr(robot, "_motion_mode", None) != 1:
+                # 阻尼（motion=0）下板端忽略位置目标：先切回 POSITION 归零才生效。
+                robot.set_motion_mode(1)
+                time.sleep(0.05)
+            robot.set_all_joints_zero()
+            # 归零是显式目标：清掉缓存的陈旧上游目标，否则控制定时器在
+            # command_timeout_s 窗口内会 100Hz 重发"阻尼释放前的位姿"把它顶掉。
+            self._clear_cmd_cache()
             res.success = True
             res.message = "set_all_joints_zero"
         except Exception as exc:  # noqa: BLE001
@@ -698,6 +743,9 @@ class AstralRobotDriverNode(Node):
             return res
         try:
             self._robot.e_stop()
+            # 下电后缓存的上游目标已作废：清掉，避免重新上电（~/enable/~/ready）
+            # 的瞬间被 100Hz 重发旧位姿抢目标。
+            self._clear_cmd_cache()
             res.success = True
             res.message = "e_stop / disable"
         except Exception as exc:  # noqa: BLE001
@@ -721,6 +769,9 @@ class AstralRobotDriverNode(Node):
             return res
         try:
             self._robot.set_motion_mode(0)
+            # 进入阻尼即离开位置控制：清掉缓存目标，防止后续 ~/home ~/ready
+            # 切回 POSITION 时控制定时器把"阻尼前的旧位姿"重新发出去。
+            self._clear_cmd_cache()
             res.success = True
             res.message = "motion_mode=0 (damping, 可手动拖拽)"
         except Exception as exc:  # noqa: BLE001

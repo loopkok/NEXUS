@@ -40,16 +40,19 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 
 | 服务 | 说明 |
 |------|------|
-| `/astral_robot_driver/ready` | `one_click_ready`（WORK→POSITION→enable→zero） |
+| `/astral_robot_driver/ready` | `one_click_ready`（WORK→POSITION→enable→zero）。**执行前清空缓存目标**——归零后 100Hz 重发只复读零位，不把阻尼前的陈旧位姿顶回来 |
 | `/astral_robot_driver/enable` | WORK→POSITION→enable，**不回零**（HOME/急停恢复用，避免抢 teleop 轨迹目标）。**幂等**：已上电直接成功跳过重复下发；板端在线但 `robot_powered` 位未确认也算下发成功（该位在此板子常不置位，仅真正离线才失败） |
-| `/astral_robot_driver/home` | `set_all_joints_zero`（全关节归零） |
-| `/astral_robot_driver/estop` | **真急停**：`e_stop` / disable（断电，臂失去保持力） |
-| `/astral_robot_driver/damping` | 阻尼释放：`motion_mode=0`（电机仍上电、关节可手动拖拽） |
+| `/astral_robot_driver/home` | 归零：**已在阻尼先切回 POSITION**（motion_mode=1）再 `set_all_joints_zero`，并清缓存；未上电直接报"先 `~/ready`"，不静默 |
+| `/astral_robot_driver/estop` | **真急停**：`e_stop` / disable（断电，臂失去保持力）。同时清缓存，避免重新上电瞬间 100Hz 重发旧位姿 |
+| `/astral_robot_driver/damping` | 阻尼释放：`motion_mode=0`（电机仍上电、关节可手动拖拽）。同时清缓存 |
 | `/astral_robot_driver/position` | 位置保持：`motion_mode=1`（恢复位置保持） |
 
-> 典型遥操收尾流程：遥操中 → 停止（臂保持末位姿）→ `damping`（手动拖回 home）→ `position` 或 `home`。
+> 典型遥操收尾流程：遥操中 → `damping`（**web 会自动先 disarm 遥操**，可手动拖回 home）→ `position` 或 `home`。
 > 真急停 `estop` 会断电，恢复需重新 `ready`（遥操恢复则靠 HOME 端点先 `~/enable` 再 disarm+收回零位，
 > 见 astral_arm_teleop 与 astral_web_monitor；web 启动/重启只拉栈、不自动 enable）。
+> **手动硬件模式（ready/home/damping/estop/position）前务必先让遥操停止发流**——否则归零等一次性
+> 目标会被仍在运行的 joint_commands 流（armed 遥操 / 启动归位 homing）下一帧覆盖。web 端点已自动
+> 先发 `/teleop/disarm`；CLI 手调时请自行 `ros2 topic pub --once /teleop/disarm std_msgs/msg/Bool "data: true"`。
 
 ## 依赖
 
