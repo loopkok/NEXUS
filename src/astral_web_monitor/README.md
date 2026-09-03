@@ -185,7 +185,7 @@ stopped ──start──► starting ──2s暖机──► running
 
 - **急停（真断电）**：红色常驻按钮，确认后调 driver `~/estop` → SDK `e_stop()`/`disable()`，臂失去保持力；恢复需重新「一键就绪」。区别于「暂停」（软 disarm，臂仍上电保持位姿）
 - **启动/重启只拉栈**：`/start`、`/restart` 恢复改前语义——只把遥操栈拉起来，**不**自动调 `~/enable`（曾导致启动即 503 + 臂不动，已回退）。电机使能由 driver `auto_ready`/「一键就绪」负责；**急停 → 停止 → 启动**后的恢复收敛到 HOME 按钮
-- **HOME（归位到零）**：预设管理区紫色按钮，确认后调 `POST /api/v1/teleop/home`——先 `~/enable` 使能（仅此端点使用，上电**不回零**），再 disarm + 发 `/teleop/home`，双臂沿 init_pose → init_waypoints → 零位 慢速收回并停在零位；之后需「一键就绪/开始遥操」才能继续。仅遥操 RUNNING/PAUSED 时可用
+- **HOME（归位到零）**：预设管理区紫色按钮，确认后调 `POST /api/v1/teleop/home`——先 `~/enable` 使能（仅此端点使用，上电**不回零**），再 disarm + 发 `/teleop/home`，双臂沿 init_pose → init_waypoints → 零位 慢速收回并停在零位；之后需「一键就绪/开始遥操」才能继续。仅遥操 RUNNING/PAUSED 时可用。`~/enable` **幂等**：已上电（启动 auto_ready 已使能）直接成功跳过，不会重复使能；板端在线但电源位未确认也算下发成功——不会再把"其实已使能"误报成"电机未使能"（见 robot_control README）
 - **阻尼释放**：调 driver `~/damping` → `motion_mode=0`，电机仍上电、关节可手动拖拽。典型流程：遥操中 → 停止（臂保持末位姿）→ 阻尼释放（手动拖回 home）→ 位置保持/归零
 
 > **机器人模式按钮的可用时机（重要）**：急停/阻尼释放/位置保持/一键就绪/归零 这五个按钮调的都是 **driver 节点（astral_robot_driver）的 ROS 服务**，driver 随遥操栈启停：

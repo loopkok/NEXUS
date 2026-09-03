@@ -41,7 +41,7 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 | 服务 | 说明 |
 |------|------|
 | `/astral_robot_driver/ready` | `one_click_ready`（WORK→POSITION→enable→zero） |
-| `/astral_robot_driver/enable` | WORK→POSITION→enable，**不回零**（HOME/急停恢复用，避免抢 teleop 轨迹目标） |
+| `/astral_robot_driver/enable` | WORK→POSITION→enable，**不回零**（HOME/急停恢复用，避免抢 teleop 轨迹目标）。**幂等**：已上电直接成功跳过重复下发；板端在线但 `robot_powered` 位未确认也算下发成功（该位在此板子常不置位，仅真正离线才失败） |
 | `/astral_robot_driver/home` | `set_all_joints_zero`（全关节归零） |
 | `/astral_robot_driver/estop` | **真急停**：`e_stop` / disable（断电，臂失去保持力） |
 | `/astral_robot_driver/damping` | 阻尼释放：`motion_mode=0`（电机仍上电、关节可手动拖拽） |

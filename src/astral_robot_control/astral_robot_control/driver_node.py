@@ -19,8 +19,9 @@ Contract (default)::
 
   Srv  ~/ready    Trigger  — one_click_ready (WORK→POSITION→enable→zero)
   Srv  ~/enable   Trigger  — WORK→POSITION→enable，**不回零**
-                             （遥操启动/恢复归位路径用：只使能，不抢
-                             teleop 正在发布的 joint_commands 目标）
+                             （遥操恢复归位路径用：只使能，不抢 teleop 正在
+                             发布的 joint_commands 目标；已上电直接成功跳过，
+                             电源位未确认但板端在线也算下发成功）
   Srv  ~/home     Trigger  — set_all_joints_zero
   Srv  ~/estop    Trigger  — disable / e-stop (真断电)
   Srv  ~/damping  Trigger  — motion_mode=0 阻尼释放（可手动拖拽）
@@ -619,24 +620,50 @@ class AstralRobotDriverNode(Node):
         遥操启动/急停后恢复时 teleop 正沿 init_waypoints→init_pose 走关节
         轨迹，此刻回零会与轨迹目标抢——本服务只把电机使能起来，目标完全交给
         teleop 的 joint_commands。
+
+        两个经验性修正（实机确认位失灵/重复使能风险）：
+        ① 已在使能态（``_robot_powered`` True）直接成功返回、**不重复下发**——
+        用户报告：auto_ready/一键就绪已上电后 web「启动/HOME」再 enable 会
+        出现"电机未使能"误报（重复使能 + 确认位不可靠）；
+        ② enable() 靠轮询板端 obs 帧的 ``robot_powered`` 确认，该位在此板子
+        上常不置位（SDK demo 同款"未确认仍继续"），只要板端在线（obs 帧在流）
+        就算下发成功——命令已送达，是否观测到电源位不影响实际已上电。
         """
         if self.dry_run:
             res.success = True
             res.message = "dry_run: skipped enable"
             return res
-        if self._robot is None:
+        robot = self._robot
+        if robot is None:
             res.success = False
             res.message = "robot not connected"
             return res
         try:
-            self._robot.set_system_mode("work")
+            powered = bool(getattr(robot, "_robot_powered", False))
+            if powered:
+                if getattr(robot, "_motion_mode", None) != 1:
+                    robot.set_motion_mode(1)
+                res.success = True
+                res.message = "already enabled（已上电，跳过重复使能）"
+                return res
+            robot.set_system_mode("work")
             time.sleep(0.05)
-            self._robot.set_motion_mode(1)
+            robot.set_motion_mode(1)
             time.sleep(0.05)
-            ok = self._robot.enable(enable_timeout_s=3.0)
+            ok = robot.enable(enable_timeout_s=3.0)
             self._apply_lpf()
-            res.success = bool(ok)
-            res.message = "enable OK (不回零)" if ok else "enable not confirmed"
+            online = bool(robot.is_online)
+            if ok:
+                res.success = True
+                res.message = "enable OK (不回零)"
+            elif online:
+                # 电源位未在窗口内确认，但板端在线（obs 帧持续）——命令已送达，
+                # 对齐 SDK demo「enable 未确认 robot_powered 仍继续」的处理。
+                res.success = True
+                res.message = "enable issued（已下发；板端电源位未确认）"
+            else:
+                res.success = False
+                res.message = "enable not confirmed (板端离线)"
         except Exception as exc:  # noqa: BLE001
             res.success = False
             res.message = str(exc)

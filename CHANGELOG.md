@@ -6,8 +6,21 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-03
 
+**HOME 使能修复：~/enable 幂等化 + 板端在线即算下发成功**——`astral_robot_control` ×
+`astral_web_monitor`。**现象**：启动正常到设定位置（电机已使能）后点 web **HOME**，报
+"电机未使能"、HOME 不下发。**根因**：HOME 端点先调 driver `~/enable`，而 SDK `enable()`
+靠轮询板端 obs 帧的 `robot_powered` 位确认——该位在此板子常不置位（SDK demo 同款
+"enable 未确认仍继续"）；auto_ready/一键就绪已使能后再 enable = **重复使能 + 确认位失灵**
+→ 服务回 "enable not confirmed" → web 把已使能误报成未使能。**做法**：① driver `_srv_enable`
+**幂等化**——`_robot_powered` 已 True 直接成功返回（跳过 WORK→POSITION→enable 重复下发，
+仅当运动模式非位置时补切 position）；② 未确认但**板端在线**（obs 帧持续）也算下发成功
+（命令已送达，对齐 demo「未确认仍继续读反馈」），仅真正离线才硬失败；③ web
+`_ensure_driver_enabled` 注释/文档同步（HOME 先 enable 再 disarm+park 语义不变）。
+**验证**：新增 `test_driver_services.py` 7 例全绿（已上电零下发/阻尼补位置/确认 OK/在线未确认
+=成功/离线=失败/dry_run/未连接），arm home-park 回归 12 例、web monitor 4 例全绿。
+
 **web 启动流程回退（急停恢复方案收敛到 HOME 按钮）**——`astral_web_monitor` ×
-`astral_arm_teleop`。**现象**：上一条「启动/重启自动调 `~/enable` + 启动归位贴实测」实机
+    `astral_arm_teleop`。**现象**：上一条「启动/重启自动调 `~/enable` + 启动归位贴实测」实机
 验证无效——web「停止→启动」后直接 **503 service** 且臂不动。**根因**：① `/start` `/restart`
 在 launch 起来后同步等 `~/enable` 确认（12s 预算），driver 尚未 ready 时超时抛 503——启动本应
 "只把栈拉起来"；② 启动 init 归位也被 `homing_track_state` 钳到实测关节，电机一旦没立刻跟上，

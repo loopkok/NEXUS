@@ -345,7 +345,10 @@ def _ensure_driver_enabled(timeout_s: float) -> tuple[bool, str]:
     """确保真机电机已使能（**不回零**：~/enable = WORK→POSITION→enable）。
 
     仅 HOME 端点使用：HOME 需要电机带载走收回轨迹，先调用本函数确认上电。
-    服务在超时内一直未出现视为无需使能（无 driver / sim），不算错误。
+    driver 侧已做幂等：已上电直接成功返回（跳过重复使能——实机发现已使能后
+    再 enable 会因板端电源位不确认而误报"电机未使能"）；板端在线但电源位未
+    确认也算下发成功。服务在超时内一直未出现视为无需使能（无 driver / sim），
+    不算错误。
     """
     node = get_node()
     if node is None:
@@ -356,7 +359,7 @@ def _ensure_driver_enabled(timeout_s: float) -> tuple[bool, str]:
     while time.monotonic() < deadline:
         ok, msg = node.call_driver_service("enable", timeout_s=3.0)
         if ok:
-            return True, "电机已使能"
+            return True, msg or "电机已使能"
         last = msg
         if not any(t in msg for t in retryable):
             return False, f"使能失败: {msg}"

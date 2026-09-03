@@ -302,7 +302,8 @@ ros2 service call /astral_arm_teleop_right/home std_srvs/srv/Trigger
 
 > 归位需电机上电。急停（真断电）后请先用 driver `~/enable`（使能**不回零**，避免与轨迹目标抢）
 > 再发 HOME——web 端 **HOME 按钮**（`POST /api/v1/teleop/home`）已自动做这一步（先 enable 后
-> disarm+home）。注意 web「启动/重启」只拉栈、不再自动 enable（曾导致 503/臂不动，已回退）。
+> disarm+home）。`~/enable` **幂等**：启动 auto_ready 已使能时直接跳过重复下发，已上电不会误报
+> "电机未使能"。注意 web「启动/重启」只拉栈、不再自动 enable（曾导致 503/臂不动，已回退）。
 
 web 端操作：系统页预设管理区 **HOME** 按钮（或 `POST /api/v1/teleop/home`）。
 
