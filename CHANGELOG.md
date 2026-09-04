@@ -6,6 +6,19 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**单臂预设下缺席臂被拽向零位——driver 缺侧"补零"改为只发有指令的一侧**——
+`astral_robot_control`。**现象**：web 预设选 no-right-arm（单左臂）启动后点「工作位」，
+**右臂也抽了一下**（右臂不在预设里、停在某非零位姿，却被命令拽向零）。**根因**：driver
+控制定时器发现"左臂有新鲜指令、右臂 None"时给缺失侧**补零**（`right=[0.0]*7` 后
+`move_arm_js(left, zeros)`）——工作位/HOME/遥操一发流（150Hz），缺席侧实体臂就被 100Hz
+零目标持续拽向零位；双臂模式平时两侧都在发所以不显形。**做法**：控制定时器 arm-only 路径
+改为**只向有新鲜指令的一侧下发**——双侧都新鲜仍走 `move_arm_js` 一次下发（不变）；仅单侧
+新鲜走新 `_send_arm_side()`（SDK `set_target_positions` 按该侧电机 ID 子集下发，与
+`move_arm_js` 同一 0x90 指令通道）。缺席侧不发命令 = 板端位置保持维持原目标（原位保持），
+与预设搭配：no-right-arm 时右臂不再被任何左臂轨迹打扰。**验证**：`test_driver_services.py`
+16→**20 例**全绿——新增控制定时器 4 例：左新鲜只发左电机 ID 集（无 move_arm_js）、右新鲜
+只发右、双侧新鲜仍 move_arm_js 双发、无新鲜零下发。README 话题契约补"缺侧不补零"。
+
 **fix：monitor 节点补 import `TOPIC_INIT`——上条「工作位」条目遗留的启动 NameError**——
 `astral_web_monitor`。**症状**：monitor_node `__init__` 里 `create_publisher(Bool,
 TOPIC_INIT, ...)` 引用的常量未在 import 区导入（上条改动只加了 config 定义与

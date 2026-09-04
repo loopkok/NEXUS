@@ -18,6 +18,7 @@ the whole suite skips with exit 0.
 
 import sys
 import threading
+import time
 
 try:
     import rclpy  # noqa: F401
@@ -26,6 +27,10 @@ except ImportError:
     sys.exit(0)
 
 from astral_robot_control.driver_node import AstralRobotDriverNode  # noqa: E402
+from astral_robot_control.joint_layout import (  # noqa: E402
+    LEFT_ARM_IDS,
+    RIGHT_ARM_IDS,
+)
 
 
 class _FakeRes:
@@ -58,6 +63,9 @@ class _FakeRobot:
 
     def move_arm_js(self, left, right):
         self.calls.append(("move_arm_js", tuple(left), tuple(right)))
+
+    def set_target_positions(self, targets: dict):
+        self.calls.append(("set_target_positions", dict(targets)))
 
     def e_stop(self):
         self.calls.append(("e_stop",))
@@ -306,6 +314,67 @@ def test_position_in_position_mode_still_seeds_target():
     assert any(c[0] == "move_arm_js" for c in robot.calls)
 
 
+
+
+# --- 控制定时器：单臂预设缺侧不补零（no-right-arm 预设点工作位右臂抽一下的根因）----
+
+def _ctrl_node(left=None, right=None):
+    """构造可直接调 _on_control_timer 的节点：左/右缓存可选注入（新鲜）。"""
+    robot = _FakeRobot()
+    node = _make_node(robot=robot)
+    node.command_timeout_s = 1.5
+    now = time.monotonic()
+    with node._lock:
+        if left is not None:
+            node._left_cmd = list(left)
+            node._left_cmd_t = now
+        if right is not None:
+            node._right_cmd = list(right)
+            node._right_cmd_t = now
+    node._send_head = lambda: None
+    node._send_grippers = lambda: None
+    return node, robot
+
+
+def test_control_timer_left_only_does_not_zero_right():
+    # 单臂预设（no right arm）：只左臂有新鲜指令时，右臂**不得**被补零下发
+    # （否则停在任何位姿的实体右臂会被 100Hz 零目标拽向零位——症状：工作位/
+    # HOME/遥操一发流右臂抽一下）。缺席侧不命令 = 板端位置保持原位。
+    node, robot = _ctrl_node(left=[0.3] * 7)
+    node._on_control_timer()
+    stp = [c for c in robot.calls if c[0] == "set_target_positions"]
+    assert len(stp) == 1
+    assert sorted(stp[0][1]) == sorted(LEFT_ARM_IDS)  # 只左臂电机
+    assert all(v == 0.3 for v in stp[0][1].values())
+    assert not [c for c in robot.calls if c[0] == "move_arm_js"]
+
+
+def test_control_timer_right_only_sends_right():
+    node, robot = _ctrl_node(right=[-0.5] * 7)
+    node._on_control_timer()
+    stp = [c for c in robot.calls if c[0] == "set_target_positions"]
+    assert len(stp) == 1
+    assert sorted(stp[0][1]) == sorted(RIGHT_ARM_IDS)
+    assert not [c for c in robot.calls if c[0] == "move_arm_js"]
+
+
+def test_control_timer_both_fresh_still_sends_both_together():
+    # 双臂都新鲜：维持原路径 move_arm_js(左, 右)（一次下发两臂，行为不变）。
+    node, robot = _ctrl_node(left=[0.3] * 7, right=[-0.5] * 7)
+    node._on_control_timer()
+    mj = [c for c in robot.calls if c[0] == "move_arm_js"]
+    assert len(mj) == 1
+    assert mj[0][1] == (0.3,) * 7
+    assert mj[0][2] == (-0.5,) * 7
+    assert not [c for c in robot.calls if c[0] == "set_target_positions"]
+
+
+def test_control_timer_no_fresh_side_sends_nothing():
+    node, robot = _ctrl_node()
+    node._on_control_timer()
+    assert robot.calls == []
+
+
 def _run_all():
     tests = [
         test_dry_run_skips,
@@ -324,6 +393,10 @@ def _run_all():
         test_home_after_damping_seeds_target_from_current_before_zero,
         test_position_after_damping_seeds_target_from_current,
         test_position_in_position_mode_still_seeds_target,
+        test_control_timer_left_only_does_not_zero_right,
+        test_control_timer_right_only_sends_right,
+        test_control_timer_both_fresh_still_sends_both_together,
+        test_control_timer_no_fresh_side_sends_nothing,
     ]
     failed = 0
     for t in tests:

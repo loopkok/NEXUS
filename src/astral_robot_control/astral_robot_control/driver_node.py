@@ -56,11 +56,13 @@ from astral_robot_control.joint_layout import (
     CMD_SUFFIX,
     HEAD_JOINT_NAMES,
     HEAD_NS,
+    LEFT_ARM_IDS,
     LEFT_ARM_JOINT_NAMES,
     LEFT_ARM_NS,
     LEFT_GRIPPER_NS,
     NUM_ARM_JOINTS,
     NUM_JOINTS,
+    RIGHT_ARM_IDS,
     RIGHT_ARM_JOINT_NAMES,
     RIGHT_ARM_NS,
     RIGHT_GRIPPER_NS,
@@ -525,7 +527,11 @@ class AstralRobotDriverNode(Node):
             self._send_grippers()
             return
 
-        # Arm-only path: need at least one fresh side; hold the other.
+        # Arm-only path: need at least one fresh side. 缺侧**不补零**下发——
+        # 单臂预设（如 no-right-arm）下缺席侧没有指令源：若给它补
+        # [0.0]*7，工作位/HOME/遥操一发流，停在任意位姿的实体臂就会被
+        # 100Hz 零目标拽向零位（症状：no-right-arm 预设点工作位右臂抽一下）。
+        # 缺席侧不命令 = 板端位置保持自然保持原位。
         left_fresh = (
             left is not None
             and (
@@ -540,12 +546,12 @@ class AstralRobotDriverNode(Node):
                 or (now - right_t) <= self.command_timeout_s
             )
         )
-        if left_fresh or right_fresh:
-            if left is None:
-                left = [0.0] * NUM_ARM_JOINTS
-            if right is None:
-                right = [0.0] * NUM_ARM_JOINTS
+        if left_fresh and right_fresh:
             self._send_arms(left, right)
+        elif left_fresh:
+            self._send_arm_side("left", left)
+        elif right_fresh:
+            self._send_arm_side("right", right)
 
         self._send_head()
         self._send_grippers()
@@ -565,6 +571,32 @@ class AstralRobotDriverNode(Node):
         except Exception as exc:  # noqa: BLE001
             self.get_logger().error(
                 f"move_arm_js failed: {exc}", throttle_duration_sec=1.0
+            )
+
+    def _send_arm_side(self, side: str, q: List[float]) -> None:
+        """只下发单臂目标（0x90 子集，与 move_arm_js 同一指令通道）。
+
+        单臂预设下缺席侧没有指令源，控制定时器**不得**给它补零（否则工作位/
+        HOME/遥操发流时，缺席侧的实体臂会被拽向零位）。只命令有新鲜指令的
+        一侧；缺席侧不发命令 = 板端位置保持维持其当前目标（原位保持）。
+        """
+        ids = {"left": LEFT_ARM_IDS, "right": RIGHT_ARM_IDS}[side]
+        if self.dry_run:
+            self.get_logger().info(
+                f"[dry_run] set_target_positions {side}={np.round(q, 3).tolist()}",
+                throttle_duration_sec=1.0,
+            )
+            return
+        if self._robot is None:
+            return
+        try:
+            self._robot.set_target_positions(
+                dict(zip(ids, [float(x) for x in q]))
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().error(
+                f"set_target_positions({side}) failed: {exc}",
+                throttle_duration_sec=1.0,
             )
 
     def _send_full(self, q18: List[float]) -> None:

@@ -32,6 +32,10 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 - QoS：**BEST_EFFORT**（SensorData）
 - 关节名可选；无名时按位置顺序；有名时按 `joint_layout.py` 对齐
 - `command_timeout_s`（默认 1.5）：超时不再下发，避免僵持旧指令
+- **单臂预设缺侧不补零**：只有一侧有新鲜 `joint_commands` 时，只向该侧电机下发目标
+  （`set_target_positions` 单侧子集），**不**给缺席侧补零——否则单臂模式（如 no-right-arm）
+  下发工作位/HOME/遥操轨迹时，停在任意位姿的另一侧实体臂会被拽向零位。缺席侧不发命令 =
+  板端位置保持维持原位。双臂都有新鲜指令时仍走 `move_arm_js` 一次下发两臂。
 
 左臂关节名：`left_shoulder_pitch` … `left_wrist_roll`  
 右臂：`right_shoulder_pitch` … `right_wrist_roll`
