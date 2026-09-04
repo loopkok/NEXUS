@@ -250,10 +250,14 @@ async def teleop_start() -> ApiEnvelope:
     node = get_node()
     if node is None:
         raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    # 先发 /teleop/armed=true：工作位/HOME/暂停发过的 latched disarm 会把
+    # 夹爪 pinch 仲裁门关死——门只在 armed=true 时重开（arm 节点未校准会
+    # 忽略 armed，无害；真正 arm 由随后的 /teleop/start 完成）。
+    node.publish_arm()
     node.publish_start()
     return ApiEnvelope(
         ok=True,
-        message="已发送 /teleop/start（臂节点记 vr_init 并 arm；homing 中或无 VR 时会忽略并告警）",
+        message="已发送 /teleop/armed + /teleop/start（臂节点记 vr_init 并 arm；homing 中或无 VR 时会忽略并告警）",
     )
 
 

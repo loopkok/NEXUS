@@ -34,13 +34,20 @@ class ControllerStartGate(Node):
         self.declare_parameter("joy_topic", "quest3/left_controller_joy")
         self.declare_parameter("button_index", 5)
         self.declare_parameter("start_topic", "/teleop/start")
+        # 工作位/HOME/暂停发过 latched /teleop/disarm 会把夹爪 pinch 仲裁门
+        # 关死，门只在 /teleop/armed=true 时重开——用本闸门（gripClick）启动
+        # 遥操时必须一并发 armed=true，否则手柄对夹爪永远无响应。臂节点未
+        # 校准会忽略 armed（无害），真正 arm 由 /teleop/start 完成。
+        self.declare_parameter("armed_topic", "/teleop/armed")
 
         joy_topic = str(self.get_parameter("joy_topic").value).strip()
         self.button_index = int(self.get_parameter("button_index").value)
         start_topic = str(self.get_parameter("start_topic").value).strip()
+        armed_topic = str(self.get_parameter("armed_topic").value).strip()
 
         # RELIABLE + VOLATILE: one-shot, not latched (match monitor_node).
         self._pub = self.create_publisher(Bool, start_topic, 10)
+        self._pub_armed = self.create_publisher(Bool, armed_topic, 10)
         # BEST_EFFORT sub is compatible with the mocap Joy publisher (RELIABLE
         # default) and CLI `ros2 topic pub` — no dual-sub needed.
         self.create_subscription(Joy, joy_topic, self._on_joy, _sensor_qos())
@@ -48,7 +55,7 @@ class ControllerStartGate(Node):
 
         self.get_logger().info(
             f"controller_start_gate joy={joy_topic} button={self.button_index} "
-            f"(5=gripClick) → {start_topic}"
+            f"(5=gripClick) → {start_topic} + {armed_topic}"
         )
 
     def _on_joy(self, msg: Joy) -> None:
@@ -59,8 +66,10 @@ class ControllerStartGate(Node):
         # Rising edge only — hold does not spam start.
         if pressed and not self._prev_pressed:
             self._pub.publish(Bool(data=True))
+            self._pub_armed.publish(Bool(data=True))
             self.get_logger().info(
-                f"controller button {self.button_index} pressed → {self._pub.topic}"
+                f"controller button {self.button_index} pressed → "
+                f"{self._pub.topic} + {self._pub_armed.topic}"
             )
         self._prev_pressed = pressed
 

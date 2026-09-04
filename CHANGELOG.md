@@ -6,6 +6,15 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**工作位/HOME 后夹爪无响应——latched disarm 把 pinch 仲裁门关死，「开始遥操」补发 /teleop/armed 开门**——
+`astral_web_monitor` × `astral_teleop`。**症状**：no-right-arm 预设 → 点工作位 → 开始遥操，
+手柄对夹爪无响应（此前正常）。**根因**：工作位/HOME 流程发 **latched** `/teleop/disarm`
+（门控语义），pinch 仲裁门只认 `/teleop/armed=true` 重开；而「开始遥操」（web 按钮 / 左手
+gripClick 闸门）只发 `/teleop/start`，从不发 armed——点过工作位后门永久关死。**做法**：
+① web `POST /api/v1/teleop/start` 先发 `/teleop/armed=true` 再发 start（臂节点未校准会忽略
+armed，无害）；② `controller_start_gate`（gripClick 入口）同步一并发 armed（新参数
+`armed_topic` 默认 /teleop/armed）。验证：py_compile、web monitor 4 例全绿。
+
 **单臂预设下缺席臂被拽向零位——driver 缺侧"补零"改为只发有指令的一侧**——
 `astral_robot_control`。**现象**：web 预设选 no-right-arm（单左臂）启动后点「工作位」，
 **右臂也抽了一下**（右臂不在预设里、停在某非零位姿，却被命令拽向零）。**根因**：driver
