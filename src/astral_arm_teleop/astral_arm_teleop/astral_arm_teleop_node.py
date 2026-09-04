@@ -154,6 +154,12 @@ class AstralTeleopArmNode(Node):
         # 启动 init 归位不受此守卫影响（保持改前纯开环）。
         self.declare_parameter("homing_track_state", True)
         self.declare_parameter("homing_follow_tol", 0.25)  # rad；正常跟随稳态滞后远小于此
+        # park 途经点"实体到达门限"：命令（q_cmd 纯开环）到途经点 ≠ 实体到。
+        # 命令一到点立即反向会把实体"切角"切在 waypoint 之前（HOME 出了但没到
+        # init_waypoints 就掉头去零）。推进下一段前等实测进入 homing_via_tol；
+        # homing_via_hold_s 上限防实测长期不到位（如负载静差）卡死归零。
+        self.declare_parameter("homing_via_tol", 0.12)   # rad
+        self.declare_parameter("homing_via_hold_s", 2.0)  # s
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
         )
@@ -178,6 +184,7 @@ class AstralTeleopArmNode(Node):
         # direction -> psi_ref, so the robot elbow plane follows the human's.
         # Falls back to pure continuity when the body stream is stale.
         self.declare_parameter("use_human_elbow", True)
+        self.declare_parameter("human_elbow_mode", "soft")
         self.declare_parameter("human_elbow_weight", 2.0)
         self.declare_parameter("human_elbow_timeout", 0.3)
         self.declare_parameter("human_elbow_smoothing_tau", 0.15)
@@ -228,6 +235,18 @@ class AstralTeleopArmNode(Node):
         )
         self.reach_margin = float(self.get_parameter("reach_margin").value)
         self._use_human_elbow = bool(self.get_parameter("use_human_elbow").value)
+        # "soft": psi_ref is a weighted prior blended with continuity (default,
+        # w_psi_ref vs w_vel). "hard": when the human psi is fresh and feasible
+        # the arm resolves exactly at it (GeometricIKSolver.solve_hard) and the
+        # elbow strictly follows the human; infeasible/stale psi falls back to
+        # the soft path. Only meaningful for the geometric solver.
+        self._human_elbow_mode = str(
+            self.get_parameter("human_elbow_mode").value
+        ).strip().lower()
+        if self._human_elbow_mode not in ("soft", "hard"):
+            raise ValueError(
+                f"human_elbow_mode must be soft|hard, got {self._human_elbow_mode!r}"
+            )
         self._human_elbow_weight = float(self.get_parameter("human_elbow_weight").value)
         self._human_elbow_timeout = float(
             self.get_parameter("human_elbow_timeout").value
@@ -289,6 +308,9 @@ class AstralTeleopArmNode(Node):
             self.get_parameter("homing_follow_tol").value
         )
         self._park_frozen = False
+        self._homing_via_tol = float(self.get_parameter("homing_via_tol").value)
+        self._homing_via_hold_s = float(self.get_parameter("homing_via_hold_s").value)
+        self._via_wait_t0 = None  # 途经点等待计时起点（见 _homing_tick）
 
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
@@ -469,6 +491,15 @@ class AstralTeleopArmNode(Node):
                 elif name == "use_human_elbow":
                     self._use_human_elbow = bool(p.value)
                     self._ensure_body_subs()
+                elif name == "human_elbow_mode":
+                    mode = str(p.value).strip().lower()
+                    if mode not in ("soft", "hard"):
+                        self.get_logger().warn(
+                            f"[{self.side}] human_elbow_mode must be soft|hard, "
+                            f"ignoring {mode!r}"
+                        )
+                    else:
+                        self._human_elbow_mode = mode
                 elif name == "human_elbow_weight":
                     self._human_elbow_weight = float(p.value)
                     self._apply_human_elbow_cfg()
@@ -732,8 +763,8 @@ class AstralTeleopArmNode(Node):
         return resp
 
     def _go_home(self):
-        """HOME / park-to-zero：从当前位姿慢速走 init_pose → init_waypoints →
-        零位（硬件约定），到零位后保持（关节目标=0）。
+        """HOME / park-to-zero：从当前位姿慢速走 init_pose → init_waypoints（**倒序**）
+        → 零位（启动 init 路径的反向，硬件约定），到零位后保持（关节目标=0）。
 
         用于把遥操（或急停恢复后）的臂安全收回零位。动作前先 disarm（若在
         遥操/armed），期间忽略 VR/start；结束后要再遥操需重新 /teleop/start。
@@ -748,9 +779,14 @@ class AstralTeleopArmNode(Node):
         if self._disarm_reason != "fault":
             self._disarm_reason = "operator"
         self._homing_mode = "park"
+        # park 路径 = 启动 init 路径的**反向**：启动按 init_waypoints 正序
+        # （从零/低位 抬向 init_pose），收回须按**倒序**逐点退回（先回离
+        # init_pose 最近的途经点再逐级放下），否则多途经点时 HOME 走的是
+        # 顺向延伸而非原路返回（症状：经过位置与启动移动不成反向关系）。
+        # 单一途经点时倒序无差异。
         self._homing_path = (
             [self._init_q_hw.copy()]
-            + self._parse_init_waypoints()
+            + self._parse_init_waypoints()[::-1]
             + [np.zeros(7, dtype=float)]
         )
         self._homing_i = 0
@@ -758,6 +794,7 @@ class AstralTeleopArmNode(Node):
         self._homing_seeded = False
         self._homing = True
         self._park_frozen = False
+        self._via_wait_t0 = None
         self._homing_last_log = 0.0
         self._homing_last_base = None
         self.pose.reset()
@@ -1026,10 +1063,24 @@ class AstralTeleopArmNode(Node):
             self.ik.sync_state(self._flip_q(self.q_cmd))
         t_ik = time.perf_counter()
         psi_ref = self._human_psi_ref(T_flange) if self._use_human_elbow else None
-        if psi_ref is None:
-            sol = self.ik.solve(T_flange)
-        else:
-            sol = self.ik.solve(T_flange, psi_ref=psi_ref)
+        sol = None
+        if (
+            psi_ref is not None
+            and self._human_elbow_mode == "hard"
+            and hasattr(self.ik, "solve_hard")
+        ):
+            # Hard follow: resolve exactly at the human arm angle (elbow
+            # strictly on the human's plane). solve_hard syncs the solver
+            # state itself; on infeasible/singular psi it returns None and we
+            # fall through to the soft-prior path (smooth degradation).
+            sol = self.ik.solve_hard(T_flange, psi_ref)
+            if self._print_latency:
+                self._lat.count("hard_follow" if sol is not None else "hard_fallback")
+        if sol is None:
+            if psi_ref is None:
+                sol = self.ik.solve(T_flange)
+            else:
+                sol = self.ik.solve(T_flange, psi_ref=psi_ref)
         if self._print_latency:
             self._lat.add("ik", (time.perf_counter() - t_ik) * 1000.0)
         # Arm-angle escape: the local psi window went empty for
@@ -1184,6 +1235,34 @@ class AstralTeleopArmNode(Node):
         last = self._homing_i >= len(self._homing_path) - 1
         err = target - base
         max_abs = float(np.max(np.abs(err)))
+
+        # park 途经点"实体到达门限"（HOME 专用；启动 init 不受影响）：
+        # 命令到途经点 ≠ 实体到途经点——q_cmd 纯开环领先实测（MIT 跟踪误差 +
+        # 链路延迟），若命令一到点立即反向去下一段，实体会被"切角"切在 waypoint
+        # 之前就掉头（症状：HOME 伸出但没到 init_waypoints 就转去零位）。这里在
+        # 命令到达后钉住途经点重发，等实测也进入 homing_via_tol 再推进下一段；
+        # 实测流不可用 / 等满 homing_via_hold_s 则照旧推进（不因守卫卡死归零）。
+        via_waiting = False
+        if (
+            self._homing_mode == "park"
+            and not last
+            and max_abs < self._init_arrive_tol
+            and self._got_state
+            and self._state_t is not None
+            and self._homing_via_hold_s > 0.0
+        ):
+            state_fresh = self.data_timeout <= 0.0 or (
+                now - self._state_t <= max(self.data_timeout, 1.0)
+            )
+            if state_fresh:
+                if self._via_wait_t0 is None:
+                    self._via_wait_t0 = now
+                via_err = float(np.max(np.abs(self.state_q - target)))
+                via_waiting = (
+                    via_err > self._homing_via_tol
+                    and (now - self._via_wait_t0) < self._homing_via_hold_s
+                )
+
         if now - self._homing_last_log >= 2.0:
             if self._homing_mode == "park" and last:
                 kind = "zero"
@@ -1194,6 +1273,8 @@ class AstralTeleopArmNode(Node):
             stuck = ""
             if self._park_frozen:
                 stuck = " — 实测落后，轨迹冻结（电机未使能/堵转？）"
+            elif via_waiting:
+                stuck = " — 等实测到达途经点（防切角）"
             self.get_logger().info(
                 f"[{self.side}] Homing {kind}: error={max_abs:.3f} rad, "
                 f"elapsed={elapsed:.1f}s{stuck}"
@@ -1207,7 +1288,12 @@ class AstralTeleopArmNode(Node):
                 self._finish_homing(now, "arrived")
                 self._publish_q()
                 return
+            if via_waiting:
+                # 命令已到途经点但实体还差一截：钉住重发，等实测追近再走。
+                self._publish_q()
+                return
             self._homing_i += 1
+            self._via_wait_t0 = None
             self.get_logger().warn(
                 f"[{self.side}] Via {self._homing_i}/{len(self._homing_path)-1} "
                 f"reached; next={np.round(self._homing_target(), 3).tolist()}"

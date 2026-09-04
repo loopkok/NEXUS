@@ -63,10 +63,16 @@ ros2 launch astral_data_collect data_collect.launch.py \
 ros2 run astral_data_collect keyboard_controller
 ```
 
+**VR 手柄控制（默认随 data_collect.launch.py 同启，`vr_control:=false` 可关）**：
+单人采集手不离 Quest 手柄即可控制录制——**右手柄 摇杆按下=开始录制**（仅 IDLE 有效）、
+**A 键=下一段**（保存当前段并立即开新段，仅录制中有效）、**B 键=停止保存**（仅录制中有效）。
+按键上升沿触发（长按不重复）；采集节点未运行或状态不合法时按键静默忽略（节点 info 日志说明）。
+需遥操链路 `quest3_hand_mocap` 在发布 `quest3/right_controller_joy`（mocap 没跑则无动作）。
+
 **web 端操作（推荐）**：「监控」tab 顶部数据采集卡片右上角**启动/重启/停止节点**
 （独立泳道，与遥操预设解耦可并存；CLI 启动的节点同样受控），卡片本体提供
 开始/停止保存/下一段/暂停继续/丢弃 + 下一段任务文本 + 实时状态徽标与流率。
-三种控制面（web 卡片 / 键盘 / 话题）完全等价，可混用。
+四种控制面（web 卡片 / 键盘 / VR 手柄 / 话题）完全等价，可混用。
 
 **防护**（对应实测双开事故的三层根因）：
 - **单例锁**：`/data_collect/control` 是全局控制面，谁订阅谁开录。节点启动时

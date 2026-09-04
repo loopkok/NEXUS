@@ -31,6 +31,7 @@ setup(
         "console_scripts": [
             "data_collect_node = astral_data_collect.data_collect_node:main",
             "keyboard_controller = astral_data_collect.keyboard_controller:main",
+            "vr_collect_control = astral_data_collect.vr_collect_control:main",
             "align_data = astral_data_collect.align_data:main",
             "validate_data = astral_data_collect.validate_data:main",
             "convert_to_lerobot = astral_data_collect.convert_to_lerobot:main",

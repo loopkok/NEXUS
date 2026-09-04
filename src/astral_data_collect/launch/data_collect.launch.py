@@ -60,7 +60,17 @@ def _build_nodes(context):
         output="screen",
         condition=IfCondition(LaunchConfiguration("keyboard")),
     )
-    return [collect_node, keyboard_node]
+    # VR 采集控制：右手柄 摇杆按下=start / A=next / B=stop&save（手不离手柄）。
+    # 需遥操链路里的 quest3_hand_mocap 在发布 quest3/right_controller_joy；
+    # mocap 没跑则收不到帧、自然无动作。与 web 卡片/键盘控制器并存。
+    vr_control_node = Node(
+        package="astral_data_collect",
+        executable="vr_collect_control",
+        name="data_collect_vr_control",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("vr_control")),
+    )
+    return [collect_node, keyboard_node, vr_control_node]
 
 
 def generate_launch_description():
@@ -75,6 +85,12 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "keyboard", default_value="true",
             description="是否同启键盘控制器节点",
+        )
+    )
+    args.append(
+        DeclareLaunchArgument(
+            "vr_control", default_value="true",
+            description="是否同启 VR 采集控制节点（右手柄：摇杆按下=start / A=next / B=stop）",
         )
     )
     return LaunchDescription([*args, OpaqueFunction(function=_build_nodes)])

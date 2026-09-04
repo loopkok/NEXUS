@@ -108,6 +108,9 @@ def _make_node():
     node._homing_mode = "init"
     node._track_homing_state = True
     node._homing_follow_tol = 0.25
+    node._homing_via_tol = 0.12
+    node._homing_via_hold_s = 2.0
+    node._via_wait_t0 = None
     node._park_frozen = False
     node._init_arrive_tol = 0.05
     node._init_timeout = 15.0
@@ -136,12 +139,12 @@ def test_home_disarms_and_builds_reverse_park_path():
     assert node._disarm_reason == "operator"
     assert node._homing is True
     assert node._homing_mode == "park"
-    # init_pose → init_waypoints → zero (terminal target must be exact zero)
+    # init_pose → init_waypoints(**倒序**：先回离 init_pose 最近的途经点) → zero
     path = node._homing_path
     assert len(path) == 1 + 2 + 1
     assert np.allclose(path[0], INIT_Q)
-    assert np.allclose(path[1], WAY1)
-    assert np.allclose(path[2], WAY2)
+    assert np.allclose(path[1], WAY2)  # 倒序：yaml 末点最先回（原路返回）
+    assert np.allclose(path[2], WAY1)
     assert np.allclose(path[-1], np.zeros(7))
     # First step target is init_pose (current → init_pose → … → zero)
     assert np.allclose(node._homing_target(), INIT_Q)
@@ -351,6 +354,65 @@ def test_disarm_noop_when_not_homing():
     assert node._disarm_reason == "operator"
 
 
+def _park_via_node() -> "object":
+    """造一个 park 已就绪、命令已到途经点 INIT_Q 的节点（实测钉在差 0.2 rad 处）。"""
+    node = _make_node()
+    node._homing_mode = "park"
+    node._homing = True
+    node._homing_started = True
+    node._homing_seeded = True
+    node._homing_path = [INIT_Q.copy(), WAY1.copy(), np.zeros(7)]
+    node.q_cmd = INIT_Q.copy()
+    node._got_state = True
+    node.state_q = INIT_Q + 0.20  # 实测距途经点 0.2 rad（> homing_via_tol 0.12）
+    node._publish_q = lambda: None
+    return node
+
+
+def test_park_via_waits_until_measured_reaches():
+    # 防切角门限：命令（q_cmd 纯开环）到途经点 ≠ 实体到。命令一到点立即反向
+    # 会把实体"切角"在 waypoint 之前（症状：HOME 伸出但没到 init_waypoints 就
+    # 转去零位）。命令到点后须钉住重发，等实测进入 homing_via_tol 再推进下一段。
+    node = _park_via_node()
+    for i in range(50):  # ~1.0 s < homing_via_hold_s
+        node._homing_tick(now=0.1 + i * 0.02, dt=0.02)
+    assert node._homing_i == 0  # 未推进到 WAY1
+    assert np.allclose(node.q_cmd, INIT_Q)  # 命令钉在途经点
+    assert node._homing is True
+    # 实测追近到门限内 → 推进下一段
+    node.state_q = INIT_Q.copy()
+    node._homing_tick(now=2.0, dt=0.02)
+    assert node._homing_i == 1
+    assert np.allclose(node._homing_target(), WAY1)
+
+
+def test_park_via_advances_after_hold_timeout():
+    # 实测长期不到位（负载静差/卡住）不能拖死归零：等满 homing_via_hold_s 后
+    # 照旧推进（回退到无门限行为）。
+    node = _park_via_node()
+    for i in range(140):  # ~2.8 s > homing_via_hold_s 2.0
+        node._homing_tick(now=0.1 + i * 0.02, dt=0.02)
+    assert node._homing_i == 1  # 超时后放行
+    assert np.allclose(node._homing_target(), WAY1)
+
+
+def test_init_via_advances_without_measured_gate():
+    # 启动 init 归位不加门限（保持改前行为）：命令到途经点即推进，不等实测——
+    # 启动时电机可能还没使能，实测没动也不能卡住启动归位。
+    node = _make_node()
+    node._homing_mode = "init"
+    node._homing = True
+    node._homing_started = True
+    node._homing_seeded = True
+    node._homing_path = [WAY1.copy(), INIT_Q.copy()]
+    node.q_cmd = WAY1.copy()
+    node.state_q = WAY1 + 0.20  # 实测差一截也不等
+    node._publish_q = lambda: None
+    node._homing_tick(now=0.1, dt=0.02)
+    assert node._homing_i == 1
+    assert np.allclose(node._homing_target(), INIT_Q)
+
+
 def _run_all():
     tests = [
         test_home_disarms_and_builds_reverse_park_path,
@@ -364,6 +426,9 @@ def _run_all():
         test_park_resumes_when_measured_catches_up,
         test_disarm_cancels_in_progress_homing,
         test_disarm_noop_when_not_homing,
+        test_park_via_waits_until_measured_reaches,
+        test_park_via_advances_after_hold_timeout,
+        test_init_via_advances_without_measured_gate,
     ]
     failed = 0
     for t in tests:

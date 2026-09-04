@@ -405,6 +405,7 @@ def main() -> None:
         "psi_ref_prior": test_psi_ref_prior(),
         "full_extension": test_full_extension(),
         "roll_escape_hysteresis": test_roll_escape_hysteresis(),
+        "hard_elbow_follow": test_hard_elbow_follow(),
     }
     print("\n  SUMMARY:")
     for k, v in results.items():
@@ -670,6 +671,73 @@ def test_roll_escape_hysteresis() -> bool:
         f"  sustained jumps={jumps_new}, flicker jumps old={jumps_old} "
         f"new={jumps_new2}, returned home -> {'PASS' if ok else 'FAIL'}"
     )
+    return ok
+
+
+def test_hard_elbow_follow() -> bool:
+    """Hard human-elbow mode: ``solve_hard(T, psi)`` resolves the arm exactly at
+    the requested arm angle (no soft blend / grid / hysteresis) so the robot
+    elbow strictly follows the human's. The recording premise for astral_pim_ik:
+    the q executed in hard mode always carries ``psi_from_config(q) == psi_human``
+    (equivalently: the solved elbow direction equals the fed human direction).
+    """
+    print("\n  --- Hard human-elbow follow (solve_hard) ---")
+    ok = True
+    for arm in ARMS:
+        s = GeometricIKSolver("left" if arm == "L" else "right")
+        g = s.geom
+        rng = np.random.default_rng(17 if arm == "L" else 23)
+        worst_dir = 0.0
+        worst_pos = 0.0
+        n_solved = 0
+        for q_seed in _sample_q(rng, s.lower_limits, s.upper_limits, 12):
+            T = s.fk(q_seed)
+            E = _elbow_fk(q_seed, g)
+            d = E - g.S
+            n = float(np.linalg.norm(d))
+            if n < 1e-9:
+                continue
+            d = d / n
+            psi = s.arm_angle_from_elbow_dir(T, d, min_sin=0.05)
+            if psi is None:
+                continue
+            q_sol = s.solve_hard(T, psi, q_init=q_seed)
+            if q_sol is None:
+                continue
+            n_solved += 1
+            # Recording premise: elbow direction of the solved q == human dir.
+            E_sol = _elbow_fk(q_sol, g)
+            d_sol = (E_sol - g.S)
+            d_sol = d_sol / np.linalg.norm(d_sol)
+            worst_dir = max(
+                worst_dir,
+                float(np.degrees(np.arccos(np.clip(np.dot(d, d_sol), -1.0, 1.0)))),
+            )
+            worst_pos = max(
+                worst_pos,
+                float(np.linalg.norm(s.fk(q_sol)[:3, 3] - T[:3, 3]) * 1000.0),
+            )
+        # Determinism + unreachable -> None (the node's fallback trigger).
+        Tfar = np.eye(4)
+        Tfar[:3, 3] = [1.5, 0.0, 0.0]  # far beyond reach ~0.48 m
+        if s.solve_hard(Tfar, 0.3, q_init=np.zeros(7)) is not None:
+            ok = False
+            print(f"  arm {arm}: FAIL solve_hard solved an unreachable pose")
+        q0 = _sample_q(rng, s.lower_limits, s.upper_limits, 1)[0]
+        T0 = s.fk(q0)
+        p0 = s.arm_angle_from_elbow_dir(T0, _elbow_fk(q0, g) - g.S, min_sin=0.05)
+        if p0 is not None and not np.allclose(
+            s.solve_hard(T0, p0), s.solve_hard(T0, p0), atol=1e-12
+        ):
+            ok = False
+            print(f"  arm {arm}: FAIL solve_hard not deterministic")
+        ok_arm = worst_dir < 0.2 and worst_pos < 1.0 and n_solved > 0
+        ok &= ok_arm
+        print(
+            f"  arm {arm}: solved={n_solved}, worst elbow-dir dev {worst_dir:.4f} deg, "
+            f"worst pos {worst_pos:.4f} mm -> {'PASS' if ok_arm else 'FAIL'}"
+        )
+    print(f"  Result: {'PASS' if ok else 'FAIL'}")
     return ok
 
 

@@ -33,18 +33,18 @@ astral_arm_teleop_left:
     # lpf_alpha=0.85 近直通，噪声抑制以这一级为主（避免两级串联"小动作先顿后冲"）。
     # 静止发颤回 0.35~0.4；大动作仍觉肉再降到 0.15~0.2。
     pos_smoothing: 0.25
-    rot_smoothing: 0.25
-    motion_scale: 0.8 #0.65
+    rot_smoothing: 0.35
+    motion_scale: 1.0 #0.65
     flip_pitch: false
     tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
     max_joint_vel: 6.0  # rad/s  (0.08 rad/tick @ 50 Hz)
     # Sphere around left_base_link origin (IK frame). <=0 off.
     # init_pose |p|~0.44 m; q=0 hang ~0.49 m; max reach ~0.59 m.
-    workspace_radius: 0.55
+    workspace_radius: 0.65
     # 肘伸直奇异软墙（geometric）：腕目标钳制在肩心 l_se+l_ew-margin 内，
     # 防止全伸展时 q4 撞限位 → IK 无解 → 臂"卡一下"。<=0 关闭。
-    reach_margin: 0.01
+    reach_margin: 0.001
     # VR 看门狗：超时即 disarm（需重新 /teleop/start 恢复）。1.5s 容忍 VR
     # 链路短暂抖动；超时前 teleop 持续发冻结目标（driver 跟随），teleop 停发
     # 后 driver 自身的 command_timeout_s(1.5) 才接管保持。<=0 关闭（不推荐）。
@@ -67,6 +67,12 @@ astral_arm_teleop_left:
     # 不空跑，领先钳在 tol 内，恢复跟随后自动继续（防猛扑）。正常跟随不介入。
     homing_track_state: true
     homing_follow_tol: 0.25
+    # park（HOME）途经点"实体到达门限"：命令到 waypoint ≠ 实体到 waypoint——
+    # 纯开环命令领先实测（跟踪误差+延迟），命令一到点立即反向会把实体切角在
+    # waypoint 之前（臂"出了但没到就掉头"）。推进下一段前等实测进入
+    # homing_via_tol；homing_via_hold_s 上限防实测长期不到位（负载静差）卡死。
+    homing_via_tol: 0.12
+    homing_via_hold_s: 2.0
     print_latency: true
     latency_print_interval: 2.0
     publish_tune: true
@@ -76,6 +82,10 @@ astral_arm_teleop_left:
     # 映射成臂角 psi_ref，机器人肘平面跟随人臂。数据超时/缺失自动回退
     # 纯连续性。weight 越大越贴近人姿态（相对 w_vel=1.0）。
     use_human_elbow: true
+    # "soft": psi_ref 软先验（weight 与连续性混合）；"hard": 人肘方向新鲜时
+    # 精确解在 psi_human 上（肘严格贴人臂，录数据的前提——执行的 q 的臂角
+    # == 人臂角）；不可行/奇异/超龄期自动回退软路径（hard_fallback 计数）。
+    human_elbow_mode: "hard"
     human_elbow_weight: 2.0
     human_elbow_timeout: 0.3        # s；body_joints 超过此龄期则不用
     human_elbow_smoothing_tau: 0.15 # s；肘方向 EMA 时间常数

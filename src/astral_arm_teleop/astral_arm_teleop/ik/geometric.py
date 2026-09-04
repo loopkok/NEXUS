@@ -922,6 +922,59 @@ class GeometricIKSolver:
         self._state = new_state
         return q_best.reshape(7).copy()
 
+    def solve_hard(
+        self,
+        T_target: np.ndarray,
+        psi: float,
+        q_init: Optional[np.ndarray] = None,
+    ) -> Optional[np.ndarray]:
+        """Deterministic IK at an *exact* arm angle ``psi`` — hard human-elbow
+        mode (``human_elbow_mode: "hard"`` in the node).
+
+        Unlike ``solve(psi_ref=...)`` — which treats psi as a soft prior
+        blended with continuity and layers window/escape hysteresis on top —
+        this resolves the arm exactly at ``psi`` (same convention as
+        ``psi_from_elbow_dir`` / ``arm_angle_from_elbow_dir``) with only a
+        minimal warm-start branch pick. Mirrors
+        ``astral_pim_ik.geometry.GeometricArmAngleSolver.solve`` (kept here
+        because teleop must not import astral_pim_ik — that package imports
+        this one). No grid scan, no 1D QP, no escape hysteresis.
+
+        Returns q (7,) or ``None`` when the pose is unreachable / out of
+        limits / singular at this psi. On success the internal continuity
+        state is synced (so a later soft solve warm-starts smoothly); on
+        failure the state is left untouched for the soft path to take over.
+        """
+        T = np.array(T_target, dtype=float)
+        psi = float(psi)
+        q_prev = (
+            np.asarray(q_init, dtype=float).reshape(7)
+            if q_init is not None
+            else np.array(self._state.q_prev, dtype=float).copy()
+        )
+        S, W, q4_list = _compute_sw(T, self.geom)
+        if not q4_list:
+            return None
+        cands = _collect_solutions(T, self.geom, S, W, q4_list, np.array([psi]))
+        if not cands:
+            return None
+        best = min(
+            cands, key=lambda c: float(np.linalg.norm(wrap_to_pi(c[:7] - q_prev)))
+        )
+        q_best = np.asarray(best[:7], dtype=float).copy()
+        # Sync continuity state so a fallback to the soft solve() later
+        # warm-starts from what the arm is actually doing.
+        st = self._state
+        st.q_prev2 = np.array(st.q_prev, dtype=float).copy()
+        st.q_prev = q_best.copy()
+        st.theta0_prev = float(best[7])
+        st.q_lock = q_best.copy()
+        st.esc_active = False
+        st.esc_home_psi = None
+        st.local_fail_streak = 0
+        st.home_ok_streak = 0
+        return q_best
+
     def arm_angle_from_elbow_dir(
         self,
         T_target: np.ndarray,

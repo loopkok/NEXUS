@@ -4,6 +4,114 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-09-04
+
+**遥操加"硬跟人肘"模式（human_elbow_mode=hard）+ astral_pim_ik 录制转换器——"训练臂角复现人手姿态"链路打通**——
+`astral_arm_teleop` × `astral_pim_ik`。**动机**：用户要最终训练出的臂角符合人手 Quest3 增量遥操姿态
+（无肘跟踪也运行）；遥操原本的 `use_human_elbow` 只是 ψ_human 软先验（w=2.0 与 w_vel=1.0 连续性混合
++ 局部窗/逃逸迟滞），肘"半跟人半跟惯性"，正是"遥操姿态怪"的主要嫌疑。**做法**：① teleop
+`GeometricIKSolver` 新增 `solve_hard(T, ψ)`——精确解在人臂角上（`_collect_solutions(T,ψ)` + 最小
+warm-start 选支，无网格/1D QP/逃逸；镜像 pim_ik 的 `GeometricArmAngleSolver.solve`，因
+pim_ik→teleop 依赖不可反向），成功同步连续性 state 保证回退平滑；② 节点新参数
+`human_elbow_mode: soft|hard`（默认 soft 保兼容，左右 yaml 置 **hard**），人肘方向新鲜且伸直
+门控通过时走 `solve_hard`，不可行/奇异/超龄期自动回退软路径，`[Latency]` 行加 `hard_follow`/
+`hard_fallback` 计数，参数热改可用；③ pim_ik 新增 `convert_sessions.py`——遥操录制
+`robot_data.h5` 的 `{side}_arm_state`（实测 q）→ FK 得 T_ee、`psi_from_config` 得标签
+（schema 同 `generate_dataset`），meta pause/resume + 帧跳变 + 超 URDF 限位帧自动断段
+（本机 verify/default_task 存量段全是等差假数据 q4 超限，已被正确拒绝），train/val **按整段会话
+留出**（`--val_sessions`）；eval 加 `--no_split`。**验证**：`test_geometric_ik` 10→**11 例**
+全绿——hard 保真：双臂各 12 样本肘方向偏差 L 0.0118°/R 0.0002°、位姿 <0.05mm、不可达→None、
+确定性；pim_ik `test_deterministic_solver` 8→**9 例**——teleop `solve_hard` ≡ pim_ik `solve`
+**逐位 0.00e+00**（双臂 25 样本）。整链排演（合成会话 → convert → 8 epochs 训练 →
+`--no_split` 整段评估）跑通。**硬模式是录制前提**：执行的 q 的臂角 == 喂入的 ψ_human，故训练
+标签零额外录制流。真机 runbook 见 pim_ik `CLAUDE.md` §7.1。机器人侧需重新 colcon build 生效。
+
+**VR 采集控制：右手柄 摇杆按下=开始 / A=下一段 / B=停止保存**——`astral_data_collect`。
+**动机**：单人采集时双手都在遥操，录段控制（开始/分段/停止）要伸手去键盘或 web，打断操作
+节奏。**做法**：新增 `vr_collect_logic.py`（纯决策：上升沿 + 状态门控，无 ROS 可离线单测）
++ `vr_collect_control.py` 节点——订 `quest3/right_controller_joy`（mocap 已发布，
+buttons=[primary(A)/secondary(B)/stickPress/...]）与 `/data_collect/state`（latched），
+**摇杆按下(buttons[2]) 上升沿 + IDLE → start；A(buttons[0]) + RECORDING/PAUSED → next；
+B(buttons[1]) + RECORDING/PAUSED → stop**。长按不重复；状态不合法/采集未运行（未收到
+state）时按键静默忽略（info 日志说明），不给采集节点发无效命令刷 warning；与 web 卡片/
+键盘控制器三面并存（离散一次性命令，采集节点状态机幂等）。随 `data_collect.launch.py`
+同启（`vr_control:=false` 可关，同 keyboard 参数模式）。**验证**：新增 `test_vr_collect_control.py`
+纯逻辑 12 例全绿（上升沿/长按不重复/释放再按/三种状态门控/state 未知/同帧多键/短数组不越界）；
+`test_vr_collect_node.py` rclpy 集成 3 例全绿（真实话题契约：latched state 门控 → control
+命令序列 start/next/stop、录制中摇杆被门控、长按不重复）；node_guards 9 例、离线套件 30 例
+回归全绿。README/CLAUDE.md 控制面与文件地图同步（三面→四面）。
+
+**HOME 归位"出了但没到 waypoint 就掉头"修复：途经点加实测到达门限 + park 路径改倒序**——
+`astral_arm_teleop`。**现象**：点 web 紫色 HOME 能正常回到零点，但途经点与启动移动不成反向——
+预期先到 init_pose、再经 init_waypoints、再到零；实际**伸向 waypoint 但没到位就转去零位**
+（用户确认"出了但没到就掉头"），且**经过位置与启动路径不是反向**。**根因**（两个独立缺陷）：
+① **切角**——park 轨迹纯开环，命令 q_cmd 领先实测（板端跟踪误差+链路延迟）；途经点推进只看
+命令误差（<`init_arrive_tol` 0.05 即走下一段），命令一到点立刻 180° 反向，实体会被"切角"在
+waypoint 之前掉头（waypoint 是防刮桌安全走廊位姿，切角 = 走廊失效）；冻结守卫只兜 >0.25 rad
+的失能/堵转，0.05~0.25 的常规滞后静默切角。② **顺序**——`_go_home` 把 init_waypoints **正序**
+拼在 init_pose 与零之间，而 README 明示收回应**倒序逐点**（启动路径的反向）；单一途经点配置
+（当前左右臂 yaml 各 1 个）掩盖了顺序错误。**做法**：① park 途经点推进改双条件——命令到点后
+**钉住重发，等实测也进入 `homing_via_tol`（新参数默认 0.12 rad）再推进下一段**；实测流不可用
+或等满 `homing_via_hold_s`（新参数默认 2.0 s，防负载静差拖死归零）则照旧放行。段间运动仍纯
+开环——不退回"每拍从实测迈步"的阶梯采样（c3941c5 教训）。启动 init 不加门限（实测没动不能
+卡启动）。② `_go_home` 路径改 `_parse_init_waypoints()[::-1]`（倒序），docstring/注释同步。
+**验证**：`test_home_park.py` 11→**14 例**全绿——新增 park 途经点等实测到位再推进（钉住重发
+断言）、实测长期不到超 `homing_via_hold_s` 放行、init 不加门限三例；路径构建测试断言改为
+**倒序**（[init_pose, WAY2, WAY1, 零]）；闭环滞后模拟：旧行为命令在 waypoint 只停留 1 tick
+(0.02s) 即反向，修复后钉住等实体进入 0.12 rad 才走下一段；reanchor 5 例全绿。左/右臂 yaml 补
+两参数；**机器人侧需重新 colcon build 生效**（本机 install/ 为 9/3 旧构建，连 /teleop/home 都无）。
+
+**astral_pim_ik 收尾：首次真实执行 torch 路径暴露并修复 3 个真 bug + F1 兜底落地 + F2 关闭 + 小规模训练闭环打通**——
+`astral_pim_ik`。**背景**：该功能包此前在无 torch 机器上开发（文档引用的 `/opt/anaconda3/envs/MujocoSim`
+本机不存在），`network.py`/`kinematics.py`/`train.py` 只过语法 + 静态审查、从未执行。本机实测
+`arm_sdk`（pinocchio 3.8 + torch 2.13 cpu）与 `lerobot`（pinocchio 3.4 + torch 2.11 cu130 + 4090D）
+均有 torch，全部未完成项可补。**现象①（9D 编码行列序 bug）**：首次跑 `test_network.py` 即 2 FAIL——
+`transform_to_9d` 把 (3,2) 旋转块行主序拉平得 `[r00,r01,...]`，与 docstring/`rotation_6d_to_matrix`
+的列主序 `[r00,r10,r20,r01,r11,r21]` 不符，恒等位姿编码成退化矩阵。**修**：拉平前 transpose +
+非恒等旋转 round-trip 断言。**现象②（L_elbow 变量遮蔽）**：真跑 `train.py` loss 卡 ~14 不降、网络
+几乎不学 ψ——`PhysicsInformedLoss.forward` 里 `B, W, _ = pred_psi.shape` 把形参 `W`（腕部张量）
+遮蔽成窗口长度 int，肘误差对 int 广播成 ~13 m 假项（同批数据手动肘误差 mean 0.11 m vs `loss_fn`
+报 12.97）。**修**：解包改 `T` + 回归测试「perfect ψ → L_elbow<1e-3」（实测 1e-4 m）。
+**现象③（IID 数据不可学）**：IID 随机位形数据 ψ 学不动（误差 52.8°、loss 平台 ~1.15）——单帧
+T_ee 不决定 ψ（肘在 S-W 轨道圆上自由），窗口网络需要帧间运动信号。**修**：新增
+`generate_trajectory_dataset`（平滑关节漂移，`travel`/`wobble` 控速，schema 同
+`generate_dataset`），文档明确训练必须用轨迹数据。**F1 兜底**：`solve(fallback_scan=True, n_scan=36)`
+网格扫最近可行 ψ（默认关保持 None 契约，救援计入 `fallback_count`），`solve_trajectory` 透传，
+test_deterministic_solver 新增用例 8/8。**F2 关闭**：torch/numpy 肘点一致性 **9.58e-07 m**（<1e-5）。
+**训练闭环实测**（lerobot/4090D，时间相干轨迹 20k 帧/40 ep）：ψ err 27.1°（median 19°）、
+Joint MAE 10.0°、solve 率 74%、位姿 <0.06 mm；oracle（真值 ψ）100% solve——stage-2 几何 IK 精确，
+残差为合成数据宽肘先验的信息瓶颈，真机遥操录制是生产路径。5k 帧 seed 对照 ψ err 15.2°（方差来自
+小 val 集）。**包布局修复**：`package.xml`/`setup.py` 原埋在 `src/astral_pim_ik/src/astral_pim_ik/`
+（多一层 src），上移到包根 `src/astral_pim_ik/`——与其余 20 包一致，colcon 可发现，PYTHONPATH 与
+文档对上了。**验证**：test_network 4/4、test_deterministic_solver 8/8、test_dataset 3/3、
+test_pipeline 2/2、test_geometric_ik 10/10（回归）；全部实测数字见包 `CLAUDE.md` §5.1 与
+`docs/adversarial_review.md`（F9/F10/F11 三条新发现）。
+
+**阻尼释放后再就绪/归零仍回跳——根因在板端陈旧目标，补"切回 POSITION 先重写实测位姿"**——
+`astral_robot_control` × `astral_robot_sdk`。**现象**：启动后点「阻尼释放」正常，手动拖臂后
+再点「一键就绪」或「归零」，臂仍**抽一下快速回到阻尼释放前的位置**（上轮"陈旧命令流抢占"
+三层修复后依旧）。**根因**：上轮修的是 **ROS 侧**（driver 缓存 `_clear_cmd_cache` + 臂节点
+disarm 停流），但漏了**板端内部的目标寄存器**——阻尼（motion_mode=0）只是让板端忽略 0x90
+位置指令，并不清空其内部保存的"上一次目标"（= 阻尼前位姿 P）；手动拖臂只改实测、不改板端
+目标。`~/ready`（SDK `one_click_ready` 内部 `set_motion_mode(POSITION)`）与 `~/home`
+（显式 `set_motion_mode(1)`）一切回 POSITION，板端立刻重新追踪 P → 臂抽回旧位姿；此时
+`enable()` 轮询最长 3s，期间臂就停在 P 上，归零要么迟到要么因电源位未确认被跳过。**做法**：
+① SDK `one_click_ready(..., seed_from_current=True)`——POSITION 切换后、enable 轮询前，用最近
+一帧实测关节角 `set_target_positions` 重写板端目标，POSITION 进入即保持当前位置，随后归零
+照常下发（默认 False 保持旧行为）；② driver 新增 `_seed_target_from_current()`（`_read_q18` →
+`split_full_q` → `move_arm_js` 双臂），在 `~/position` 与 `~/home` 的 `set_motion_mode(1)`
+之后、显式目标之前调用——「位置保持」真正保持被拖拽后的当前位置，「归零」先定住再收回；
+③ `~/ready` 传 `seed_from_current=True`。**验证**：`test_driver_services.py` 13→**16 例**全绿
+（新增 home 阻尼切回先重写实测位姿再归零的顺序断言、position 阻尼/非阻尼两例都重写目标）；
+SDK `one_click_ready` 签名向后兼容（旧调用不带参行为不变）。
+
+**真机遥操手感/可达调优（当前 yaml 生效值；配置项，无 A/B 数字，留待实机复核）**——
+`astral_arm_teleop`。左右 yaml 各四处：`workspace_radius` 0.55→**0.65**（腕目标球约束
+放宽，末端可达范围更大）；`reach_margin` 0.01→**0.001**（肘伸直软墙基本放平，逼近 URDF
+伸直极限才挡）；`motion_scale` 0.8→**1.0**（VR 位姿增量 1:1 无缩放）；`rot_smoothing`
+0.25→**0.35**（旋转低通加强，τ≈14→19 ms @50 Hz）。`arm_teleop` README 参数默认值说明
+同步为当前值。
+
 ## 2026-09-03
 
 **HOME 归零卡顿/抽动修复：park 从"贴实测迈步"改纯开环 + 冻结守卫**——`astral_arm_teleop`。

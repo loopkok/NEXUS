@@ -5,7 +5,11 @@ Quest3 腕部 → 双臂 IK → `/left_arm|/right_arm/joint_commands`。本文�
 ## 当前状态（2026-09-03）
 
 - **默认求解器 = `geometric`**（免 DH 臂角闭式 IK），左右 yaml 与节点默认一致；
-- **`use_human_elbow = true`** 默认开：Quest IOBT 肩/肘数据 → 人臂角 psi_ref 软先验，机器人臂姿跟人；
+- **`use_human_elbow = true`** 默认开：Quest IOBT 肩/肘数据 → 人臂角 psi_ref，机器人臂姿跟人；
+- **`human_elbow_mode = "hard"`（2026-09-04 起 yaml 默认）**：人肘方向新鲜且门控通过时
+  `solve_hard` **精确解在 psi_human 上**（肘严格贴人，无软混合/网格/逃逸）；不可行/奇异/
+  超龄期自动回退软先验（`hard_fallback` 计数）。硬模式是给 astral_pim_ik 录训练数据的
+  前提——执行的 q 的臂角 == 喂入的人臂角（肘方向偏差 <0.02° 已测）。
 - 仿真（MuJoCo）与真机走同一套 teleop 代码，只差下游（sim node vs astral_robot_control）；
 - 关节限位（URDF 双文件 + MJCF + analytic.py 四处一致）：
   J1 ±2.0 / J2 [−0.3, 2.0]（右臂镜像） / **J3 ±2.2689(±130°)** / J4 [−2.26, 0] / **J5 ±1.7802(±102°)** / J6 [−0.8, 0.85] / J7 ±1.57。
@@ -32,7 +36,7 @@ test_ik_solver.py      ← DH 套件（改 analytic.py 后必跑）
 2. **geometric 输出即硬件约定**，无 flip_q；只有 `analytic_dh` 需要 flip（节点内自动）。
 3. **限位改动必须四处同步**：`astral_robot{,.pin}.urdf` + `astral_arm{,.pin}.urdf` + `astral_dual.xml`(range+ctrlrange) + `analytic.py` joint_limits。漏一处就会出现"仿真正常、DH 切换后怪异"类问题。
 4. **QoS：腕位/关节/指令流全部 BEST_EFFORT + depth=1**（`_sensor_qos`）。Jetson 实测 depth=10 时队列积满导致 IK 恒解 ~110ms 前的旧帧（vr_rx≈105ms = 10×11.1ms 帧间隔的整数倍，这是指纹）。仿真 PC 上 loop 快、队列积不起来，depth 无感——**别因为"仿真没问题"回退 QoS**。
-5. **评分权重序**：`w_psi_ref=2.0` 必须压过 `w_vel=1.0`/`w_theta0=0.15`，否则人肘先验失效。改权重前想清楚对抗关系。
+5. **评分权重序**：`w_psi_ref=2.0` 必须压过 `w_vel=1.0`/`w_theta0=0.15`，否则人肘先验失效。改权重前想清楚对抗关系。**`human_elbow_mode="hard"` 时绕过评分混合**（精确解在 psi_human），权重只在软回退时生效。
 
 ## 已解决的坑（症状 → 根因 → 现有防护）
 

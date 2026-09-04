@@ -19,16 +19,20 @@ Contract (default)::
 
   Srv  ~/ready    Trigger  — one_click_ready (WORK→POSITION→enable→zero)
                              （先清空缓存目标：归零后 100Hz 重发只复读零位，
-                             不把阻尼前的陈旧位姿顶回来）
+                             不把阻尼前的陈旧位姿顶回来；切回 POSITION 时先用
+                             实测关节角重写板端目标，避免板端追踪其内部保存的
+                             阻尼前位姿 → 臂抽回旧位姿）
   Srv  ~/enable   Trigger  — WORK→POSITION→enable，**不回零**
                              （遥操恢复归位路径用：只使能，不抢 teleop 正在
                              发布的 joint_commands 目标；已上电直接成功跳过，
                              电源位未确认但板端在线也算下发成功）
-  Srv  ~/home     Trigger  — 归零：已在阻尼先切回 POSITION，再 set_all_joints_zero
-                             并清缓存（未上电直接报"先 ~/ready"，不静默）
+  Srv  ~/home     Trigger  — 归零：已在阻尼先切回 POSITION（并用实测关节角重写
+                             板端目标防回跳），再 set_all_joints_zero 并清缓存
+                             （未上电直接报"先 ~/ready"，不静默）
   Srv  ~/estop    Trigger  — disable / e-stop (真断电)，同时清缓存
   Srv  ~/damping  Trigger  — motion_mode=0 阻尼释放（可手动拖拽），同时清缓存
-  Srv  ~/position Trigger  — motion_mode=1 位置保持
+  Srv  ~/position Trigger  — motion_mode=1 位置保持（并用实测关节角重写板端目标，
+                             阻尼切回时保持被拖拽后的当前位置，不回跳）
 """
 
 from __future__ import annotations
@@ -479,6 +483,31 @@ class AstralRobotDriverNode(Node):
             self._head_cmd_t = 0.0
             self._use_full_priority = False
 
+    def _seed_target_from_current(self) -> None:
+        """Re-seed the board's position target from the measured pose.
+
+        Damping (motion_mode=0) makes the board ignore 0x90 position targets
+        but keeps its internal target register at the last commanded pose (the
+        pose right before 阻尼释放). Switching back to POSITION re-tracks that
+        stale target, so the arm snaps back to the pre-damping pose. Re-seed
+        from the measured joints immediately after the mode switch so entering
+        POSITION holds the current pose; the caller then applies its explicit
+        target (zero / hold) on top.
+        """
+        if self._robot is None:
+            return
+        q = self._read_q18()
+        if q is None:
+            return
+        left, right, _waist, _head = split_full_q(q)
+        try:
+            self._robot.move_arm_js(left, right)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warning(
+                f"seed target from current failed: {exc}",
+                throttle_duration_sec=2.0,
+            )
+
     def _on_control_timer(self) -> None:
         now = time.monotonic()
         with self._lock:
@@ -631,7 +660,11 @@ class AstralRobotDriverNode(Node):
             # 清掉缓存里的陈旧上游目标：一键就绪后 driver 的 100Hz 重发只应
             # 复读"归零"，不能把阻尼释放前残留的旧位姿重新顶上来。
             self._clear_cmd_cache()
-            ok = self._robot.one_click_ready(enable_timeout_s=3.0)
+            # seed_from_current：阻尼切回 POSITION 时先用实测关节角重写板端
+            # 目标，否则板端会立即追踪其内部保存的"阻尼前位姿"→ 臂抽回旧位姿。
+            ok = self._robot.one_click_ready(
+                enable_timeout_s=3.0, seed_from_current=True
+            )
             self._apply_lpf()
             res.success = bool(ok)
             res.message = "one_click_ready OK" if ok else "enable not confirmed"
@@ -720,6 +753,9 @@ class AstralRobotDriverNode(Node):
             if getattr(robot, "_motion_mode", None) != 1:
                 # 阻尼（motion=0）下板端忽略位置目标：先切回 POSITION 归零才生效。
                 robot.set_motion_mode(1)
+                # 切回 POSITION 的瞬间板端会追踪其内部保存的"阻尼前位姿"，
+                # 先用实测关节角重写目标，避免臂抽回旧位姿，再下发归零。
+                self._seed_target_from_current()
                 time.sleep(0.05)
             robot.set_all_joints_zero()
             # 归零是显式目标：清掉缓存的陈旧上游目标，否则控制定时器在
@@ -794,6 +830,9 @@ class AstralRobotDriverNode(Node):
             return res
         try:
             self._robot.set_motion_mode(1)
+            # 阻尼切回 POSITION 时板端会追踪其内部保存的"阻尼前位姿"；先用
+            # 实测关节角重写目标，让"位置保持"真正保持在当前位置，不回跳。
+            self._seed_target_from_current()
             res.success = True
             res.message = "motion_mode=1 (position, 位置保持)"
         except Exception as exc:  # noqa: BLE001

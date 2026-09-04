@@ -40,12 +40,12 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 
 | 服务 | 说明 |
 |------|------|
-| `/astral_robot_driver/ready` | `one_click_ready`（WORK→POSITION→enable→zero）。**执行前清空缓存目标**——归零后 100Hz 重发只复读零位，不把阻尼前的陈旧位姿顶回来 |
+| `/astral_robot_driver/ready` | `one_click_ready`（WORK→POSITION→enable→zero）。**执行前清空缓存目标**——归零后 100Hz 重发只复读零位，不把阻尼前的陈旧位姿顶回来；**切回 POSITION 时用实测关节角重写板端目标**（`seed_from_current=True`），避免板端追踪其内部保存的"阻尼前位姿"导致臂抽回旧位姿 |
 | `/astral_robot_driver/enable` | WORK→POSITION→enable，**不回零**（HOME/急停恢复用，避免抢 teleop 轨迹目标）。**幂等**：已上电直接成功跳过重复下发；板端在线但 `robot_powered` 位未确认也算下发成功（该位在此板子常不置位，仅真正离线才失败） |
-| `/astral_robot_driver/home` | 归零：**已在阻尼先切回 POSITION**（motion_mode=1）再 `set_all_joints_zero`，并清缓存；未上电直接报"先 `~/ready`"，不静默 |
+| `/astral_robot_driver/home` | 归零：**已在阻尼先切回 POSITION**（motion_mode=1）→ **用实测关节角重写板端目标**（防回跳）→ `set_all_joints_zero`，并清缓存；未上电直接报"先 `~/ready`"，不静默 |
 | `/astral_robot_driver/estop` | **真急停**：`e_stop` / disable（断电，臂失去保持力）。同时清缓存，避免重新上电瞬间 100Hz 重发旧位姿 |
 | `/astral_robot_driver/damping` | 阻尼释放：`motion_mode=0`（电机仍上电、关节可手动拖拽）。同时清缓存 |
-| `/astral_robot_driver/position` | 位置保持：`motion_mode=1`（恢复位置保持） |
+| `/astral_robot_driver/position` | 位置保持：`motion_mode=1`，**并用实测关节角重写板端目标**——阻尼拖拽后切回时保持在被拖拽后的当前位置，不回跳 |
 
 > 典型遥操收尾流程：遥操中 → `damping`（**web 会自动先 disarm 遥操**，可手动拖回 home）→ `position` 或 `home`。
 > 真急停 `estop` 会断电，恢复需重新 `ready`（遥操恢复则靠 HOME 端点先 `~/enable` 再 disarm+收回零位，
@@ -53,6 +53,12 @@ ROS2 驱动包：把 [`astral_robot_sdk`](../../../astral_robot_sdk) 包成 Wuji
 > **手动硬件模式（ready/home/damping/estop/position）前务必先让遥操停止发流**——否则归零等一次性
 > 目标会被仍在运行的 joint_commands 流（armed 遥操 / 启动归位 homing）下一帧覆盖。web 端点已自动
 > 先发 `/teleop/disarm`；CLI 手调时请自行 `ros2 topic pub --once /teleop/disarm std_msgs/msg/Bool "data: true"`。
+>
+> **板端目标寄存器（阻尼回跳根因）**：阻尼（`motion_mode=0`）只让板端**忽略** 0x90 位置指令，
+> 并不清空其内部保存的"上一次目标"（= 阻尼前位姿）；手动拖臂只改实测、不改板端目标。因此
+> `ready`/`home`/`position` 一切回 POSITION，板端会立刻重新追踪旧目标把臂抽回——这三条服务已在
+> `set_motion_mode(1)` 之后、显式目标之前用实测关节角重写板端目标（`_seed_target_from_current`）
+> 兜住这一点。CLI 直接用 SDK 时，请给 `one_click_ready(..., seed_from_current=True)`。
 
 ## 依赖
 

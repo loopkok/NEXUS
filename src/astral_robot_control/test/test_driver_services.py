@@ -56,19 +56,24 @@ class _FakeRobot:
     def set_all_joints_zero(self):
         self.calls.append(("set_all_joints_zero",))
 
+    def move_arm_js(self, left, right):
+        self.calls.append(("move_arm_js", tuple(left), tuple(right)))
+
     def e_stop(self):
         self.calls.append(("e_stop",))
 
-    def one_click_ready(self, enable_timeout_s=3.0):
-        self.calls.append(("one_click_ready", enable_timeout_s))
+    def one_click_ready(self, enable_timeout_s=3.0, seed_from_current=False):
+        self.calls.append(("one_click_ready", enable_timeout_s, seed_from_current))
         return True
 
 
-def _make_node(robot=None, dry_run=False):
+def _make_node(robot=None, dry_run=False, q18=None):
     node = AstralRobotDriverNode.__new__(AstralRobotDriverNode)
     node.dry_run = dry_run
     node._robot = robot
     node._apply_lpf = lambda: None
+    # 实测关节角（阻尼中被拖拽后的当前位置）。默认全零，测试按需注入。
+    node._read_q18 = lambda: ([0.0] * 18 if q18 is None else list(q18))
     node._lock = threading.Lock()
     node._left_cmd = None
     node._right_cmd = None
@@ -212,13 +217,15 @@ def test_home_unpowered_fails_with_ready_hint():
 def test_ready_clears_cached_target_before_zero():
     # 一键就绪前清缓存：one_click_ready 的归零是显式目标，随后 100Hz 重发
     # 只该复读零位，不能把阻尼前的陈旧位姿重新顶上来（症状：回到阻尼前位姿）。
+    # 且 ready 走 SDK one_click_ready 时传 seed_from_current=True：阻尼切回
+    # POSITION 的瞬间先用实测关节角重写板端目标，避免板端追踪内部保存的旧位姿。
     robot = _FakeRobot(powered=False, online=True, enable_ok=True)
     node = _make_node(robot=robot)
     _seed_cache(node)
     res = _FakeRes()
     node._srv_ready(None, res)
     assert res.success is True
-    assert ("one_click_ready", 3.0) in robot.calls
+    assert ("one_click_ready", 3.0, True) in robot.calls
     assert _cache_empty(node)
 
 
@@ -244,6 +251,61 @@ def test_estop_clears_cached_target():
     assert _cache_empty(node)
 
 
+def test_home_after_damping_seeds_target_from_current_before_zero():
+    # 阻尼（motion=0）下板端内部仍保存"阻尼前位姿"目标。切回 POSITION 的瞬间
+    # 板端会追踪该陈旧目标 → 臂抽回旧位姿。home 必须在 set_motion_mode(1) 之后、
+    # set_all_joints_zero 之前，先用实测关节角重写板端目标（move_arm_js），
+    # 让 POSITION 进入即保持当前位置，再下发归零。
+    q18 = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7,
+           1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7,
+           0.0, 0.0, 0.0, 0.0]
+    robot = _FakeRobot(powered=True, motion_mode=0)
+    node = _make_node(robot=robot, q18=q18)
+    _seed_cache(node)
+    res = _FakeRes()
+    node._srv_home(None, res)
+    assert res.success is True
+    # 顺序：先切 POSITION → 用实测位姿重写目标 → 再归零。
+    kinds = [c[0] for c in robot.calls]
+    i_mode = kinds.index("set_motion_mode")
+    i_seed = kinds.index("move_arm_js")
+    i_zero = kinds.index("set_all_joints_zero")
+    assert i_mode < i_seed < i_zero
+    seed = robot.calls[i_seed]
+    assert seed[1] == (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7)  # left = q[0:7]
+    assert seed[2] == (1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7)  # right = q[7:14]
+    assert _cache_empty(node)
+
+
+def test_position_after_damping_seeds_target_from_current():
+    # 「位置保持」语义 = 在当前位置保持。阻尼切回 POSITION 时若只发
+    # set_motion_mode(1)，板端会追踪内部保存的旧位姿；必须随后用实测关节角
+    # 重写目标，才能真正保持在被拖拽后的当前位置。
+    q18 = [0.3] * 18
+    robot = _FakeRobot(powered=True, motion_mode=0)
+    node = _make_node(robot=robot, q18=q18)
+    res = _FakeRes()
+    node._srv_position(None, res)
+    assert res.success is True
+    assert robot._motion_mode == 1
+    assert ("set_motion_mode", 1) in robot.calls
+    assert any(c[0] == "move_arm_js" for c in robot.calls)
+    seed = [c for c in robot.calls if c[0] == "move_arm_js"][0]
+    assert seed[1] == (0.3,) * 7
+    assert seed[2] == (0.3,) * 7
+
+
+def test_position_in_position_mode_still_seeds_target():
+    # 已在 POSITION 再点「位置保持」也应重写目标为当前实测位姿（幂等、无害，
+    # 且能顺带把任何陈旧目标校正回当前位置）。
+    robot = _FakeRobot(powered=True, motion_mode=1)
+    node = _make_node(robot=robot, q18=[0.0] * 18)
+    res = _FakeRes()
+    node._srv_position(None, res)
+    assert res.success is True
+    assert any(c[0] == "move_arm_js" for c in robot.calls)
+
+
 def _run_all():
     tests = [
         test_dry_run_skips,
@@ -259,6 +321,9 @@ def _run_all():
         test_ready_clears_cached_target_before_zero,
         test_damping_clears_cached_target,
         test_estop_clears_cached_target,
+        test_home_after_damping_seeds_target_from_current_before_zero,
+        test_position_after_damping_seeds_target_from_current,
+        test_position_in_position_mode_still_seeds_target,
     ]
     failed = 0
     for t in tests:
