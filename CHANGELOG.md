@@ -6,6 +6,10 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**HOME 途经点放行日志加"实测距途经点"误差**——`astral_arm_teleop`。HOME/init 途经点放行的
+`Via N/N reached` WARN 追加实测关节距刚放行途经点的 max 误差（`.3f rad`），实机核对
+"实体到没到过途经点"无需再看动作——日志直接给数字。`test_home_park` 放行断言同步。
+
 **HOME 归位仍"没到过 init_waypoints 姿态"——实机日志定案：门限秒放行 + 只擦过不停下；改"到位 + 稳定驻留"放行**——
 `astral_arm_teleop`。**现象**（实机 HOME 日志）：`Homing 3 segment(s)` 路径含 w1 无误，但
 `Via 1/2`(t=0.01s) → `Via 2/2`(t=1.06s)——命令 1.05 s 走完 init_pose→w1 后**立即反向**，

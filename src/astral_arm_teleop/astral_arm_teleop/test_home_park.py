@@ -121,6 +121,7 @@ def _make_node():
     node.robot_init_rot = np.eye(3)
     node.state_q = node.q_cmd.copy()
     node._state_t = time.monotonic()
+    node._got_state = False  # 具体用例按需置 True（如 park 途经点门限测试）
     node.data_timeout = 1.5
     node.ik = _FakeIk()
     node.pose = _FakePose()
@@ -392,6 +393,11 @@ def test_park_via_waits_for_measured_settle_before_advancing():
         node._homing_tick(now=0.8 + i * 0.02, dt=0.02)
     assert node._homing_i == 1
     assert np.allclose(node._homing_target(), WAY1)
+    # 放行日志附实测距途经点的实际误差（数字裁决"实体到没到过"）
+    assert any(
+        "Via 1/2 reached" in w and "实测距途经点 0.000 rad" in w
+        for w in node._log.warns
+    )
 
 
 def test_park_via_tol_clock_resets_when_leaving_tol():

@@ -1314,12 +1314,25 @@ class AstralTeleopArmNode(Node):
                 # 命令已到途经点但实体还没到位停稳：钉住重发，等实体到位。
                 self._publish_q()
                 return
+            # 放行日志附实测距途经点的实际误差（数字裁决"实体到没到过途经点"；
+            # target 此刻仍是刚放行的途经点）。
+            meas_note = ""
+            state_fresh = self._got_state and self._state_t is not None and (
+                self.data_timeout <= 0.0
+                or (now - self._state_t <= max(self.data_timeout, 1.0))
+            )
+            if state_fresh:
+                meas_note = (
+                    f", 实测距途经点 "
+                    f"{float(np.max(np.abs(self.state_q - target))):.3f} rad"
+                )
             self._homing_i += 1
             self._via_wait_t0 = None
             self._via_in_tol_since = None
             self.get_logger().warn(
                 f"[{self.side}] Via {self._homing_i}/{len(self._homing_path)-1} "
                 f"reached; next={np.round(self._homing_target(), 3).tolist()}"
+                f"{meas_note}"
             )
             self._publish_q()
             return
