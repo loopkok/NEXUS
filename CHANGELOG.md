@@ -6,6 +6,26 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**HOME/启动途经点调整：init_waypoints 改远摆位 [-1.6, ±0.2, 0, -1.92, ∓0.2, 0, 0]**——
+`astral_arm_teleop` 配置。**动机**：HOME 收回时臂到途经点的摆臂动作不明显（原途经点
+[-1.0, 0, 0, -2.2, 0, 0.46, 0] 与 init_pose 的 j1 只差 0.65 rad），实机确认需要更明显的
+"到过折叠途经点"行程。**做法**：左右 yaml `init_waypoints` 改为：左
+`[-1.6, 0.2, 0.0, -1.92, -0.2, 0.0, 0.00]`、右按 init_pose 镜像规律（j2/j5 反号）
+`[-1.6, -0.2, 0.0, -1.92, 0.2, 0.0, 0.00]`。数值全在 URDF 限位内（J1 -1.6 < ±2.0、
+J4 -1.92 < [-2.26, 0]），不会触发 clip。**影响**：该参数同时作用于启动 init 与 HOME park
+（同一 `_parse_init_waypoints`）；HOME 段 init_pose→途经点 j1 差 0.65→**1.25 rad**，
+行程 1.05→**~2.1 s**（摆臂更明显）；w1→零 j4 1.92 rad（原 2.2）略快。**机器人侧需重新
+colcon build 生效**（astral_arm_teleop 的 yaml 非 symlink 构建为拷贝）。
+
+**日志降噪：夹爪仲裁门 disarm 提示只打状态变化；capture driver-side fps 稳定时不再 5s 刷屏**——
+`astral_gripper_teleop` × `quest3_video_streamer`。**动机**：HOME/暂停期间夹爪仲裁门长期关闭，
+pinch 节点每秒打一条 "disarmed by arbitration gate"（3 相机 x 5s 窗口的 capture fps 同理），
+正常状态刷屏。**做法**：① pinch 新增 `_set_gate()`——门状态**变化**才打日志（进入 disarm 打
+"not publishing (waiting for open)"，重开打 "publishing resumed"），删 1s 节流重复；②
+`webcam_source._capture_loop` 的 driver-side fps 改为 5s 统计窗口 + **偏差 >15% 才报**（掉速/
+降级立即可见）+ **≥60s 心跳保底**（证明线程存活），稳定满帧不再刷屏。**验证**：两文件
+py_compile；streamer 纯测试 24 通过（1 例环境性失败：uv venv 无 aiortc，与本次无关）。
+
 **HOME 途经点放行日志加"实测距途经点"误差**——`astral_arm_teleop`。HOME/init 途经点放行的
 `Via N/N reached` WARN 追加实测关节距刚放行途经点的 max 误差（`.3f rad`），实机核对
 "实体到没到过途经点"无需再看动作——日志直接给数字。`test_home_park` 放行断言同步。

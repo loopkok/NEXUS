@@ -155,7 +155,6 @@ class PinchGripperNode(Node):
         self._last_env_t = 0.0
 
         self._gripper_disarmed = False
-        self._disarm_log_t = 0.0
         disarm_topic = str(self.get_parameter("disarm_topic").value).strip()
         arm_topic = str(self.get_parameter("arm_topic").value).strip()
         if disarm_topic:
@@ -270,26 +269,37 @@ class PinchGripperNode(Node):
             self._emin = mid - half
             self._emax = mid + half
 
+    def _set_gate(self, disarmed: bool) -> None:
+        """仲裁门状态切换：只在状态**变化**时打一条日志（进/出 disarm 各一次），
+        不再按固定周期刷屏——HOME/暂停期间门长时间关着，1s 一条的重复提示
+        只污染日志。进入 disarm 打一条说明原因方向，重开（armed/门开放）打一条。"""
+        if disarmed == self._gripper_disarmed:
+            return
+        self._gripper_disarmed = disarmed
+        if disarmed:
+            self.get_logger().info(
+                f"[gripper {self.side}] disarmed by arbitration gate — "
+                "not publishing (waiting for open)"
+            )
+        else:
+            self.get_logger().info(
+                f"[gripper {self.side}] arbitration gate open — publishing resumed"
+            )
+
     def _on_disarm(self, msg) -> None:
         """Arbitration gate: True = an external owner (policy / web pause)
         commands the gripper topic; stop publishing until the gate opens."""
-        self._gripper_disarmed = bool(msg.data)
+        self._set_gate(bool(msg.data))
 
     def _on_arm(self, msg) -> None:
         """Web monitor resume publishes /teleop/armed=true (never disarm=false);
         treat a fresh arm signal as the gate opening."""
         if msg.data:
-            self._gripper_disarmed = False
+            self._set_gate(False)
 
     def _on_timer(self) -> None:
         now = time.monotonic()
         if self._gripper_disarmed:
-            if now - self._disarm_log_t > 1.0:
-                self._disarm_log_t = now
-                self.get_logger().info(
-                    f"[gripper {self.side}] disarmed by arbitration gate — "
-                    "not publishing (waiting for open)"
-                )
             return
         pinch_stale = (
             self._last_lm_t <= 0.0
