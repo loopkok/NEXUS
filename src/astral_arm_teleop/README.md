@@ -301,13 +301,14 @@ ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
 与启动归位共用同一条慢速 joint-space 轨迹机。动作前先 disarm；期间忽略 VR/`start`；到零位后
 保持（关节目标=0）并把机器人原点锚到 FK(零)。之后要再遥操需重新 `/teleop/start`。
 
-> **途经点防切角**：park 轨迹纯开环，命令（q_cmd）会领先实测（板端跟踪误差 + 链路延迟）。
-> 若命令一到途经点就立刻反向去下一段，**实体会被"切角"在 waypoint 之前掉头**——现象就是
-> HOME 时臂"伸向 init_waypoints 但没到位就转去零位"（waypoint 是防刮桌的安全走廊位姿，
-> 切角 = 走廊失效）。因此 park 在**命令到途经点后钉住重发，等实测也进入 `homing_via_tol`
-> （默认 0.12 rad）再推进下一段**；实测流不可用或等满 `homing_via_hold_s`（默认 2 s，防负载
-> 静差拖死归零）则照旧推进。段间运动仍纯开环——不退回"每拍从实测迈步"的阶梯采样。
-> 启动 init 归位**不加**该门限（实测没动也不能卡住启动）。
+> **途经点防切角（实体到位 + 稳定驻留）**：park 轨迹纯开环，命令（q_cmd）会领先实测（板端
+> 跟踪误差 + 链路延迟）。若命令一到途经点就立刻反向去下一段，**实体会被"切角"在 waypoint
+> 之前掉头**——现象就是 HOME 时臂"伸向 init_waypoints 但没到位就转去零位"（waypoint 是防刮桌
+> 的安全走廊位姿，切角 = 走廊失效）。因此 park 在**命令到途经点后钉住重发**，等**实测进入
+> `homing_via_tol`（默认 0.12 rad）且连续稳定 `homing_via_settle_s`（默认 0.5 s）**——实体真正
+> 停下到位（运动中擦过 tol 会清零计时重来），而不是刚到附近就反向。等待超 `homing_via_hold_s`
+> （默认 2 s 总上限）或实测流不可用（按纯命令驻留 settle 时长）则放行。段间运动仍纯开环——
+> 不退回"每拍从实测迈步"的阶梯采样。启动 init 归位**不加**该门限（实测没动也不能卡住启动）。
 
 信号入口（任选）：
 
@@ -426,7 +427,9 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 tol，守卫完全不介入。启动 init 归位不受此守卫影响（保持改前纯开环逐拍推进）。关掉
 `homing_track_state` 则 park 也完全退化为纯开环（无冻结守卫）。
 
-`homing_via_tol`（默认 0.12 rad）+ `homing_via_hold_s`（默认 2.0 s）：HOME park **途经点防切角
-门限**（见上节）。命令到达途经点后，等实测进入 `homing_via_tol` 再推进下一段，否则实体被切角
-在 waypoint 前；等满 `homing_via_hold_s` 或实测流不可用则放行。改小 = 途经点贴得更紧（更慢）；
-改大 = 更宽松（更快）。正常跟随（稳态滞后远小于 0.12）时门限基本不介入。
+`homing_via_tol`（默认 0.12 rad）+ `homing_via_settle_s`（默认 0.5 s）+ `homing_via_hold_s`
+（默认 2.0 s）：HOME park **途经点防切角门限**（见上节）。命令到途经点后钉住重发，等**实测
+进入 `homing_via_tol` 且连续稳定 `homing_via_settle_s`**（实体真到位停下）才推进下一段——
+运动中擦过 tol 会清零重计；等待超 `homing_via_hold_s` 总上限、或实测流不可用（按纯命令驻留
+settle 时长）则放行。改小 tol / 改大 settle_s = 途经点贴得更死（更慢、更"到过位姿"）；
+改大 tol / 改小 settle_s = 更宽松（更快）。正常跟随且到位即停时门限只加 ~settle_s 的驻留。

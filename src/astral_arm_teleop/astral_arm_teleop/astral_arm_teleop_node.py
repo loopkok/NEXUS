@@ -154,12 +154,15 @@ class AstralTeleopArmNode(Node):
         # 启动 init 归位不受此守卫影响（保持改前纯开环）。
         self.declare_parameter("homing_track_state", True)
         self.declare_parameter("homing_follow_tol", 0.25)  # rad；正常跟随稳态滞后远小于此
-        # park 途经点"实体到达门限"：命令（q_cmd 纯开环）到途经点 ≠ 实体到。
+        # park 途经点"实体到位门限"：命令（q_cmd 纯开环）到途经点 ≠ 实体到。
         # 命令一到点立即反向会把实体"切角"切在 waypoint 之前（HOME 出了但没到
-        # init_waypoints 就掉头去零）。推进下一段前等实测进入 homing_via_tol；
-        # homing_via_hold_s 上限防实测长期不到位（如负载静差）卡死归零。
-        self.declare_parameter("homing_via_tol", 0.12)   # rad
-        self.declare_parameter("homing_via_hold_s", 2.0)  # s
+        # init_waypoints 就掉头去零）。推进下一段前：命令钉在途经点重发，等实测
+        # 进入 homing_via_tol 且**连续稳定 homing_via_settle_s**（实体真的停下、
+        # 到位）才放行；homing_via_hold_s 是总等待上限（防实测长期不到位卡死
+        # 归零），实测流不可用时按纯命令驻留 settle 时长后放行。
+        self.declare_parameter("homing_via_tol", 0.12)      # rad
+        self.declare_parameter("homing_via_settle_s", 0.5)  # s；实测进入 tol 后需稳定时长
+        self.declare_parameter("homing_via_hold_s", 2.0)    # s；途经点总等待上限
         self.declare_parameter(
             "init_pose", [0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00]
         )
@@ -309,8 +312,12 @@ class AstralTeleopArmNode(Node):
         )
         self._park_frozen = False
         self._homing_via_tol = float(self.get_parameter("homing_via_tol").value)
+        self._homing_via_settle_s = float(
+            self.get_parameter("homing_via_settle_s").value
+        )
         self._homing_via_hold_s = float(self.get_parameter("homing_via_hold_s").value)
         self._via_wait_t0 = None  # 途经点等待计时起点（见 _homing_tick）
+        self._via_in_tol_since = None  # 实测首次进入 tol 的时刻（连续计时）
 
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
@@ -795,6 +802,7 @@ class AstralTeleopArmNode(Node):
         self._homing = True
         self._park_frozen = False
         self._via_wait_t0 = None
+        self._via_in_tol_since = None
         self._homing_last_log = 0.0
         self._homing_last_base = None
         self.pose.reset()
@@ -1236,32 +1244,46 @@ class AstralTeleopArmNode(Node):
         err = target - base
         max_abs = float(np.max(np.abs(err)))
 
-        # park 途经点"实体到达门限"（HOME 专用；启动 init 不受影响）：
+        # park 途经点"实体到位门限"（HOME 专用；启动 init 不受影响）：
         # 命令到途经点 ≠ 实体到途经点——q_cmd 纯开环领先实测（MIT 跟踪误差 +
-        # 链路延迟），若命令一到点立即反向去下一段，实体会被"切角"切在 waypoint
-        # 之前就掉头（症状：HOME 伸出但没到 init_waypoints 就转去零位）。这里在
-        # 命令到达后钉住途经点重发，等实测也进入 homing_via_tol 再推进下一段；
-        # 实测流不可用 / 等满 homing_via_hold_s 则照旧推进（不因守卫卡死归零）。
+        # 链路延迟），命令一到点立即反向会被"切角"在 waypoint 前（症状：HOME
+        # 伸出但没到 init_waypoints 就转去零位）。放行条件 = 命令到点 **且**：
+        #   ① 实测进入 homing_via_tol 后**连续稳定 homing_via_settle_s**（实体
+        #      真正到位停下，不是运动中擦过——运动中进入 tol 时 err 还会再出
+        #      tol，连续计时会重置）；或
+        #   ② 实测流不可用 → 按纯命令驻留 settle 时长后放行（无从判断实体）；
+        #   ③ 等待超 homing_via_hold_s 总上限 → 放行（防长期不到位卡死归零）。
+        # 等待期间命令钉在途经点重发，实体在位置保持下自然到位。
         via_waiting = False
         if (
             self._homing_mode == "park"
             and not last
             and max_abs < self._init_arrive_tol
-            and self._got_state
-            and self._state_t is not None
             and self._homing_via_hold_s > 0.0
         ):
-            state_fresh = self.data_timeout <= 0.0 or (
-                now - self._state_t <= max(self.data_timeout, 1.0)
+            if self._via_wait_t0 is None:
+                self._via_wait_t0 = now
+                self._via_in_tol_since = None
+            state_fresh = self._got_state and self._state_t is not None and (
+                self.data_timeout <= 0.0
+                or (now - self._state_t <= max(self.data_timeout, 1.0))
             )
             if state_fresh:
-                if self._via_wait_t0 is None:
-                    self._via_wait_t0 = now
                 via_err = float(np.max(np.abs(self.state_q - target)))
-                via_waiting = (
-                    via_err > self._homing_via_tol
-                    and (now - self._via_wait_t0) < self._homing_via_hold_s
+                if via_err <= self._homing_via_tol:
+                    if self._via_in_tol_since is None:
+                        self._via_in_tol_since = now
+                else:
+                    self._via_in_tol_since = None  # 又出 tol：连续计时清零
+            wait_elapsed = now - self._via_wait_t0
+            if state_fresh:
+                settled = (
+                    self._via_in_tol_since is not None
+                    and (now - self._via_in_tol_since) >= self._homing_via_settle_s
                 )
+            else:
+                settled = wait_elapsed >= self._homing_via_settle_s
+            via_waiting = not settled and wait_elapsed < self._homing_via_hold_s
 
         if now - self._homing_last_log >= 2.0:
             if self._homing_mode == "park" and last:
@@ -1274,7 +1296,7 @@ class AstralTeleopArmNode(Node):
             if self._park_frozen:
                 stuck = " — 实测落后，轨迹冻结（电机未使能/堵转？）"
             elif via_waiting:
-                stuck = " — 等实测到达途经点（防切角）"
+                stuck = " — 途经点驻留：等实体到位（防切角）"
             self.get_logger().info(
                 f"[{self.side}] Homing {kind}: error={max_abs:.3f} rad, "
                 f"elapsed={elapsed:.1f}s{stuck}"
@@ -1289,11 +1311,12 @@ class AstralTeleopArmNode(Node):
                 self._publish_q()
                 return
             if via_waiting:
-                # 命令已到途经点但实体还差一截：钉住重发，等实测追近再走。
+                # 命令已到途经点但实体还没到位停稳：钉住重发，等实体到位。
                 self._publish_q()
                 return
             self._homing_i += 1
             self._via_wait_t0 = None
+            self._via_in_tol_since = None
             self.get_logger().warn(
                 f"[{self.side}] Via {self._homing_i}/{len(self._homing_path)-1} "
                 f"reached; next={np.round(self._homing_target(), 3).tolist()}"

@@ -67,11 +67,13 @@ astral_arm_teleop_left:
     # 不空跑，领先钳在 tol 内，恢复跟随后自动继续（防猛扑）。正常跟随不介入。
     homing_track_state: true
     homing_follow_tol: 0.25
-    # park（HOME）途经点"实体到达门限"：命令到 waypoint ≠ 实体到 waypoint——
+    # park（HOME）途经点"实体到位门限"：命令到 waypoint ≠ 实体到 waypoint——
     # 纯开环命令领先实测（跟踪误差+延迟），命令一到点立即反向会把实体切角在
-    # waypoint 之前（臂"出了但没到就掉头"）。推进下一段前等实测进入
-    # homing_via_tol；homing_via_hold_s 上限防实测长期不到位（负载静差）卡死。
+    # waypoint 之前（臂"出了但没到就掉头"）。命令钉在途经点重发，等实测进入
+    # homing_via_tol 且连续稳定 homing_via_settle_s（实体真到位停下）才走下一段；
+    # homing_via_hold_s 为总等待上限（防负载静差长期不到位卡死归零）。
     homing_via_tol: 0.12
+    homing_via_settle_s: 0.5
     homing_via_hold_s: 2.0
     print_latency: true
     latency_print_interval: 2.0

@@ -109,8 +109,10 @@ def _make_node():
     node._track_homing_state = True
     node._homing_follow_tol = 0.25
     node._homing_via_tol = 0.12
+    node._homing_via_settle_s = 0.5
     node._homing_via_hold_s = 2.0
     node._via_wait_t0 = None
+    node._via_in_tol_since = None
     node._park_frozen = False
     node._init_arrive_tol = 0.05
     node._init_timeout = 15.0
@@ -369,21 +371,46 @@ def _park_via_node() -> "object":
     return node
 
 
-def test_park_via_waits_until_measured_reaches():
+def test_park_via_waits_for_measured_settle_before_advancing():
     # 防切角门限：命令（q_cmd 纯开环）到途经点 ≠ 实体到。命令一到点立即反向
     # 会把实体"切角"在 waypoint 之前（症状：HOME 伸出但没到 init_waypoints 就
-    # 转去零位）。命令到点后须钉住重发，等实测进入 homing_via_tol 再推进下一段。
+    # 转去零位）。命令到点后钉住重发；实测进入 homing_via_tol 后还须**连续稳定
+    # homing_via_settle_s**（实体真到位停下，不是运动中擦过）才推进下一段。
     node = _park_via_node()
-    for i in range(50):  # ~1.0 s < homing_via_hold_s
+    for i in range(25):  # ~0.5 s：实测仍差 0.2 rad（冻结守卫内），不得推进
         node._homing_tick(now=0.1 + i * 0.02, dt=0.02)
     assert node._homing_i == 0  # 未推进到 WAY1
     assert np.allclose(node.q_cmd, INIT_Q)  # 命令钉在途经点
     assert node._homing is True
-    # 实测追近到门限内 → 推进下一段
+    # 实测进入 tol（到位）但尚未稳定满 settle_s → 仍不推进
     node.state_q = INIT_Q.copy()
-    node._homing_tick(now=2.0, dt=0.02)
+    for i in range(10):  # 0.2 s < homing_via_settle_s 0.5
+        node._homing_tick(now=0.6 + i * 0.02, dt=0.02)
+    assert node._homing_i == 0
+    # 稳定满 settle_s → 放行下一段
+    for i in range(30):  # 再 0.6 s，累计稳定 0.8 s
+        node._homing_tick(now=0.8 + i * 0.02, dt=0.02)
     assert node._homing_i == 1
     assert np.allclose(node._homing_target(), WAY1)
+
+
+def test_park_via_tol_clock_resets_when_leaving_tol():
+    # 运动中擦过途经点：实测短暂进入 tol 又离开（如过冲），稳定计时必须清零——
+    # 只有连续稳定满 settle_s 才算到位，否则仍会被"切角"。
+    node = _park_via_node()
+    node.state_q = INIT_Q + 0.08  # 0.08 ≤ tol 0.12：进入 tol
+    for i in range(10):  # 0.2 s 在 tol 内
+        node._homing_tick(now=0.1 + i * 0.02, dt=0.02)
+    assert node._homing_i == 0
+    node.state_q = INIT_Q + 0.30  # 过冲离开 tol → 计时清零
+    node._homing_tick(now=0.5, dt=0.02)
+    node.state_q = INIT_Q + 0.06  # 再回来重新计时
+    for i in range(10):  # 0.2 s（若未清零此时早该放行）
+        node._homing_tick(now=0.52 + i * 0.02, dt=0.02)
+    assert node._homing_i == 0  # 累计稳定 0.2 s < settle_s → 未放行
+    for i in range(30):  # 连续稳定满 0.8 s
+        node._homing_tick(now=0.72 + i * 0.02, dt=0.02)
+    assert node._homing_i == 1
 
 
 def test_park_via_advances_after_hold_timeout():
@@ -394,6 +421,18 @@ def test_park_via_advances_after_hold_timeout():
         node._homing_tick(now=0.1 + i * 0.02, dt=0.02)
     assert node._homing_i == 1  # 超时后放行
     assert np.allclose(node._homing_target(), WAY1)
+
+
+def test_park_via_no_state_falls_back_to_command_dwell():
+    # 实测流不可用（无 joint_states）：无从判断实体到位，按纯命令驻留
+    # homing_via_settle_s 后放行（保持开环性质，不无限等待）。
+    node = _park_via_node()
+    node._got_state = False
+    node._homing_tick(now=0.1, dt=0.02)
+    assert node._homing_i == 0  # 驻留中
+    for i in range(40):  # ~0.9 s ≥ settle_s 0.5（无实测 → 驻留计时放行）
+        node._homing_tick(now=0.12 + i * 0.02, dt=0.02)
+    assert node._homing_i == 1
 
 
 def test_init_via_advances_without_measured_gate():
@@ -426,8 +465,10 @@ def _run_all():
         test_park_resumes_when_measured_catches_up,
         test_disarm_cancels_in_progress_homing,
         test_disarm_noop_when_not_homing,
-        test_park_via_waits_until_measured_reaches,
+        test_park_via_waits_for_measured_settle_before_advancing,
+        test_park_via_tol_clock_resets_when_leaving_tol,
         test_park_via_advances_after_hold_timeout,
+        test_park_via_no_state_falls_back_to_command_dwell,
         test_init_via_advances_without_measured_gate,
     ]
     failed = 0
