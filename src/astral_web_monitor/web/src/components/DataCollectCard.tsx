@@ -194,6 +194,30 @@ export function DataCollectCard({ dc, launch }: Props) {
         </div>
       </div>
 
+      {online && (
+        <div
+          style={{
+            ...dimStyle,
+            lineHeight: 1.7,
+            borderLeft: st === 'SAVING' ? '3px solid #f59e0b' : '3px solid #4b5563',
+            paddingLeft: 8,
+          }}
+        >
+          <b style={{ color: st === 'SAVING' ? '#f59e0b' : '#e5e7eb' }}>
+            {meta.label.replace(/^● /, '')}
+          </b>
+          {'：'}
+          {st === 'IDLE' &&
+            '可开始新段（web 按钮 / A 键 / s）。保存后段号自动接续；丢弃的段若为最大号会被下一段复用。'}
+          {st === 'RECORDING' &&
+            '可停止保存 / 下一段 / 暂停 / 丢弃。VR：B=停止保存，摇杆按下=丢弃当前段（删文件不可逆，误触即丢）；键位在非法状态被静默忽略。'}
+          {st === 'PAUSED' &&
+            '缓冲已落盘、期间不录数据：可「继续」录制，或停止保存 / 丢弃当前段。'}
+          {st === 'SAVING' &&
+            '正在收尾写盘，请稍候——此期间按的开始/停止会被忽略并计入「忽略指令」，别急着操作。'}
+        </div>
+      )}
+
       {dc != null && (
         <div style={statsStyle}>
           {dc.task_next && (
@@ -223,10 +247,52 @@ export function DataCollectCard({ dc, launch }: Props) {
           )}
         </div>
       )}
+      {online && (
+        <div style={hintWrapStyle}>
+          <div style={hintTitleStyle}>操作键位与门控（web / VR / 键盘三端等价，可混用）</div>
+          <div>
+            VR 右手柄：<b style={hintKeyStyle}>A</b>=开始（仅空闲）｜
+            <b style={hintKeyStyle}>B</b>=停止保存（仅录制中）｜
+            <b style={hintKeyStyle}>摇杆按下</b>=丢弃（仅录制中，删文件不可逆）
+          </div>
+          <div>
+            键盘：<b style={hintKeyStyle}>s</b>=开始 <b style={hintKeyStyle}>q</b>=停止保存{' '}
+            <b style={hintKeyStyle}>d</b>=丢弃 <b style={hintKeyStyle}>n</b>=保存并开新段{' '}
+            <b style={hintKeyStyle}>p</b>=暂停/继续 <b style={hintKeyStyle}>t</b>=任务文本
+          </div>
+          <div>
+            门控：键位在非法状态被静默忽略（如空闲时按摇杆、保存中按 A），无副作用；需要确认弹窗的
+            破坏性操作（丢弃）请用本卡片按钮。
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
+const hintWrapStyle: React.CSSProperties = {
+  background: '#111827',
+  borderRadius: '6px',
+  padding: '8px 10px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
+  fontSize: '12px',
+  color: '#9ca3af',
+  lineHeight: 1.7,
+}
+const hintTitleStyle: React.CSSProperties = {
+  color: '#e5e7eb',
+  fontWeight: 600,
+  fontSize: '12px',
+}
+const hintKeyStyle: React.CSSProperties = {
+  color: '#e5e7eb',
+  background: '#374151',
+  borderRadius: '4px',
+  padding: '0 4px',
+  marginRight: '2px',
+}
 const cardStyle: React.CSSProperties = {
   background: '#1f2937',
   borderRadius: '8px',
