@@ -189,3 +189,107 @@ def test_low_fps_warning_published_while_recording(tmp_path, ros_context):
         node._apply("discard")
         probe.destroy_node()
         node.destroy_node()
+
+
+def test_quiet_start_warning_when_completely_empty(tmp_path, ros_context):
+    """源未就绪的空录：录制 >2s 数值/图像全 0 → state JSON 带 empty_warning；
+    丢段开新段后告警复位（段级生命周期）。"""
+    import json as _json
+    from std_msgs.msg import String as _String
+
+    node = _make(tmp_path)
+    received = []
+    probe = rclpy.create_node("probe")
+    probe.create_subscription(
+        _String, "/data_collect/state", lambda m: received.append(m.data), 10
+    )
+    try:
+        node._apply("start")
+        node._episode_start_wall = time.time() - 3.0  # 回拨墙钟，跳过 2s 等待
+        node._publish_state()
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.05)
+            rclpy.spin_once(probe, timeout_sec=0.05)
+            if received and "未收到任何样本" in received[-1]:
+                break
+        else:
+            pytest.fail("空录 2s 未出现 empty_warning")
+        assert _json.loads(received[-1])["empty_warning"]
+        # 段生命周期：丢弃 → 开新段 → 告警清空
+        node._apply("discard")
+        node._apply("start")
+        assert node._empty_warning is None
+    finally:
+        probe.destroy_node()
+        node.destroy_node()
+
+
+def test_quiet_start_warning_partial_and_healthy(tmp_path, ros_context):
+    """部分空录只告警缺失侧；有数据流入时不误报（空录检查不能打正常段）。"""
+    import numpy as np
+
+    node = _make(tmp_path)
+    try:
+        # ① 只有数值、无图像 → 图像侧告警
+        node._apply("start")
+        node._robot_writer.write(
+            "left_arm_state", np.zeros(7, dtype=np.float32), time.time()
+        )
+        node._episode_start_wall = time.time() - 3.0
+        node._publish_state()
+        assert "无图像帧" in (node._empty_warning or "")
+        node._apply("discard")
+
+        # ② 数值+图像都流入 → 不误报
+        node._apply("start")
+        node._robot_writer.write(
+            "left_arm_state", np.zeros(7, dtype=np.float32), time.time()
+        )
+        node._camera_writer.write_image("cam_a", b"\xff\xd8\xff\xe0", time.time())
+        node._episode_start_wall = time.time() - 3.0
+        node._publish_state()
+        assert node._empty_warning is None
+        assert node._quiet_start_checked  # 检查确实执行过（非因未到 2s 跳过）
+    finally:
+        node.destroy_node()
+
+
+def test_ignored_commands_counted_and_published(tmp_path, ros_context):
+    """状态不合法被吞的指令（SAVING/状态机拒绝）要计数并进 state JSON——
+    键盘/VR 无按钮 disabled 视觉，被吞的 start 必须留痕。"""
+    import json as _json
+    from std_msgs.msg import String as _String
+
+    node = _make(tmp_path)
+    received = []
+    probe = rclpy.create_node("probe")
+    probe.create_subscription(
+        _String, "/data_collect/state", lambda m: received.append(m.data), 10
+    )
+    try:
+        node._apply("start")        # RECORDING
+        node._apply("start")        # RECORDING 中再 start → 忽略
+        node._apply("pause")        # 合法 → PAUSED
+        node._apply("resume")       # 合法 → RECORDING
+        node._apply("pause")
+        node._apply("pause")        # PAUSED 中 pause → 忽略
+        node._apply("stop")         # 合法 → IDLE
+        node._apply("stop")         # IDLE 中 stop → 忽略
+        assert node._ignored_cmds == {"start": 1, "pause": 1, "stop": 1}
+        node._publish_state()
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.05)
+            rclpy.spin_once(probe, timeout_sec=0.05)
+            if received:
+                last = _json.loads(received[-1])
+                if last.get("ignored", {}).get("start") == 1:
+                    break
+        else:
+            pytest.fail("state JSON 未携带 ignored 计数")
+        last = _json.loads(received[-1])
+        assert last["ignored"] == {"start": 1, "pause": 1, "stop": 1}
+    finally:
+        probe.destroy_node()
+        node.destroy_node()

@@ -183,6 +183,12 @@ class DataCollectNode(Node):
         self._episode_index = -1
         self._episode_start_wall = 0.0
         self._pending_task = str(p("default_task", ""))
+        # 可观测性：状态不合法被忽略的指令计数（SAVING 期按 start 等；
+        # web 按钮有 disabled 视觉，键盘/VR 没有——计数进 state JSON 兜底）
+        self._ignored_cmds: dict[str, int] = {}
+        # 空录检查（段级）：录制 2s 后数值/图像仍全 0 → 告警文案，每段独立判定
+        self._empty_warning: str | None = None
+        self._quiet_start_checked = False
         self._events: list[dict[str, Any]] = []
         self._robot_writer: StreamDataWriter | None = None
         self._camera_writer: CameraDataWriter | None = None
@@ -372,26 +378,33 @@ class DataCollectNode(Node):
                 self.get_logger().error(f"cmd {cmd} failed: {exc}")
         self._publish_state()
 
+    def _reject(self, cmd: str, st: str) -> None:
+        """状态不合法被忽略的指令：计数入 state JSON（混用控制面时被吞的
+        按键可见）+ WARN。IDLE 期的误按不算数据问题，但 SAVING 期被吞的
+        start 会让操作者以为已开录——需要留痕。"""
+        self._ignored_cmds[cmd] = self._ignored_cmds.get(cmd, 0) + 1
+        self.get_logger().warning(f"{cmd} ignored in state {st}")
+
     def _apply(self, cmd: str) -> None:
         st = self._state
         if cmd == "start":
             if st != STATE_IDLE:
-                self.get_logger().warning(f"start ignored in state {st}")
+                self._reject("start", st)
                 return
             self._begin_episode()
         elif cmd == "stop":
             if st not in (STATE_RECORDING, STATE_PAUSED):
-                self.get_logger().warning(f"stop ignored in state {st}")
+                self._reject("stop", st)
                 return
             self._end_episode(save=True)
         elif cmd == "discard":
             if st not in (STATE_RECORDING, STATE_PAUSED):
-                self.get_logger().warning(f"discard ignored in state {st}")
+                self._reject("discard", st)
                 return
             self._end_episode(save=False)
         elif cmd == "next":
             if st not in (STATE_RECORDING, STATE_PAUSED):
-                self.get_logger().warning(f"next ignored in state {st}")
+                self._reject("next", st)
                 return
             self._end_episode(save=True)
             self._begin_episode()
@@ -400,10 +413,14 @@ class DataCollectNode(Node):
                 self._drain_buffers()  # 暂停前落盘已缓冲数据
                 self._state = STATE_PAUSED
                 self._events.append({"t": time.time(), "name": "pause", "data": True})
+            else:
+                self._reject("pause", st)
         elif cmd == "resume":
             if st == STATE_PAUSED:
                 self._state = STATE_RECORDING
                 self._events.append({"t": time.time(), "name": "pause", "data": False})
+            else:
+                self._reject("resume", st)
 
     # -- episode 生命周期 ---------------------------------------------------------
 
@@ -440,6 +457,9 @@ class DataCollectNode(Node):
 
     def _begin_episode(self) -> None:
         self._episode_index, self._episode_dir = self._claim_episode_dir()
+        # 空录检查每段独立：告警复位、检查旗标复位
+        self._empty_warning = None
+        self._quiet_start_checked = False
         # 防御性清空（回调已被 _accepting 门控，此处防状态竞态残留）；
         # 丢弃计数按段归零（meta.json 的 dropped 是段级 provenance）
         with self._buf_lock:
@@ -517,6 +537,7 @@ class DataCollectNode(Node):
 
         self._episode_dir = None
         self._episode_index = -1
+        self._empty_warning = None  # 段结束清空告警（否则 IDLE 期卡片仍挂红条）
         self._state = STATE_IDLE
 
     # -- 写盘线程 ------------------------------------------------------------------
@@ -583,6 +604,31 @@ class DataCollectNode(Node):
             **{f"cam:{k}": v for k, v in cam_counts.items()},
         }
         low_fps = _low_fps_warning(st, rates, self._schema)
+        if (
+            st == STATE_RECORDING
+            and elapsed >= 2.0
+            and not self._quiet_start_checked
+        ):
+            # 启动 2s 空录检查（段级一次性，阈值对齐 validate F5 的 2s）：
+            # low_fps 只盯参考相机实率半速，管不到"源未就绪全 0"的空录。
+            self._quiet_start_checked = True
+            n_stream = sum(stream_counts.values())
+            n_cam = sum(cam_counts.values())
+            if n_stream == 0 and n_cam == 0:
+                self._empty_warning = (
+                    "录制 2s 未收到任何样本（数值/图像均 0）——"
+                    "遥操作与相机链路可能都未就绪（是否忘了 armed？）"
+                )
+            elif n_stream == 0:
+                self._empty_warning = (
+                    "录制 2s 无数值样本（关节/末端流全 0）——teleop 未在发布？"
+                )
+            elif n_cam == 0:
+                self._empty_warning = (
+                    "录制 2s 无图像帧（相机流全 0）——相机抽头未在发布？"
+                )
+            if self._empty_warning:
+                self.get_logger().warning(f"EMPTY-REC: {self._empty_warning}")
         payload = {
             "state": st,
             "session": self._session,
@@ -593,6 +639,8 @@ class DataCollectNode(Node):
             "dropped": dict(self._drop_counts),
             "schema": self._schema.to_dict(),
             "low_fps_warning": low_fps,
+            "empty_warning": self._empty_warning,
+            "ignored": dict(self._ignored_cmds),
         }
         if low_fps:
             self.get_logger().warning(

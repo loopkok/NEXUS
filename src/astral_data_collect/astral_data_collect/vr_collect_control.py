@@ -1,9 +1,9 @@
 """VR 采集控制：右手柄按键 → /data_collect/control 命令。
 
 单人数据采集时手不离手柄即可控制录制（键盘控制器的手动替代）：
-  Quest 右手柄  摇杆按下 → start（开始录制/开新段，仅 IDLE 有效）
-                A 键    → next（保存当前段并立即开新段，仅录制中有效）
-                B 键    → stop（结束并保存当前段，仅录制中有效）
+  Quest 右手柄  A 键      → start（开始录制，仅 IDLE 有效）
+                B 键      → stop（结束并保存当前段，仅录制中有效）
+                摇杆按下  → discard（丢弃当前段，仅录制中有效）
 
 上升沿触发（长按不重复）；本地按 /data_collect/state 做状态门控——非法状态或
 采集节点未运行（未收到 state）时按键静默忽略（info 日志），不给采集节点发
@@ -50,11 +50,11 @@ _SENSOR_QOS = QoSProfile(
     depth=1,
 )
 
-# 命令 → 触发键名（start/next/stop 与三个键一一对应，见 vr_collect_logic）
+# 命令 → 触发键名（start/stop/discard 与三个键一一对应，见 vr_collect_logic）
 _CMD_BTN_NAMES = {
-    "start": "摇杆按下",
-    "next": "A 键",
+    "start": "A 键",
     "stop": "B 键",
+    "discard": "摇杆按下",
 }
 _BTN_NAMES = {
     BUTTON_STICK_PRESS: "摇杆按下",
@@ -78,7 +78,7 @@ class VrCollectControl(Node):
         )
         self._prev_buttons: list[int] = [0] * 6
         self.get_logger().info(
-            "VR 采集控制就绪：右手柄 摇杆按下=start  A=next  B=stop&save"
+            "VR 采集控制就绪：右手柄 A=start  B=stop&save  摇杆按下=discard"
             "（订 quest3/right_controller_joy + /data_collect/state）"
         )
 

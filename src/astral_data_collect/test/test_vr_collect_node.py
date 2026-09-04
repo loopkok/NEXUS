@@ -3,6 +3,8 @@
 覆盖真实话题契约：/data_collect/state（latched）驱动门控、
 quest3/right_controller_joy → /data_collect/control 命令序列。
 需 ROS 源环境运行；无 ROS 时整文件 skip。
+
+当前映射：A=start（仅 IDLE）、B=stop&save（录制中）、摇杆按下=discard（录制中）。
 """
 
 import os
@@ -95,33 +97,33 @@ class _Harness:
         self.node.destroy_node()
 
 
-def test_idle_stick_press_starts_a_next_b_gated(ros_context):
+def test_idle_a_starts_b_and_stick_gated(ros_context):
     h = _Harness()
     try:
         h.set_state("IDLE")
-        h.press(BUTTON_STICK_PRESS)
-        assert h.received == ["start"]
-        # IDLE 下 A/B 不发命令
         h.press(BUTTON_A)
+        assert h.received == ["start"]
+        # IDLE 下 B/摇杆不发命令（无段可停/可丢）
         h.press(BUTTON_B)
+        h.press(BUTTON_STICK_PRESS)
         assert h.received == ["start"]
     finally:
         h.destroy()
 
 
-def test_recording_a_next_b_stop_stick_gated(ros_context):
+def test_recording_b_stop_stick_discard_a_gated(ros_context):
     h = _Harness()
     try:
         h.set_state("IDLE")
-        h.press(BUTTON_STICK_PRESS)
+        h.press(BUTTON_A)
         assert h.received == ["start"]
         h.set_state("RECORDING")
-        h.press(BUTTON_A)
-        h.press(BUTTON_B)
-        assert h.received == ["start", "next", "stop"]
-        # 录制中摇杆按下被门控（不重复 start）
         h.press(BUTTON_STICK_PRESS)
-        assert h.received == ["start", "next", "stop"]
+        h.press(BUTTON_B)
+        assert h.received == ["start", "discard", "stop"]
+        # 录制中 A 键被门控（不重复 start）
+        h.press(BUTTON_A)
+        assert h.received == ["start", "discard", "stop"]
     finally:
         h.destroy()
 
@@ -130,7 +132,7 @@ def test_hold_does_not_repeat(ros_context):
     h = _Harness()
     try:
         h.set_state("IDLE")
-        h.press(BUTTON_STICK_PRESS, hold=True)
+        h.press(BUTTON_A, hold=True)
         assert h.received == ["start"]
     finally:
         h.destroy()

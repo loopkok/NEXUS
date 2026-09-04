@@ -113,6 +113,11 @@ export function DataCollectCard({ dc, launch }: Props) {
           {dc.low_fps_warning}
         </div>
       )}
+      {online && dc?.empty_warning && (
+        <div style={offlineStyle}>
+          {dc.empty_warning}
+        </div>
+      )}
 
       {online && (dc?.node_count ?? 1) > 1 && (
         <div style={offlineStyle}>
@@ -204,6 +209,16 @@ export function DataCollectCard({ dc, launch }: Props) {
           {dropped.length > 0 && (
             <span style={dropChipStyle}>
               掉帧: {dropped.map(([k, v]) => `${k}×${v}`).join(' ')}
+            </span>
+          )}
+          {dc.ignored && Object.entries(dc.ignored).some(([, v]) => v > 0) && (
+            <span style={chipStyle}>
+              忽略指令:{' '}
+              <b>
+                {Object.entries(dc.ignored)
+                  .map(([k, v]) => `${k}×${v}`)
+                  .join(' ')}
+              </b>
             </span>
           )}
         </div>

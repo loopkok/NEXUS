@@ -64,9 +64,10 @@ ros2 run astral_data_collect keyboard_controller
 ```
 
 **VR 手柄控制（默认随 data_collect.launch.py 同启，`vr_control:=false` 可关）**：
-单人采集手不离 Quest 手柄即可控制录制——**右手柄 摇杆按下=开始录制**（仅 IDLE 有效）、
-**A 键=下一段**（保存当前段并立即开新段，仅录制中有效）、**B 键=停止保存**（仅录制中有效）。
-按键上升沿触发（长按不重复）；采集节点未运行或状态不合法时按键静默忽略（节点 info 日志说明）。
+单人采集手不离 Quest 手柄即可控制录制——**右手柄 A 键=开始录制**（仅 IDLE 有效）、
+**B 键=停止保存**（仅录制中有效）、**摇杆按下=丢弃当前段**（删除文件并回 IDLE，
+仅录制中有效，误按即丢——需要确认的破坏性操作请走 web 卡片）。按键上升沿触发
+（长按不重复）；采集节点未运行或状态不合法时按键静默忽略（节点 info 日志说明）。
 需遥操链路 `quest3_hand_mocap` 在发布 `quest3/right_controller_joy`（mocap 没跑则无动作）。
 
 **web 端操作（推荐）**：「监控」tab 顶部数据采集卡片右上角**启动/重启/停止节点**
@@ -87,6 +88,12 @@ ros2 run astral_data_collect keyboard_controller
 - **低帧率告警**：录制中参考相机（`cameras[0]`）实率低于 `dataset_fps` 一半时，
   state JSON 带 `low_fps_warning`、节点日志 5s 节流 WARN、web 卡片红条提示——
   开录后瞄一眼卡片即可发现相机链路异常。
+- **空录告警**：录制启动约 2s 数值/图像仍全 0 → state JSON `empty_warning` +
+  节点 `EMPTY-REC` WARN + web 红条。low_fps 只管参考相机半速，管不到"源未就绪
+  全 0"的空录（忘了 armed/teleop 没发布/抽头没开）；每段独立判定、段结束清空。
+- **吞指令留痕**：状态不合法被忽略的指令（如 SAVING 期按 start）计数入 state JSON
+  `ignored` + web 卡片 chip——web 按钮有 disabled 视觉，键盘/VR 没有，靠它发现
+  "以为开了实际没录"。
 
 热键：`s` 开始 / `q` 停止保存 / `d` 丢弃当前段 / `n` 保存并开新段 /
 `p` 暂停继续 / `t` 输入下一段任务文本 / `ESC` 退出键盘（不影响采集）。
@@ -122,7 +129,9 @@ ros2 run astral_data_collect replay_rerun -- --session ~/astral_data/pick_place 
 ```
 
 一键脚本 `astral_ws/scripts/vla_process_session.sh` 可串起 ①→②→③
-（加 `--act-output <dir>` 再跑 ③b）。
+（加 `--act-output <dir>` 再跑 ③b）。**默认把校验失败段隔离到 `session/quarantine/`**
+（移动不删除，可逆）；隔离后仍有 fail 段会中止转换——防坏段进训练集。
+确认过报告想放行旧行为：`--no-quarantine`（旧 `--apply-quarantine` 兼容保留）。
 
 校验规则（fail 必须处理 / warn 人工过目）：F1 文件缺失、F2 流缺失或为空、
 F3 NaN/Inf、F4 时间戳非递增、F5 时长 <2s；W1 频率不足、W2 采样空洞、

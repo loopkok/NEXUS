@@ -61,6 +61,11 @@ export interface DataCollectState {
   dropped: Record<string, number>
   // 录制期参考相机实率低于 dataset_fps 一半时的告警文案（无告警为 null）
   low_fps_warning?: string | null
+  // 录制启动 ~2s 数值/图像全 0（源未就绪空录）的告警文案（无告警为 null）
+  empty_warning?: string | null
+  // 状态不合法被忽略的控制指令计数（如 SAVING 期按 start；键盘/VR 无
+  // disabled 视觉，靠它留痕）
+  ignored?: Record<string, number>
   // monitor 后端加注：/data_collect/state 发布者数量（>1 = 有残留/双开节点）
   node_count?: number
   schema?: Record<string, unknown>

@@ -37,7 +37,7 @@ astral_data_collect/
 │                              convert_dataset_v21_to_v30 的布局语义（源 v2.1 目录只读）
 ├── replay_rerun.py        ← 离线④：Rerun 可视化回放（图像+曲线+时间轴）
 ├── keyboard_controller.py ← 热键控制（s/q/d/n/p/t），与 web/话题三面等价
-├── vr_collect_control.py  ← VR 采集控制：右手柄 摇杆按下=start / A=next / B=stop&save
+├── vr_collect_control.py  ← VR 采集控制：右手柄 A=start / B=stop&save / 摇杆按下=discard
 │                             （上升沿 + 按 /data_collect/state 门控，随采集泳道同启）
 ├── vr_collect_logic.py    ← 上述按键→命令的纯决策（无 ROS，可离线单测）
 └── config/data_collect.yaml ← 所有参数的唯一默认值来源（launch 默认空串，显式传参才覆盖）

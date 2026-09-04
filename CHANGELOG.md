@@ -6,6 +6,16 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**VR 采集控制改键：A=开始 / B=停止保存 / 摇杆按下=丢弃**——`astral_data_collect`。
+上一版键位（摇杆=start / A=next）实机试用手感不合，用户改配：**A 键(IDLE) → start；
+B 键(录制中) → stop&save；摇杆按下(录制中) → discard**（删除当前段并回 IDLE，语义同
+键盘 `d`）。上升沿 + 状态门控机制不变（同帧多键：低号键优先、非法跳过）；`discard` 是
+破坏性操作（删文件无确认），门控保证 IDLE 下误按摇杆不动作。**验证**：`test_vr_collect_control.py`
+重写 12 例全绿（A/IDLE=start、摇杆/RECORDING=discard、B 不变、三态门控、同帧 A+B→start/
+stop 与 摇杆+A→discard 的优先级、长按不重复）；`test_vr_collect_node.py` 集成 3 例全绿
+（IDLE: A→start、B/摇杆门控；RECORDING: 摇杆→discard、B→stop、A 门控）。README/CLAUDE.md/
+launch 注释同步新键位。
+
 **遥操加"硬跟人肘"模式（human_elbow_mode=hard）+ astral_pim_ik 录制转换器——"训练臂角复现人手姿态"链路打通**——
 `astral_arm_teleop` × `astral_pim_ik`。**动机**：用户要最终训练出的臂角符合人手 Quest3 增量遥操姿态
 （无肘跟踪也运行）；遥操原本的 `use_human_elbow` 只是 ψ_human 软先验（w=2.0 与 w_vel=1.0 连续性混合
@@ -111,6 +121,29 @@ SDK `one_click_ready` 签名向后兼容（旧调用不带参行为不变）。
 伸直极限才挡）；`motion_scale` 0.8→**1.0**（VR 位姿增量 1:1 无缩放）；`rot_smoothing`
 0.25→**0.35**（旋转低通加强，τ≈14→19 ms @50 Hz）。`arm_teleop` README 参数默认值说明
 同步为当前值。
+
+**数采"坏段默认隔离 + 空录/吞指令在线告警"——堵坏数据进训练集的通路**——
+`astral_data_collect` × `astral_web_monitor` × `scripts/vla_process_session.sh`。
+**动机**：对抗性审查 start→stop→start→stop 边界时序（逐拍验证端头/端尾/接缝均干净：
+尾部先 drain 后 close 不丢帧、头部清缓冲+门控不收旧数据、缝内帧按段独立对齐零伪影），
+真正毒化通路在别处——①一条龙 validate **默认不隔离** fail 段（align 的 too-short 阈值
+仅 `n_frames < 2`≈33ms，0.5~2s 短段/体检差段直接进转换产物进训练集）；②源未就绪空录
+无即时告警（low_fps 只管参考相机半速，管不到数值/图像全 0）；③SAVING 期被吞的 start
+无留痕（web 按钮有 disabled 视觉，键盘/VR 没有——"以为开了实际没录"）。**做法**：
+①`vla_process_session.sh` validate 默认 `--apply`（fail 段移入 `session/quarantine/`，
+移动不删除可逆；旧 `--apply-quarantine` 兼容 no-op），隔离后仍有 fail 即 `exit 1`
+中止转换；`--no-quarantine` 显式放行旧行为；②节点录制启动 ~2s 空录检查（段级一次性，
+阈值对齐 F5）：数值/图像全 0→"未收到任何样本"、无数值→teleop 未发布、无图像→抽头
+未发布，进 state JSON `empty_warning` + 节点 `EMPTY-REC` WARN + web 红条（begin 复位/
+end 清空）；③状态机拒绝的指令计数入 state JSON `ignored`（start/stop/discard/next/
+pause/resume 六键；pause/resume 原静默 no-op 现也计数留痕）；④web 卡片新增
+`empty_warning` 红条 + `ignored` 忽略指令 chip，`types.ts` 同步（`mapUiState` 整对象
+透传无需改）。**验证**：`test_node_guards.py` 9→**12 例**全绿——空录全空 e2e 订阅
+`/data_collect/state` 断言 JSON 带 `empty_warning` 且丢段后复位、部分缺失只告警缺失侧
+（有数值无图像→图像文案）、数值+图像流入不误报（`_quiet_start_checked` 确认检查真执行）、
+吞指令计数 `{"start":1,"pause":1,"stop":1}` 进 JSON；`test_collect_smoke.py` 2 例通过；
+前端 `npm run build`（tsc+vite）通过、dist 重建。机器人侧无需重装（脚本/话题/前端改动），
+web 新 dist 需同步部署机。
 
 ## 2026-09-03
 
