@@ -130,6 +130,10 @@ TOPIC_START = "/teleop/start"
 # init_pose → init_waypoints → 零位。同样 volatile——晚启动节点不得被
 # 历史 HOME 信号误触发（与 /teleop/start 同理）。
 TOPIC_HOME = "/teleop/home"
+# One-shot 工作位 / go-to-init trigger (both arm nodes): 当前位姿 →
+# init_waypoints → init_pose。启动不再自动归位（move_to_init_pose=false），
+# 回工作位靠本信号手动触发。同样 volatile——晚启动节点不得被历史信号误触发。
+TOPIC_INIT = "/teleop/init"
 
 # --- Driver ROS services (call, robot hardware mode) -----------------------
 # These services already exist on astral_robot_control's driver node. Calling

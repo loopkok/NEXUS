@@ -40,6 +40,9 @@ export const api = {
   teleopStart: () => post<unknown>('/api/v1/teleop/start'),
   // HOME / park-to-zero：双臂沿 init_pose → init_waypoints → 零位 收回（先使能电机）
   teleopHome: () => post<unknown>('/api/v1/teleop/home'),
+  // 工作位 / go-to-init：双臂沿 init_waypoints → init_pose 走到初始工作位
+  // （启动自动归位已关闭，回工作位靠此按钮手动触发）
+  teleopWorkpos: () => post<unknown>('/api/v1/teleop/workpos'),
   restart: () => post<unknown>('/api/v1/restart'),
   // Robot hardware mode (driver services — real hardware actions)
   robotReady: () => post<unknown>('/api/v1/robot/ready'),

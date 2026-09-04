@@ -295,6 +295,33 @@ ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
 
 默认值：**真机 yaml `require_start_signal: true`**（启动推流后手摆好再发 start）；**sim 同样默认 true**（launch arg 默认 `""` 透传 yaml）。yaml `require_start_signal` 或 launch arg 都可覆盖（launch arg 非空时覆盖 yaml）。
 
+> **启动不再自动归位**（左右 yaml `move_to_init_pose: false`，2026-09-04 起）：节点启动只把
+> 控制环拉起来，**不**自动走 init_waypoints → init_pose。要回初始工作位请用 web「工作位」
+> 按钮（或 `/teleop/init` / `~/init`，见下节）。置 `move_to_init_pose: true`（或 CLI launch
+> 透传覆盖）恢复启动自动归位。
+>
+> **直接从任意位姿 `/teleop/start` 也安全**：臂节点知道自己没到过工作位（`_at_init_pose`
+> 标志），start 时会把机器人原点**重锚到当前实测关节角**（与 `~/reanchor` 同一逻辑），
+> 遥操从实际位姿纯增量开始，不会向启动位 FK 锚点跳变。
+
+## 工作位（去初始位 / go-to-init）
+
+把双臂从**当前位姿**慢速走到**初始工作位 init_pose**，路径：**init_waypoints → init_pose**
+（与启动自动归位同一条 init 轨迹机；不加 park 的途经点门控——实测没动也不卡）。动作前先
+disarm；到 init_pose 后保持并锚 VR 原点，之后可 `/teleop/start` 开始遥操。入口（任选）：
+
+```bash
+# 全局，双臂同启（web「工作位」按钮即此）
+ros2 topic pub --once /teleop/init std_msgs/msg/Bool '{data: true}'
+
+# 单臂 + 带反馈
+ros2 service call /astral_arm_teleop_left/init  std_srvs/srv/Trigger
+ros2 service call /astral_arm_teleop_right/init std_srvs/srv/Trigger
+```
+
+> 轨迹要求电机上电（位置模式才生效）；与 HOME 不同，本按钮**不**自动调 `~/enable`
+> （web 端设计如此）——冷启动/急停后请先「一键就绪」再按工作位。
+
 ## HOME（归位到零 / park-to-zero）
 
 把双臂从**当前位姿**安全收回零位，路径：**init_pose → init_waypoints（倒序逐点）→ 零位**，

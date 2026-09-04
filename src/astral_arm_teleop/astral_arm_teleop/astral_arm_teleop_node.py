@@ -318,6 +318,11 @@ class AstralTeleopArmNode(Node):
         self._homing_via_hold_s = float(self.get_parameter("homing_via_hold_s").value)
         self._via_wait_t0 = None  # 途经点等待计时起点（见 _homing_tick）
         self._via_in_tol_since = None  # 实测首次进入 tol 的时刻（连续计时）
+        # 节点是否已"到达初始工作位"（init 归位 arrived）或仍锚在启动位。
+        # 启动不再自动归位（move_to_init_pose=false 由 web「工作位」触发）后，
+        # 臂可能从任意位直接 /teleop/start——此时须先把机器人原点重锚到当前
+        # 实测，否则首帧会向启动 init 锚点跳变（见 _start_teleop 守卫）。
+        self._at_init_pose = False
 
         R = self._vr_to_arm_yaml.copy()
         if self._flip_needed:
@@ -410,6 +415,12 @@ class AstralTeleopArmNode(Node):
         # /teleop/start：晚启动节点不得被历史 HOME 信号误触发。
         self.create_subscription(Bool, "/teleop/home", self._on_home, 10)
         self.create_service(Trigger, "~/home", self._home_srv)
+        # 工作位 / go-to-init：启动不再自动归位（web「工作位」按钮手动触发），
+        # 从当前位姿沿 init_waypoints → init_pose 走启动同款 init 轨迹，到点
+        # 保持并锚 VR 原点。入口与 HOME 对称：/teleop/init 全局一次性信号 +
+        # ~/init 单臂服务。VOLATILE：晚启动节点不得被历史信号误触发。
+        self.create_subscription(Bool, "/teleop/init", self._on_init, 10)
+        self.create_service(Trigger, "~/init", self._init_srv)
 
         self._state_t: Optional[float] = None
         self._last_vr_t = 0.0
@@ -749,6 +760,16 @@ class AstralTeleopArmNode(Node):
             msg = "calibrate failed (no VR pose)"
             self.get_logger().warn(f"[{self.side}] start: {msg}")
             return False, msg
+        if not self._at_init_pose:
+            # 启动不再自动归位（工作位改由 web「工作位」/~/init 触发）后，臂
+            # 可能从任意位姿直接 start：若不重锚，遥操增量目标相对启动位 FK
+            # 锚点计算，首帧会整体向旧 init 锚点跳变。把原点重锚到当前实测，
+            # 遥操从实际位姿纯增量开始（与 HITL ~/reanchor 同一重锚逻辑）。
+            src = self._anchor_origin_to_measured()
+            self.get_logger().warn(
+                f"[{self.side}] START: 臂不在初始工作位——原点重锚到 {src}，"
+                "遥操从当前位姿纯增量开始；建议先用「工作位」移到 init_pose"
+            )
         self._armed = True
         self._disarm_reason = None
         self.get_logger().warn(
@@ -813,6 +834,86 @@ class AstralTeleopArmNode(Node):
         )
         return True, "HOME 已启动 (init_pose → init_waypoints → 零位)"
 
+    def _on_init(self, msg: Bool) -> None:
+        # One-shot level guard (mirrors /teleop/home): only Bool(true) triggers.
+        if msg.data:
+            self._go_init()
+
+    def _init_srv(
+        self, _req: Trigger.Request, resp: Trigger.Response
+    ) -> Trigger.Response:
+        ok, message = self._go_init()
+        resp.success = ok
+        resp.message = message
+        return resp
+
+    def _go_init(self):
+        """工作位 / go-to-init：从当前位姿慢速走 init_waypoints → init_pose。
+
+        启动自动归位（move_to_init_pose）改由外部（web「工作位」按钮 /
+        /teleop/init / ~/init）手动触发后的同一条 init 轨迹机：动作前先
+        disarm（若在遥操/armed），期间忽略 VR/start；到 init_pose 后保持并
+        把 _at_init_pose 置位，之后可 /teleop/start 开始遥操。与启动自动
+        归位共用 _homing_* 机器，不加 park 的途经点门控/冻结守卫（实测没动
+        不能卡住去工作位——与启动 init 一致）。
+        """
+        if self._homing:
+            msg = "homing/park already in progress; wait until it finishes"
+            self.get_logger().warn(f"[{self.side}] init: {msg}")
+            return False, msg
+        self._armed = False
+        if self._disarm_reason != "fault":
+            self._disarm_reason = "operator"
+        self._homing_mode = "init"
+        # init 路径 = init_waypoints 正序 → init_pose（与启动自动归位同款）。
+        self._homing_path = self._parse_init_waypoints() + [
+            self._init_q_hw.copy()
+        ]
+        self._homing_i = 0
+        self._homing_started = False
+        self._homing_seeded = False
+        self._homing = True
+        self._park_frozen = False
+        self._via_wait_t0 = None
+        self._via_in_tol_since = None
+        self._homing_last_log = 0.0
+        self._homing_last_base = None
+        self.pose.reset()
+        self.get_logger().warn(
+            f"[{self.side}] WORKPOS: disarm + move to init_pose via "
+            f"{len(self._parse_init_waypoints())} waypoint(s) "
+            f"({self._init_joint_vel:.2f} rad/s)"
+        )
+        return True, "工作位已启动 (init_waypoints → init_pose)"
+
+    def _anchor_origin_to_measured(self) -> str:
+        """把机器人原点（robot_init_pos/rot + ik/safety 初始位）重锚到当前实测。
+
+        返回源描述（"measured joint state" / "last commanded q"）。用于：
+        HOME park 后、或启动未自动归位时从任意位姿直接 /teleop/start 的守卫
+        ——避免遥操增量目标相对启动位 FK 锚点算，首帧向旧锚点跳变。
+        """
+        state_fresh = self._got_state and (
+            self.data_timeout <= 0.0
+            or (
+                self._state_t is not None
+                and time.monotonic() - self._state_t <= self.data_timeout
+            )
+        )
+        q_hw = np.asarray(
+            self.state_q if state_fresh else self.q_cmd, dtype=float
+        ).reshape(7)
+        q_ik = np.clip(
+            self._flip_q(q_hw), self.ik.lower_limits + 0.02, self.ik.upper_limits - 0.02
+        )
+        self.ik.sync_state(q_ik)
+        T0 = self.ik.fk(q_ik)
+        self.robot_init_pos = T0[:3, 3].copy()
+        self.robot_init_rot = T0[:3, :3].copy()
+        self.q_cmd = q_hw
+        self.safety.set_initial_state(q_ik, self.robot_init_pos)
+        return "measured joint state" if state_fresh else "last commanded q"
+
     def _on_state(self, msg: JointState) -> None:
         if len(msg.position) >= 7:
             self.state_q = np.asarray(msg.position[:7], dtype=float)
@@ -847,27 +948,13 @@ class AstralTeleopArmNode(Node):
             msg = "no VR wrist pose yet; start Quest stream, place hand, then re-anchor"
             self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
             return False, msg
-        state_fresh = self._got_state and (
-            self.data_timeout <= 0.0
-            or (self._state_t is not None and time.monotonic() - self._state_t <= self.data_timeout)
-        )
-        q_hw = np.asarray(self.state_q if state_fresh else self.q_cmd, dtype=float).reshape(7)
-        q_ik = np.clip(
-            self._flip_q(q_hw), self.ik.lower_limits + 0.02, self.ik.upper_limits - 0.02
-        )
-        self.ik.sync_state(q_ik)
-        T0 = self.ik.fk(q_ik)
-        self.robot_init_pos = T0[:3, 3].copy()
-        self.robot_init_rot = T0[:3, :3].copy()
-        self.q_cmd = q_hw
-        self.safety.set_initial_state(q_ik, self.robot_init_pos)
+        src = self._anchor_origin_to_measured()
         if not self.pose.calibrate_from_current():
             msg = "re-anchor failed (no VR pose for zero capture)"
             self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
             return False, msg
         self._armed = True
         self._disarm_reason = None
-        src = "measured joint state" if state_fresh else "last commanded q"
         self.get_logger().warn(
             f"[{self.side}] REANCHOR: robot origin ← FK({src}) "
             f"{np.round(self.robot_init_pos, 3).tolist()}, vr_init ← current pose, armed"
@@ -1172,6 +1259,27 @@ class AstralTeleopArmNode(Node):
         self.safety.set_initial_state(self._flip_q(self.q_cmd), self.robot_init_pos)
         self.pose.reset()
         self._homing = False
+        if reason == "arrived":
+            # 实体真到工作位才置位：电机未使能时命令"内部空跑"到 init_pose 但
+            # 实体没动——只凭命令到达置位会让后续 /teleop/start 误用启动锚点
+            # 跳变。要求实测新鲜且距 init_pose 在 homing_follow_tol 内。
+            state_fresh = self._got_state and self._state_t is not None and (
+                self.data_timeout <= 0.0
+                or (
+                    time.monotonic() - self._state_t
+                    <= max(self.data_timeout, 1.0)
+                )
+            )
+            if state_fresh and float(
+                np.max(np.abs(self.state_q - self._init_q_hw))
+            ) <= max(self._homing_follow_tol, 0.05):
+                self._at_init_pose = True
+            else:
+                self._at_init_pose = False
+                self.get_logger().warn(
+                    f"[{self.side}] init 命令已到 init_pose 但实测不在"
+                    f"（电机未使能？）——/teleop/start 将把原点重锚到当前实测"
+                )
         elapsed = now - self._homing_t0 if self._homing_t0 else 0.0
         self.get_logger().warn(
             f"[{self.side}] Initial pose reached ({reason}, {elapsed:.1f}s). "

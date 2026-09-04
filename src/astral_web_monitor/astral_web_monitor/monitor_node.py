@@ -128,6 +128,9 @@ class MonitorNode(Node):
         # One-shot HOME / park-to-zero trigger (volatile, same rationale as
         # TOPIC_START: a latched HOME would auto-park late-joining arm nodes).
         self._pub_home = self.create_publisher(Bool, TOPIC_HOME, start_qos)
+        # One-shot 工作位 / go-to-init trigger (volatile, same rationale):
+        # 启动不再自动归位，回 init_pose 靠 web「工作位」按钮手动触发。
+        self._pub_init = self.create_publisher(Bool, TOPIC_INIT, start_qos)
 
         # Video gate: latched active-cameras publisher + gate_state mirror.
         self._pub_video_cameras = self.create_publisher(String, VIDEO_TOPIC_CAMERAS, qos)
@@ -483,6 +486,15 @@ class MonitorNode(Node):
         warning, so publishing unconditionally is safe (mirrors publish_start).
         """
         self._pub_home.publish(Bool(data=True))
+
+    def publish_init(self) -> None:
+        """One-shot /teleop/init: both arm nodes move to the work position
+        (init_waypoints → init_pose) — 启动自动归位的按需替代（工作位按钮）。
+
+        The arm nodes are the authority: they reject while homing/busy and log a
+        warning, so publishing unconditionally is safe (mirrors publish_start).
+        """
+        self._pub_init.publish(Bool(data=True))
 
     # --- driver service calls (hardware mode) -----------------------------
     # The driver node (astral_robot_control) already exposes Trigger services

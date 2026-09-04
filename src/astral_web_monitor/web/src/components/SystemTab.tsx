@@ -64,6 +64,17 @@ export function SystemTab({ state, presets, onAction }: Props) {
             重启
           </button>
           <button
+            style={workposBtn}
+            title="启动不再自动归位：让双臂沿 init_waypoints → init_pose 慢速走到初始工作位"
+            disabled={!canRestart}
+            onClick={() => {
+              if (!confirm('确认移到工作位？双臂将从当前位姿经 init_waypoints 走到 init_pose（期间会 disarm，需重新开始遥操再操作）')) return
+              void run(() => api.teleopWorkpos(), '工作位已下发')
+            }}
+          >
+            工作位
+          </button>
+          <button
             style={homeBtn}
             title="先确保电机使能，再让双臂沿 init_pose → init_waypoints → 零位 慢速收回"
             disabled={!canRestart}
@@ -157,6 +168,17 @@ const estopBtn: React.CSSProperties = {
   fontSize: '13px',
   fontWeight: 800,
   cursor: 'pointer',
+}
+const workposBtn: React.CSSProperties = {
+  background: '#0ea5e9',
+  color: 'white',
+  border: 'none',
+  borderRadius: '6px',
+  padding: '7px 16px',
+  fontSize: '13px',
+  fontWeight: 600,
+  cursor: 'pointer',
+  marginLeft: '4px',
 }
 const homeBtn: React.CSSProperties = {
   background: '#7c3aed',

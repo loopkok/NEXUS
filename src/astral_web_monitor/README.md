@@ -5,7 +5,7 @@
 **不修改任何现有功能包的控制面**（只调用/订阅各包自己暴露的接口）。只做五件事：
 
 1. **只读订阅**现有关节话题（`joint_states` / `joint_commands`）
-2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复/急停）、`/teleop/start`（外部启动闸门）、`/teleop/home`（HOME 归位到零）
+2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复/急停）、`/teleop/start`（外部启动闸门）、`/teleop/home`（HOME 归位到零）、`/teleop/init`（工作位）
 3. **subprocess 启停** `ros2 launch`（与命令行操作等价）
 4. **只读健康巡检**：估算各源状态流/指令流频率与新鲜度，不下发任何命令
 5. **视频回传门控**：调用 `quest3_video_streamer` 自己暴露的 `~/set_push_enabled` 服务 / `~/active_cameras` 话题（选路），并镜像其 `~/gate_state` 状态
@@ -77,6 +77,7 @@
 | `/teleop/armed` | Bool(True) | 点"恢复"（仅"暂停"后可恢复；VR 看门狗 disarm 后会被臂节点拒绝，需点"开始遥操"重标定） |
 | `/teleop/start` | Bool(True) | 点"开始遥操"（一次性，记录 `vr_init` 并 arm） |
 | `/teleop/home` | Bool(True) | 点"HOME"（一次性，双臂沿 init_pose → init_waypoints → 零位 收回并 disarm） |
+| `/teleop/init` | Bool(True) | 点"工作位"（一次性，双臂沿 init_waypoints → init_pose 走到初始工作位并 disarm；启动自动归位关闭后的手动替代） |
 
 - QoS：`/teleop/armed`、`/teleop/disarm` 为 **RELIABLE + TRANSIENT_LOCAL**（latched，晚启动的臂节点也能收到）
 - `/teleop/start`、`/teleop/home` 为 **RELIABLE + VOLATILE**（**非** latched 一次性触发，避免晚加入的臂节点收到旧信号自动开始/自动归位）
@@ -102,6 +103,7 @@
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
 | POST | `/api/v1/teleop/start` | 发 `/teleop/start`（一次性，记录 `vr_init` 并 arm；配合 `require_start_signal`；无条件发送，臂节点自行判断有效性） |
 | POST | `/api/v1/teleop/home` | HOME 归位：先 `~/enable` 使能（真机预设），再 disarm + 发 `/teleop/home`（双臂沿 init_pose → init_waypoints → 零位 收回；仅 RUNNING/PAUSED 可用） |
+| POST | `/api/v1/teleop/workpos` | 工作位：disarm + 发 `/teleop/init`（双臂沿 init_waypoints → init_pose 走到初始工作位；不调 `~/enable`；仅 RUNNING/PAUSED 可用） |
 | POST | `/api/v1/restart` | 重启当前预设（停止后重新启动；同样只拉栈不自动使能；仅对经本监控启动的预设有效） |
 | POST | `/api/v1/robot/ready` | 先自动 disarm 遥操，再调 driver `~/ready`（one_click_ready，上电+零位） |
 | POST | `/api/v1/robot/home` | 先自动 disarm 遥操，再调 driver `~/home`（归零：阻尼中自动先切回 POSITION） |

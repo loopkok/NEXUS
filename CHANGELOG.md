@@ -6,6 +6,24 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**web「工作位」按钮：启动不再自动归位，回初始位改手动触发**——`astral_arm_teleop` ×
+`astral_web_monitor`。**动机**：web 启动会拉起节点并自动走 init_waypoints → init_pose，
+机器人动不动不该由"启动栈"决定，且操作员常要先把臂摆开/上电再决定回位时机；改为启动只
+拉节点、回工作位由按钮显式触发。**做法**：① 节点新增 `_go_init()`（与 `_go_home` 对称：
+disarm → init_waypoints **正序** → init_pose，启动同款 init 轨迹机，不加 park 门控），
+入口 = 全局一次性 `/teleop/init` + 单臂 `~/init`（VOLATILE，迟到不触发）；`_finish_homing`
+init arrived 置 `_at_init_pose` 标志；② **`/teleop/start` 守卫**：臂不在工作位时先
+`_anchor_origin_to_measured()`（从 `_reanchor_teleop` 提取的共享重锚 helper）把原点锚到
+当前实测再 arm——从任意位姿 start 不再向启动位 FK 锚点跳变，遥操纯增量开始；③ 左右 yaml
+`move_to_init_pose: false`（注释说明；CLI 需要可 `:=true` 覆盖）；④ web：`POST
+/api/v1/teleop/workpos`（disarm + 0.1s + 发 `/teleop/init`，**不调 `~/enable`**——按用户
+要求）＋ SystemTab 预设卡片「工作位」按钮（sky 色，HOME 旁，confirm 弹窗）；前端重建
+dist。**验证**：`test_home_park.py` 16→**21 例**全绿（新增 _go_init 正向路径构建/disarm、
+busy 拒绝、init arrived 置位/超时与 park 不置位、start 不在工作位时重锚+告警、在工作位时
+不重锚）；reanchor 5 例全绿（共享 helper 重构回归）；web monitor 4 例、py_compile 通过。
+README（arm_teleop 工作位节 + web REST/话题表）与 CHANGELOG 同步。机器人侧需重新
+colcon build（astral_arm_teleop + astral_web_monitor）。
+
 **HOME/启动途经点调整：init_waypoints 改远摆位 [-1.6, ±0.2, 0, -1.92, ∓0.2, 0, 0]**——
 `astral_arm_teleop` 配置。**动机**：HOME 收回时臂到途经点的摆臂动作不明显（原途经点
 [-1.0, 0, 0, -2.2, 0, 0.46, 0] 与 init_pose 的 j1 只差 0.65 rad），实机确认需要更明显的

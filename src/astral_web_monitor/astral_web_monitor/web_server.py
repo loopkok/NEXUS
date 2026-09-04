@@ -291,6 +291,34 @@ async def teleop_home() -> ApiEnvelope:
     )
 
 
+@app.post("/api/v1/teleop/workpos")
+async def teleop_workpos() -> ApiEnvelope:
+    """工作位（go-to-init）：双臂从当前位姿沿 init_waypoints → init_pose
+    慢速走到初始工作位并保持——替代原启动自动归位（move_to_init_pose=false
+    后启动只拉节点，回工作位靠本按钮）。
+
+    Sequence: 发布 /teleop/disarm + /teleop/init——臂节点收到 init 会自己
+    disarm 并走轨迹；到 init_pose 后保持并锚 VR 原点。之后要遥操需重新
+    /teleop/start（未先按工作位直接 start 时臂节点会把原点重锚到当前实测，
+    纯增量开始）。仅当前 launch 运行中可用。
+    """
+    if _launch_mgr.state not in (RUNNING, PAUSED):
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前状态 {_launch_mgr.state} 无法移到工作位（需遥操运行中）",
+        )
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    node.publish_disarm()
+    await asyncio.sleep(0.1)
+    node.publish_init()
+    return ApiEnvelope(
+        ok=True,
+        message="已下发工作位：双臂移向 init_waypoints → init_pose",
+    )
+
+
 @app.post("/api/v1/restart")
 async def restart() -> ApiEnvelope:
     """Restart the current preset: stop then start the same preset.

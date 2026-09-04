@@ -114,6 +114,7 @@ def _make_node():
     node._via_wait_t0 = None
     node._via_in_tol_since = None
     node._park_frozen = False
+    node._at_init_pose = False
     node._init_arrive_tol = 0.05
     node._init_timeout = 15.0
     node.q_cmd = np.array([0.40, 0.30, -0.90, -1.20, 0.60, 0.00, 0.00])
@@ -458,6 +459,144 @@ def test_init_via_advances_without_measured_gate():
     assert np.allclose(node._homing_target(), INIT_Q)
 
 
+def test_go_init_disarms_and_builds_forward_init_path():
+    # 工作位 = 启动 init 的同款正向路径 init_waypoints → init_pose（手动触发版）。
+    node = _make_node()
+    node._armed = True
+    ok, _ = node._go_init()
+    assert ok is True
+    assert node._armed is False
+    assert node._disarm_reason == "operator"
+    assert node._homing is True
+    assert node._homing_mode == "init"
+    path = node._homing_path
+    assert len(path) == 2 + 1
+    assert np.allclose(path[0], WAY1)
+    assert np.allclose(path[1], WAY2)
+    assert np.allclose(path[-1], INIT_Q)
+    # 第一步目标是第一个途经点
+    assert np.allclose(node._homing_target(), WAY1)
+
+
+def test_go_init_rejected_while_homing():
+    node = _make_node()
+    node._homing = True
+    ok, msg = node._go_init()
+    assert ok is False
+    assert "in progress" in msg
+
+
+def test_init_arrival_marks_at_init_pose():
+    # init 归位 arrived 且实测确认到位（新鲜 + 距 init_pose ≤ follow_tol）
+    # → _at_init_pose=True（/teleop/start 直接用启动锚点）；实测不在（电机未
+    # 使能命令空跑）或 timeout → 保持 False（start 会重锚到当前实测防跳变）。
+    node = _make_node()
+    node._homing = True
+    node._homing_mode = "init"
+    node.q_cmd = INIT_Q.copy()
+    node._got_state = True
+    node.state_q = INIT_Q.copy()
+    node._state_t = time.monotonic()
+    node._finish_homing(now=5.0, reason="arrived")
+    assert node._at_init_pose is True
+    # 实测远在别处（电机没使能，命令空跑）→ 不置位 + 告警
+    node2 = _make_node()
+    node2._homing = True
+    node2._homing_mode = "init"
+    node2.q_cmd = INIT_Q.copy()
+    node2._got_state = True
+    node2.state_q = INIT_Q + 0.9
+    node2._state_t = time.monotonic()
+    node2._finish_homing(now=5.0, reason="arrived")
+    assert node2._at_init_pose is False
+    assert any("电机未使能" in w for w in node2._log.warns)
+    # timeout → 不置位
+    node3 = _make_node()
+    node3._homing = True
+    node3._homing_mode = "init"
+    node3.q_cmd = INIT_Q + 0.3
+    node3._got_state = True
+    node3.state_q = INIT_Q + 0.3
+    node3._state_t = time.monotonic()
+    node3._finish_homing(now=60.0, reason="timeout")
+    assert node3._at_init_pose is False
+
+
+def test_park_arrival_does_not_mark_at_init_pose():
+    # HOME 到零 ≠ 到工作位：park arrived 后 _at_init_pose 仍 False（再 start
+    # 会重锚到当前实测，不会向启动 init 锚点跳）。
+    node = _make_node()
+    node._homing = True
+    node._homing_mode = "park"
+    node.q_cmd = np.full(7, 0.05)
+    node._finish_homing(now=5.0, reason="arrived")
+    assert node._at_init_pose is False
+
+
+def test_start_teleop_reanchors_origin_when_not_at_init_pose():
+    # 启动不自动归位后，从任意位姿直接 /teleop/start：必须先重锚机器人原点到
+    # 当前实测（否则遥操增量相对启动位 FK 锚点算 → 首帧跳变），并告警提示。
+    node = _make_node()
+    node._at_init_pose = False
+    node._got_state = True
+    node.state_q = INIT_Q + np.array([0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    node._state_t = time.monotonic()
+    node.data_timeout = 1.5
+    node.pose = _AnchorPose()  # vr_current_pos 可用 + calibrate 成功
+    node.ik = _AnchorIk()      # fk(q) → 位置 = q[:3]，可观察重锚
+    ok, _ = node._start_teleop()
+    assert ok is True
+    # 原点重锚到实测（FK(state_q)[:3] = state_q[:3]）
+    assert np.allclose(node.robot_init_pos, node.state_q[:3])
+    assert np.allclose(node.q_cmd, node.state_q)
+    assert any("重锚" in w for w in node._log.warns)
+    # 已在工作位 → 不重锚（robot_init 保持启动锚点）
+    node2 = _make_node()
+    node2._at_init_pose = True
+    node2._got_state = True
+    node2.state_q = INIT_Q + np.array([0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    node2._state_t = time.monotonic()
+    node2.data_timeout = 1.5
+    node2.pose = _AnchorPose()
+    node2.ik = _AnchorIk()
+    init_anchor = node2.robot_init_pos.copy()
+    ok, _ = node2._start_teleop()
+    assert ok is True
+    assert np.allclose(node2.robot_init_pos, init_anchor)  # 未重锚
+    assert not any("重锚" in w for w in node2._log.warns)
+
+
+class _AnchorPose:
+    """可校准假 pose：vr 位姿就绪、calibrate 恒成功。"""
+
+    def __init__(self):
+        self.vr_current_pos = np.array([0.5, 0.0, -0.5])
+        self.vr_current_rot = np.eye(3)
+        self.resets = 0
+
+    def reset(self):
+        self.resets += 1
+
+    def calibrate_from_current(self):
+        return True
+
+
+class _AnchorIk:
+    """可观察重锚假 IK：FK(q) 的位置取 q[:3]。"""
+
+    def __init__(self):
+        self.lower_limits = np.array([-3.0] * 7)
+        self.upper_limits = np.array([3.0] * 7)
+
+    def fk(self, q):
+        T = np.eye(4)
+        T[:3, 3] = np.asarray(q[:3], dtype=float)
+        return T
+
+    def sync_state(self, *a, **k):
+        pass
+
+
 def _run_all():
     tests = [
         test_home_disarms_and_builds_reverse_park_path,
@@ -476,6 +615,11 @@ def _run_all():
         test_park_via_advances_after_hold_timeout,
         test_park_via_no_state_falls_back_to_command_dwell,
         test_init_via_advances_without_measured_gate,
+        test_go_init_disarms_and_builds_forward_init_path,
+        test_go_init_rejected_while_homing,
+        test_init_arrival_marks_at_init_pose,
+        test_park_arrival_does_not_mark_at_init_pose,
+        test_start_teleop_reanchors_origin_when_not_at_init_pose,
     ]
     failed = 0
     for t in tests:

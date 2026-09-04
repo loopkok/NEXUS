@@ -57,8 +57,10 @@ astral_arm_teleop_left:
     # 用当前 pose 记零点并 arm。真机推荐 true（启动推流后手摆好再开始）。
     require_start_signal: true
     use_joint_state_seed: true
-    # Startup: slow joint-space move along init_waypoints then to init_pose.
-    move_to_init_pose: true
+    # 启动**不**自动走 init_waypoints → init_pose（web「工作位」按钮 / /teleop/init /
+    # ~/init 服务手动触发，见 astral_arm_teleop README）。置 true 恢复启动自动归位
+    # （或 CLI launch 透传 move_to_init_pose:=true 覆盖）。
+    move_to_init_pose: false
     init_speed_percent: 10  # of max_joint_vel
     init_arrive_tol: 0.05
     init_timeout: 40.0
