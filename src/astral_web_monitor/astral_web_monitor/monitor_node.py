@@ -36,6 +36,7 @@ from .config import (
     TOPIC_DISARM,
     TOPIC_START,
     TOPIC_HOME,
+    TOPIC_INIT,
     EXPECTED_RATES_HZ,
     DRIVER_SRV_READY,
     DRIVER_SRV_ENABLE,

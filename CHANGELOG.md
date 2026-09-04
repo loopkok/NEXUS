@@ -6,6 +6,13 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**fix：monitor 节点补 import `TOPIC_INIT`——上条「工作位」条目遗留的启动 NameError**——
+`astral_web_monitor`。**症状**：monitor_node `__init__` 里 `create_publisher(Bool,
+TOPIC_INIT, ...)` 引用的常量未在 import 区导入（上条改动只加了 config 定义与
+`publish_init` 调用，import 列表漏 `TOPIC_INIT`），monitor 节点启动即抛
+`NameError: name 'TOPIC_INIT' is not defined`，web 整体不可用。**做法**：import 区补
+`TOPIC_INIT`（config.py 中已定义，无其他缺失）。**验证**：模块可导入（rclpy 环境）。
+
 **web「工作位」按钮：启动不再自动归位，回初始位改手动触发**——`astral_arm_teleop` ×
 `astral_web_monitor`。**动机**：web 启动会拉起节点并自动走 init_waypoints → init_pose，
 机器人动不动不该由"启动栈"决定，且操作员常要先把臂摆开/上电再决定回位时机；改为启动只
