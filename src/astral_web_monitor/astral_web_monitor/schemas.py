@@ -45,3 +45,8 @@ class CollectControlRequest(BaseModel):
 class CollectTaskRequest(BaseModel):
     # 任务文本（应用于下一段 episode，latched）
     text: str
+
+
+class CollectSessionRequest(BaseModel):
+    # 录制目录（session 名，仅 IDLE 生效；latched）
+    text: str

@@ -37,6 +37,7 @@ from .schemas import (
     ApiEnvelope,
     CollectControlRequest,
     CollectTaskRequest,
+    CollectSessionRequest,
     PresetInfo,
     StartRequest,
     VideoCamerasRequest,
@@ -652,6 +653,18 @@ async def collect_task(req: CollectTaskRequest) -> ApiEnvelope:
         raise HTTPException(status_code=400, detail="任务文本不能为空")
     node.publish_dc_task(text)
     return ApiEnvelope(ok=True, message=f"已设置下一段任务: {text}")
+
+
+@app.post("/api/v1/collect/session")
+async def collect_session(req: CollectSessionRequest) -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="目录名不能为空")
+    node.publish_dc_session(text)
+    return ApiEnvelope(ok=True, message=f"已切换录制目录: {text}")
 
 
 # 数采节点泳道（独立 LaunchManager，与遥操预设生命周期解耦）。

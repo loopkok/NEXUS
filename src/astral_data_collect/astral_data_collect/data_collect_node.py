@@ -213,6 +213,9 @@ class DataCollectNode(Node):
             String, "/data_collect/control", self._on_control, _CONTROL_QOS
         )
         self.create_subscription(String, "/data_collect/task", self._on_task, _LATCHED_QOS)
+        self.create_subscription(
+            String, "/data_collect/session", self._on_session, _LATCHED_QOS
+        )
 
         self._writer_stop = threading.Event()
         self._writer_thread = threading.Thread(
@@ -365,6 +368,33 @@ class DataCollectNode(Node):
         self.get_logger().info(f"task for next episode <- {msg.data!r}")
         self._publish_state()
 
+    def _on_session(self, msg: String) -> None:
+        """运行期切换 session 目录（仅 IDLE 生效，录制/保存中拒绝）。
+
+        会话目录 = {save_root}/{session}，切换只影响下一段。目录名安全
+        规则：非空、无路径分隔符、不含 ".."、不以 "." 开头、长度 ≤64。
+        """
+        name = msg.data.strip()
+        if (
+            not name
+            or "/" in name or "\\" in name
+            or name == ".." or name.startswith(".")
+            or len(name) > 64
+        ):
+            self.get_logger().warning(f"session name rejected: {msg.data!r}")
+            self._ignored_cmds["set_session"] = self._ignored_cmds.get("set_session", 0) + 1
+            return
+        with self._state_lock:
+            if self._state != STATE_IDLE:
+                self.get_logger().warning(
+                    f"set_session ignored in state {self._state}（仅 IDLE 可切换目录）"
+                )
+                self._ignored_cmds["set_session"] = self._ignored_cmds.get("set_session", 0) + 1
+                return
+        self._session = name
+        self.get_logger().info(f"session -> {name!r}（下一段写入 {self._session_dir}）")
+        self._publish_state()
+
     def _on_control(self, msg: String) -> None:
         cmd = msg.data.strip().lower()
         if cmd not in _CMDS:
@@ -507,6 +537,7 @@ class DataCollectNode(Node):
                 "package_version": __version__,
                 "format": "raw_hdf5_v1",
                 "task": self._pending_task,
+                "session": self._session,
                 "schema": self._schema.to_dict(),
                 "episode_index": ep_idx,
                 "start_time_wall": self._episode_start_wall,

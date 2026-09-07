@@ -171,6 +171,7 @@ VIDEO_TOPIC_PREVIEW = f"/{VIDEO_NODE}/preview"  # + "/{label}"
 # （latched，应用于下一段）+ 状态镜像（latched JSON，含状态/段号/时长/流率）。
 DC_TOPIC_CONTROL = "/data_collect/control"
 DC_TOPIC_TASK = "/data_collect/task"
+DC_TOPIC_SESSION = "/data_collect/session"
 DC_TOPIC_STATE = "/data_collect/state"
 # 允许的录制命令（web 端按钮白名单，防注入任意字符串）
 DC_COMMANDS = ("start", "stop", "discard", "next", "pause", "resume")

@@ -6,6 +6,24 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**数采 web 端可运行期切换录制目录（session）——换目录不再重启节点**——
+`astral_data_collect` × `astral_web_monitor`。**动机**：web 泳道 launch 把
+`session:=default_task` 写死，所有段都进 `~/astral_data/default_task/`——用户按 A 录完
+几段后在自己的 `~` 下"找不到数据集"（其实都在 default_task 里），换目录只能改 launch
+重启节点（pending task 也丢）。**做法**：① 节点新增 latched 话题 `/data_collect/session`
+（与 `/data_collect/task` 同模式）——目录名安全校验（非空/无路径分隔符/非 `..`/不以
+`.` 开头/≤64 字符），**仅 IDLE 生效**（录制/暂停/保存中拒绝并计入 `ignored` 的
+`set_session`）；切换后 state 立即 latched 重发（卡片头部 session 实时更新），
+**meta.json 新增 `session` 字段**（段级溯源，离线侧无视）；launch/yaml 的 session 仍是
+初始值（重启回落 default_task）。② web 桥：`DC_TOPIC_SESSION` → monitor 发布器
+`publish_dc_session` → REST `POST /api/v1/collect/session {text}` → `api.collectSession`；
+卡片任务文本同排新增「录到目录（当前: xxx，仅空闲可换）」输入 + 「设定目录」按钮
+（成功了 toast、输入清空）。**验证**：`test_node_guards.py` 12→**14 例**全绿——IDLE
+切换后段落新 session 目录（段号独立从 000000 起）且 meta.json 带 session、录制中切换
+与 6 种非法名（a/b、a\b、..、空、.hidden、65 字符）被拒且计入 ignored、IDLE 再切成功；
+`npm run build`（tsc+vite）通过 dist 重建；后端 py_compile 通过。机器人侧需同步
+`astral_data_collect`（节点话题）与 web dist。
+
 **工作位/HOME 后夹爪无响应——latched disarm 把 pinch 仲裁门关死，「开始遥操」补发 /teleop/armed 开门**——
 `astral_web_monitor` × `astral_teleop`。**症状**：no-right-arm 预设 → 点工作位 → 开始遥操，
 手柄对夹爪无响应（此前正常）。**根因**：工作位/HOME 流程发 **latched** `/teleop/disarm`

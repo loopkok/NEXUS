@@ -60,6 +60,7 @@ export const api = {
   // recorder was started from CLI — the control surface is pure topics)
   collectControl: (cmd: string) => post<unknown>('/api/v1/collect/control', { cmd }),
   collectTask: (text: string) => post<unknown>('/api/v1/collect/task', { text }),
+  collectSession: (text: string) => post<unknown>('/api/v1/collect/session', { text }),
   // 数采节点泳道（独立于遥操预设生命周期）
   collectLaunchStart: () => post<unknown>('/api/v1/collect/launch/start'),
   collectLaunchStop: () => post<unknown>('/api/v1/collect/launch/stop'),

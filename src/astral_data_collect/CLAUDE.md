@@ -16,6 +16,8 @@
   `--image-size 0` 保留原分辨率；
 - 上游 `quest3_video_streamer` 已有 `label_aliases`（按硬件指纹把 videoN 改写为
   稳定名）——`cameras` 里的 label 对应稳定名，换口/重插不再需要改本包配置。
+- session 目录可运行期切换：web 卡片「设定目录」或 /data_collect/session 话题
+  （仅 IDLE；本段 meta.json 记 session 溯源）；重启节点回落 yaml/launch 初始值。
 
 ## 文件地图
 
@@ -25,7 +27,8 @@ astral_data_collect/
 │                             → state 布局(state_blocks)/维度/流订阅表/LeRobot features names。
 │                             所有下游（节点写盘/对齐/校验/转换/openpi）都从它推导，无独立写死
 ├── data_collect_node.py   ← ROS 节点：订阅遥操话题+抽头 JPEG，写 raw HDF5（robot_data/camera_data/
-│                             meta.json）；单例锁 + episode 原子占号；*_cmd 流用到达时刻
+│                             meta.json）；单例锁 + episode 原子占号；*_cmd 流用到达时刻；
+│                             /data_collect/session 运行期切目录（仅 IDLE，name 安全校验）
 ├── data_writer.py         ← HDF5 写盘（vlen JPEG、流分组、meta schema 冻结）
 ├── align_data.py          ← 离线①：多流时间戳 → 严格 1/fps 网格 → aligned_data.h5
 │                             （next_state 语义在此生成：action 帧取相机网格的下一帧 state）

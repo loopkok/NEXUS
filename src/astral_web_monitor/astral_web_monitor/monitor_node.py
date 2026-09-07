@@ -53,6 +53,7 @@ from .config import (
     MOCAP_EXPECTED_HZ,
     DC_TOPIC_CONTROL,
     DC_TOPIC_TASK,
+    DC_TOPIC_SESSION,
     DC_TOPIC_STATE,
 )
 from .rate_counter import RateRegistry, RateCounter
@@ -151,6 +152,7 @@ class MonitorNode(Node):
         )
         self._pub_dc_control = self.create_publisher(String, DC_TOPIC_CONTROL, dc_ctrl_qos)
         self._pub_dc_task = self.create_publisher(String, DC_TOPIC_TASK, qos)
+        self._pub_dc_session = self.create_publisher(String, DC_TOPIC_SESSION, qos)
         self._dc_state: dict[str, Any] | None = None
         self._dc_state_ts: float = 0.0
         self.create_subscription(String, DC_TOPIC_STATE, self._on_dc_state, qos)
@@ -355,6 +357,9 @@ class MonitorNode(Node):
 
     def publish_dc_task(self, text: str) -> None:
         self._pub_dc_task.publish(String(data=text))
+
+    def publish_dc_session(self, text: str) -> None:
+        self._pub_dc_session.publish(String(data=text))
 
     # --- snapshot read (web thread) ---------------------------------------
     def snapshot(self) -> dict[str, Any]:

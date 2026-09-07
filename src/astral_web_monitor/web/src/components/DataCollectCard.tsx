@@ -20,6 +20,7 @@ const STATE_META: Record<string, { label: string; color: string }> = {
 
 export function DataCollectCard({ dc, launch }: Props) {
   const [task, setTask] = useState('')
+  const [sessionDir, setSessionDir] = useState('')
   const online = dc != null && !dc.stale
   const st = dc?.state ?? 'IDLE'
   const meta = STATE_META[st] ?? STATE_META.IDLE
@@ -46,6 +47,18 @@ export function DataCollectCard({ dc, launch }: Props) {
     if (res.ok) {
       pushToast(`下一段任务: ${text}`, 'success')
       setTask('')
+    } else {
+      pushToast(res.message, 'error')
+    }
+  }
+
+  async function sendSession() {
+    const text = sessionDir.trim()
+    if (!text) return
+    const res = await api.collectSession(text)
+    if (res.ok) {
+      pushToast(`已切换录制目录: ${text}`, 'success')
+      setSessionDir('')
     } else {
       pushToast(res.message, 'error')
     }
@@ -190,6 +203,23 @@ export function DataCollectCard({ dc, launch }: Props) {
           />
           <button style={btn('#4b5563')} disabled={!online || !task.trim()} onClick={() => void sendTask()}>
             设定任务
+          </button>
+        </div>
+        <div style={taskWrap}>
+          <input
+            style={inputStyle}
+            value={sessionDir}
+            placeholder={`录到目录（当前: ${dc?.session ?? '?'}；如 pick_place_0907，仅空闲可换）`}
+            disabled={!online}
+            onChange={(e) => setSessionDir(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void sendSession()}
+          />
+          <button
+            style={btn('#4b5563')}
+            disabled={!online || !sessionDir.trim()}
+            onClick={() => void sendSession()}
+          >
+            设定目录
           </button>
         </div>
       </div>

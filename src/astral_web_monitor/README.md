@@ -203,7 +203,7 @@ stopped ──start──► starting ──2s暖机──► running
 
 - **数据采集卡片**（监控 tab 顶部）：`astral_data_collect` 的完整控制面，分两层：
   - **节点进程（独立泳道）**：卡片右上角「启动/重启/停止节点」，走专属 `LaunchManager` 泳道（`POST /api/v1/collect/launch/start|stop|restart`），与遥操预设**生命周期完全解耦、可并存**——数采泳道是纯订阅者，启动跳过孤儿检测；遥操侧孤儿检测对 `astral_data_collect` 命令行有对称豁免。泳道状态（运行中/启动中/已停止 + pid）随 ui_state 的 `collect_launch` 字段推送。启动命令来源仍是 `presets.yaml` 中 `package: astral_data_collect` 的条目（该条目不再出现在「系统」tab 遥操预设下拉中，避免占用主泳道）。schema 硬件配置改 `astral_data_collect/config/data_collect.yaml` 后点「重启节点」生效。
-  - **录制控制（纯话题桥接）**：按钮组（开始录制/停止保存/下一段/暂停继续/丢弃[确认后删文件]）+ 下一段任务文本输入 + 实时状态徽标（IDLE/录制中/已暂停/保存中，录制中红色）+ 状态行（session、段号、时长、state 维度、各流实测频率、掉帧红 chip）。接口为 `POST /api/v1/collect/control {cmd}`（白名单 start/stop/discard/next/pause/resume）与 `POST /api/v1/collect/task {text}`（latched，应用于下一段）；状态来自 `/data_collect/state` latched JSON 镜像（带 stale 龄期标记，采集节点退出后可识别）。CLI 启动的采集节点同样可控（此时泳道显示"已停止"但录制按钮照常可用）。
+  - **录制控制（纯话题桥接）**：按钮组（开始录制/停止保存/下一段/暂停继续/丢弃[确认后删文件]）+ 下一段任务文本输入 + 实时状态徽标（IDLE/录制中/已暂停/保存中，录制中红色）+ 状态行（session、段号、时长、state 维度、各流实测频率、掉帧红 chip）。接口为 `POST /api/v1/collect/control {cmd}`（白名单 start/stop/discard/next/pause/resume）与 `POST /api/v1/collect/task {text}`（latched，应用于下一段）、`POST /api/v1/collect/session {text}`（latched，仅 IDLE 生效的录制目录切换）；状态来自 `/data_collect/state` latched JSON 镜像（带 stale 龄期标记，采集节点退出后可识别）。CLI 启动的采集节点同样可控（此时泳道显示"已停止"但录制按钮照常可用）。
 - **Toast 通知**：操作成功/失败以右上角浮窗提示（替代 alert），自动消失
 - **实时图表**：手写 SVG 折线（无第三方图表库），环形缓冲 200 样本（≈6.7s @ 30Hz）
 - **头部通道**：监视 tab 显示「头部 (yaw/pitch)」面板 + yaw/pitch 实时折线；健康巡检含头部（仅新鲜度判断——头部指令在启动前/手柄掉线时合法为 0Hz，故不设 cmd 频率下限）

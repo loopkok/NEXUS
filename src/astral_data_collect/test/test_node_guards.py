@@ -293,3 +293,49 @@ def test_ignored_commands_counted_and_published(tmp_path, ros_context):
     finally:
         probe.destroy_node()
         node.destroy_node()
+
+
+def test_set_session_runtime_switch(tmp_path, ros_context):
+    """IDLE 时经 /data_collect/session 切换目录：下一段落新 session 目录，
+    meta.json 带 session 字段（换目录无需重启节点）。"""
+    import json as _json
+    from std_msgs.msg import String as _String
+
+    node = _make(tmp_path)
+    try:
+        node._on_session(_String(data="run_a"))
+        node._apply("start")
+        ep_dir = node._episode_dir
+        assert os.path.isdir(tmp_path / "run_a" / "episode000000")
+        node._apply("stop")
+        meta = _json.loads(open(os.path.join(ep_dir, "meta.json"), encoding="utf-8").read())
+        assert meta["session"] == "run_a"
+        # 再切 → 下一段落新目录，段号独立从 000000 起
+        node._on_session(_String(data="run_b"))
+        node._apply("start")
+        assert os.path.isdir(tmp_path / "run_b" / "episode000000")
+        assert "run_b" in node._episode_dir
+        node._apply("discard")
+    finally:
+        node.destroy_node()
+
+
+def test_set_session_rejected_when_busy_or_bad_name(tmp_path, ros_context):
+    """录制中切换/非法目录名一律拒绝并计入 ignored，session 不变。"""
+    from std_msgs.msg import String as _String
+
+    node = _make(tmp_path)
+    try:
+        node._on_session(_String(data="ok_run"))
+        node._apply("start")
+        node._on_session(_String(data="sneaky"))  # RECORDING → 拒绝
+        assert node._session == "ok_run"
+        node._apply("stop")
+        for bad in ("a/b", "a\\b", "..", "", ".hidden", "x" * 65):
+            node._on_session(_String(data=bad))
+        assert node._session == "ok_run"
+        assert node._ignored_cmds.get("set_session") == 1 + 6
+        node._on_session(_String(data="run_b"))  # IDLE → 接受
+        assert node._session == "run_b"
+    finally:
+        node.destroy_node()
