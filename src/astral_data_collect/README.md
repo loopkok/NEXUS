@@ -42,7 +42,7 @@ launch 参数默认空串，**只在显式传入时**（CLI `xxx:=` 或 web 预�
 | `dataset_fps` | `30` | 对齐网格与 LeRobot fps |
 | `action_source` | `next_state` | `next_state`：action[t]=state[t+1]；`command`：指令流采样 |
 | `hold_frames` | `10` | 对齐时末尾追加的保持帧 |
-| `save_root` / `session` | `~/astral_data` / `default_task` | 存储位置 |
+| `save_root` / `session` | `~/astral_data/raw` / `default_task` | 存储位置；目录约定见 §4（raw/ pi/ act/ 三文件夹） |
 
 state 向量布局（顺序固定，仅含启用项）：`[left_arm(7)?, right_arm(7)?, left_ee?, right_ee?, waist(2)?, head(2)?]`
 - `arms` 决定录哪些臂（单臂/双臂）；末端块跟随所属臂
@@ -112,28 +112,35 @@ ros2 topic echo /data_collect/state   # latched JSON：状态/段号/各流频�
 
 ## 4. 离线流水线
 
+**目录约定（三文件夹，按 session 组织）**：
+
+```text
+astral_data/
+├── raw/<session>/      ← 采集原始数据（save_root 默认已指向这里）
+├── pi/<session>/       ← openpi 数据集（v2.1）
+└── act/<session>/      ← ACT 数据集（v3 + 自检）
+```
+
+同一 raw session 跑两条一键脚本，各进各的文件夹。以下示例以 `pick_place` 为 session：
+
 ```bash
 # ① 对齐（raw → aligned_data.h5，严格 1/fps 网格）
-ros2 run astral_data_collect align_data -- --session ~/astral_data/pick_place
+ros2 run astral_data_collect align_data -- --session ~/astral_data/raw/pick_place
 
 # ② 校验（规则体检 + 报告；--apply 把 fail 段移入 quarantine/，移动不删除）
-ros2 run astral_data_collect validate_data -- --session ~/astral_data/pick_place --apply
+ros2 run astral_data_collect validate_data -- --session ~/astral_data/raw/pick_place --apply
 
 # ③ 导出 LeRobot v2.1（OpenPI 直接可读）
 ros2 run astral_data_collect convert_to_lerobot -- \
-    --session ~/astral_data/pick_place --output ~/astral_data/lerobot/pick_place
-
-# ③b 升版 v2.1 → v3.0（可选，目标=现代 lerobot ACT 等策略，见 §5b；源 v2.1 只读）
-python3 -m astral_data_collect.convert_to_lerobot_v3 \
-    --v21-root ~/astral_data/lerobot/pick_place \
-    --output ~/astral_data/lerobot_v3/pick_place
+    --session ~/astral_data/raw/pick_place --output ~/astral_data/pi/pick_place
 
 # ④ 回放（Rerun：图像 + 关节曲线 + 时间轴）
-ros2 run astral_data_collect replay_rerun -- --session ~/astral_data/pick_place --episode 0
+ros2 run astral_data_collect replay_rerun -- --session ~/astral_data/raw/pick_place --episode 0
 ```
 
-一键脚本 `astral_ws/scripts/vla_process_session.sh` 可串起 ①→②→③
-（加 `--act-output <dir>` 再跑 ③b）。**默认把校验失败段隔离到 `session/quarantine/`**
+一键脚本（openpi 与 ACT 从**同一 raw 目录**各取所需、输出独立文件夹）：
+`astral_ws/scripts/vla_process_openpi.sh <raw> <pi输出>`（对齐→校验→v2.1）与
+`astral_ws/scripts/vla_process_act.sh <raw> <act输出>`（对齐→校验→v3+自检）。**默认把校验失败段隔离到 `session/quarantine/`**
 （移动不删除，可逆）；隔离后仍有 fail 段会中止转换——防坏段进训练集。
 确认过报告想放行旧行为：`--no-quarantine`（旧 `--apply-quarantine` 兼容保留）。
 
@@ -179,13 +186,44 @@ from openpi.training.data_loader import create_data_loader
 "
 ```
 
-## 5b. ACT 目标：v2.1 → v3.0 升版
+## 5b. ACT 目标：专属转换 `convert_to_act.py`（推荐，内置自检）
+
+**从 raw 会话目录直接产出 ACT 可训数据集**（官方 lerobot v3 布局），把 ACT 训练器的
+需求做成硬保证 + 两级自检，不依赖外部自觉：
+
+```bash
+python3 -m astral_data_collect.convert_to_act \
+    --session ~/astral_data/raw/pick_place \
+    --output ~/astral_data/act/pick_place \
+    --image-size 224                 # letterbox 边长；0=原分辨率
+    --check-python ~/miniconda3/envs/lerobot/bin/python   # 给则跑深度自检（金标准）
+    # --keep-v21 <dir> 保留 v2.1 中间产物 | --overwrite 允许覆盖输出 | --force-align 重对齐
+
+# 或从已有 v2.1 直接升版（openpi/ACT 共享 v2.1 中间层，不重编码，秒级）：
+python3 -m astral_data_collect.convert_to_act \
+    --v21-root ~/astral_data_lerobot --output ~/astral_data_act
+```
+
+链路 = 对齐 → v2.1（临时中间产物）→ v3 → **自检**：
+- **结构级**（脚本内强制，不过即退出）：`stats.json` 含 `observation.images.{每路}` +
+  `observation.state` + `action` 的 mean/std（ACT `VISUAL/STATE/ACTION→MEAN_STD` 硬需求）、
+  各相机**同 shape**（ACT 只支持同 shape）、`tasks` 非空、parquet/视频可读可解码；
+- **深度级**（`--check-python` 指向现代 lerobot 环境）：用该解释器真装载
+  `LeRobotDataset` + 构建 ACT 预处理管线 + 逐帧解码——这是"无缝衔接官方 ACT"的实测证明。
+
+训练命令脚本结尾直接打印。**训练侧数值口径**：`/255` 归一化由 lerobot 装载器自动做，
+`mean/std` 用本数据集 stats.json（图像统计按 /255 抽样，与装载刻度一致），**无 resize**
+（224×224 同 shape 由转换期 letterbox 保证）。
+
+### 5b-底层工具：v2.1 → v3.0 升版 `convert_to_lerobot_v3.py`
+
+`convert_to_act.py` 内部复用此通用升版（镜像官方 `convert_dataset_v21_to_v30`），
+也可单独用于把已有 v2.1 升版给其它现代 lerobot 策略：
 
 OpenPI（pinned lerobot 0.1.0）只认 v2.1；现代 lerobot（`VLA/lerobot`，>=0.6，
 ACT 等策略共用同一读取管线）的数据集 `codebase_version` 已是 **v3.0**，读取侧对
 v2.1 直接 `raise BackwardCompatibilityError`。`convert_to_lerobot_v3.py` 把上面
-的 v2.1 产物**原样升版**为 v3.0（源目录只读，输出独立目录），布局逐字段镜像官方
-`VLA/lerobot/scripts/convert_dataset_v21_to_v30.py`：
+的 v2.1 产物**原样升版**为 v3.0（源目录只读，输出独立目录）：
 
 ```bash
 # 用法：--output 已存在需 --overwrite（不会覆盖 --v21-root）

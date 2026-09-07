@@ -10,7 +10,10 @@
 data_collect:
   ros__parameters:
     # 存储位置：{save_root}/{session}/episode{N:06d}/
-    save_root: "~/astral_data"
+    # 目录约定：采集原始数据统一落 astral_data/raw/{session}/；
+    #   openpi 转换 → astral_data/pi/{session}/，ACT 转换 → astral_data/act/{session}/
+    #   （见 README §4；转换脚本入参 session 目录即 astral_data/raw/{session}）。
+    save_root: "~/astral_data/raw"
     session: "default_task"
 
     # --- schema ---
@@ -31,7 +34,11 @@ data_collect:
     # ⚠ videoN 编号不稳定（重启/重插/换 USB 口会重排）：auto_scan 模式下每次开录前
     #   在 web「系统」tab 视频卡片核对 d435i（sysfs 名含 RealSense）的实际 label，
     #   或 ros2 topic echo --once /quest3_video_streamer/gate_state 看 sysfs_name。
-    cameras: ["video8", "video0", "video2"] #cameras: ["d435i", "wrist_left", "wrist_right"]
+    # 相机选择：只录两路（video8=d435i 主视角 + video0=左腕）时删掉 video2 即可；
+    #   video2 本就未映射进 openpi（默认 camera_map 只用 video8→base、video0→左腕，
+    #   右腕槽零填充），去掉它不改变 pi0.5 看到的输入，只让 ACT 少一路图（2→3 路随意）。
+    #   第一个相机 = 对齐参考时钟，保持 d435i 那路在首位。
+    cameras: ["video8", "video0"] # ["video8", "video0", "video2"] | ["d435i", "wrist_left", "wrist_right"]
     camera_topic_prefix: "/quest3_video_streamer/collect"
 
     # 数据集帧率（对齐网格与 LeRobot fps；LeRobot 要求整数）

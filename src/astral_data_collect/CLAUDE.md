@@ -9,7 +9,7 @@
 ## 当前状态（2026-09-03）
 
 - **当前采集配置 = 单左臂 + 左夹爪**（`config/data_collect.yaml`，双臂注释保留），
-  8 维 state（7 关节 + 闭合比），相机 `["video8", "video0", "video2"]`；
+  8 维 state（7 关节 + 闭合比），相机 `["video8", "video0"]`（不录 video2；openpi camera_map 本就只用 video8+video0）；
 - 默认 `action_source: next_state`（`action[t] = state[t+1]`，绝对关节角）——
   openpi 训练侧再转 delta（见下游约定，别在采集侧改）；
 - 图像**转换期 letterbox 到 224×224**（等比+黑边，复刻 openpi `resize_with_pad` 几何），
@@ -18,6 +18,8 @@
   稳定名）——`cameras` 里的 label 对应稳定名，换口/重插不再需要改本包配置。
 - session 目录可运行期切换：web 卡片「设定目录」或 /data_collect/session 话题
   （仅 IDLE；本段 meta.json 记 session 溯源）；重启节点回落 yaml/launch 初始值。
+- 三目录约定：raw 采集落 `~/astral_data/raw/{session}`（yaml save_root 默认已指向），
+  openpi 转换 → `~/astral_data/pi/{session}`，ACT 转换 → `~/astral_data/act/{session}`。
 
 ## 文件地图
 
@@ -38,6 +40,9 @@ astral_data_collect/
 ├── convert_to_lerobot_v3.py ← 离线③b（可选）：v2.1 → v3.0 升版，现代 lerobot（>=0.6）
 │                              ACT 等策略直接可读；ffconcat 流拷贝串接不重编码、镜像官方
 │                              convert_dataset_v21_to_v30 的布局语义（源 v2.1 目录只读）
+├── convert_to_act.py        ← 离线③c（ACT 专属，推荐）：raw session → ACT 可训数据集
+│                              （官方 v3 布局）+ 两级自检（结构级强制 / --check-python 深度级）；
+│                              内部复用 align→v2.1→v3 链路
 ├── replay_rerun.py        ← 离线④：Rerun 可视化回放（图像+曲线+时间轴）
 ├── keyboard_controller.py ← 热键控制（s/q/d/n/p/t），与 web/话题三面等价
 ├── vr_collect_control.py  ← VR 采集控制：右手柄 A=start / B=stop&save / 摇杆按下=discard
@@ -88,10 +93,12 @@ test/                     ← pytest 全套（见下"测试"）
 
 ## 下游约定（openpi v2.1 / lerobot ACT v3.0，改采集必须连带核对）
 
-- 两条下游共用同一套 **raw → v2.1** 产物：openpi（pinned lerobot 0.1.0）直接
-  消费 v2.1；现代 lerobot（`VLA/lerobot`，>=0.6，ACT 等）读取侧对 v2.1 直接
-  raise，需先经 `convert_to_lerobot_v3.py` 升版 **v3.0**（state/action 数值语义
-  原样，只动布局；源 v2.1 目录只读）。ACT 用的是 v3.0 数据集本身，无额外格式。
+- 两条下游：**openpi（pinned lerobot 0.1.0）直接消费 v2.1**；**ACT 走专属
+  `convert_to_act.py`**（raw session → 官方 v3 布局 + 内置两级自检，推荐）——
+  也可经通用 `convert_to_lerobot_v3.py` 把 v2.1 升版 v3.0 给其它现代 lerobot
+  策略（state/action 数值语义原样，只动布局；源只读）。ACT 训练侧 `/255` +
+  数据集 stats.json 的 mean/std 归一化、无 resize（224×224 同 shape 由转换期
+  letterbox 保证）。
 - 数据集位置：`${HF_LEROBOT_HOME:-~/.cache/huggingface/lerobot}/astral/astral_teleop`
   （软链即可）。pinned lerobot 0.1.0 只认 `HF_LEROBOT_HOME`，设旧名
   `LEROBOT_HOME` 会直接 raise。
@@ -100,9 +107,10 @@ test/                     ← pytest 全套（见下"测试"）
   改 cameras 列表/换 label 名 → openpi camera_map 一行联动。
 - 空 task 段靠 openpi `default_prompt` 兜底（仅冒烟可用）；正式训练的数据
   **每段必须填 task**（web 卡片或热键 t）。
-- 一键脚本：`astral_ws/scripts/vla_process_session.sh`（对齐→校验→转换 v2.1，
-  加 `--act-output <dir>` 顺带升版 v3.0）与 `astral_ws/scripts/openpi_train.sh`
-  （norm stats→训练）。
+- 一键脚本（openpi 与 ACT 从同一 raw 目录各取所需、输出独立）：
+  `astral_ws/scripts/vla_process_openpi.sh <raw> <openpi输出>`（→ v2.1）与
+  `astral_ws/scripts/vla_process_act.sh <raw> <act输出>`（→ v3 + 两级自检）；
+  `openpi_train.sh`（norm stats→训练）。建议输出命名 `<session>_openpi` / `<session>_act`。
 - 换 schema 后的动作序列：重转 → **重算 norm stats**
   （`uv run scripts/compute_norm_stats.py --config-name pi05_astral_lora`）→
   再训练。norm stats 不含图像（letterbox 与否都**不用**重算）。

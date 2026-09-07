@@ -39,7 +39,7 @@ cd "$OPENPI"
 # 前置检查 1: 数据集就位（软链或实体目录均可）
 if [ ! -e "$DATASET_LINK/meta/info.json" ]; then
     echo "缺少数据集: $DATASET_LINK" >&2
-    echo "  先跑 vla_process_session.sh，或手动软链:" >&2
+    echo "  先跑 vla_process_openpi.sh，或手动软链:" >&2
     echo "  mkdir -p ~/.cache/huggingface/lerobot/astral && \\" >&2
     echo "  ln -sfn <astral_data_lerobot 路径> $DATASET_LINK" >&2
     exit 1

@@ -6,6 +6,61 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-04
 
+**数据目录三文件夹重组（raw/ pi/ act/）+ 剔除 video2 + 清理旧转换产物**——
+`astral_data` × `astral_data_collect` × `scripts/`。**动机**：用户要求——不要 video2（原生+转换都
+不要）、删掉之前几次转换产物、统一到 astral_data 下建 原始/pi/act 三个文件夹、后续按 session 各进各的。
+**做法**：①5 段 raw（061-065）剔除 `camera_data.h5` 的 video2 组 + meta.json schema.cameras 同步为
+[video8,video0] + 删旧 3 相机 aligned_data.h5（对齐按新 schema 重建）；②删除全部旧转换产物
+（astral_data_lerobot/v3、astral_data_act/v2、default_task_openpi/act 共 6 目录）；③建三目录
+`astral_data/{raw,pi,act}/`，raw 移入 `raw/default_task/`；④`data_collect.yaml` `save_root` 改
+`~/astral_data/raw`（未来采集直接落 raw/{session}）；⑤README §4 加目录约定块、§2 save_root 行、
+§5b 示例路径、包/顶层 CLAUDE.md 同步。**验证**：从新 raw（2 相机）端到端重建——
+`vla_process_openpi.sh raw/default_task pi/default_task`（v2.1, `cams=2`）与
+`vla_process_act.sh raw/default_task act/default_task --check-python lerobot`
+（v3, conda lerobot 深度自检 `OK episodes=5 frames=1391 cams=[video0,video8]`）全绿；
+全树 `find -iname "*video2*"` 零残留。**遗留**：`astral_data/default_task_ep58-65.tar.gz`（ep58-65
+备份包）与 `~/astral_data`（home 根旧 junk：default_task quarantine + verify_*）未动，确认后另清。
+
+**openpi/ACT 一键脚本拆分：`vla_process_openpi.sh` + `vla_process_act.sh`（同 raw、独立输出）**——
+`scripts/`。**动机**：用户要求"处理脚本与 sh 脚本都要清晰：从同一个采集原始数据文件夹来，
+openpi 和 ACT 分开，转换后的文件夹也分开"。**做法**：删掉合并的 `vla_process_session.sh`，
+拆成两个脚本，**入参都是同一个 raw 会话目录**，输出独立文件夹（建议 `<session>_openpi` /
+`<session>_act`）：①`vla_process_openpi.sh <raw> <openpi输出>`——对齐→校验(默认隔离)→转 v2.1
+（openpi 直接消费）；②`vla_process_act.sh <raw> <act输出>`——对齐→校验(默认隔离)→
+`convert_to_act`（v3 + 两级自检），带 `--check-python`/`--keep-v21`/`--overwrite`；两脚本共享
+同样的"坏段默认隔离 + 隔离后中止"门禁。引用同步：`openpi_train.sh` 提示、包 CLAUDE.md/README
+一键脚本段、`convert_to_act` docstring。**验证**：两脚本 `bash -n` 通过；**同一 raw**
+（default_task，5 段 1391 帧）端到端各跑一遍——openpi → `default_task_openpi`（v2.1，5 段）、
+act → `default_task_act`（v3，conda lerobot 深度自检 `OK episodes=5 frames=1391`）全绿。
+
+**convert_to_act 增 `--v21-root` 快速入口 + vla_process_session.sh 的 --act-output 改走 convert_to_act**——
+`astral_data_collect` × `scripts/vla_process_session.sh`。**动机**：用户问"keep-v21 中间产物是什么、
+与 openpi 转换什么关系、脚本同步改"——明确 openpi/ACT 共享 raw→v2.1 中间层：openpi 直接消费 v2.1，
+ACT 在 v2.1 之上升版 v3 + 自检。**做法**：①`convert_to_act` 输入改为 `--session`/`--v21-root` 二选一
+（`--v21-root` 跳过对齐/重编码，直接升版+自检，秒级）；②`vla_process_session.sh` 的 `--act-output` 从
+直接调 `convert_to_lerobot_v3` 改为调 `convert_to_act --v21-root $OUTPUT`（复用本步 v2.1，不重复编码），
+新增 `--act-check-python` 透传深度自检，`--overwrite-v3` 透传为 `--overwrite`；③README §5b 补 v21-root
+用法。**验证**：`test_convert_act.py` 4→**6 例**全绿（新增 v21-root 复用路径、--session/--v21-root 互斥）；
+离线回归 59 例全绿；**真实端到端** v21-root 复用现有 v2.1 → `/home/robot/loopkok/sdk/astral_data_act_v2`
+仅 **7.6s**（对比全链路重编码 ~2min），conda lerobot 深度自检 `OK episodes=5 frames=1391 cams=[video0,video2,video8]`；
+`bash -n` 语法通过。
+
+**新增 ACT 专属转换 `convert_to_act.py`：raw 会话目录 → 官方 lerobot ACT 可训数据集（内置两级自检）**——
+`astral_data_collect`。**动机**：用户要求"转 ACT 不要写通用 v3 升版，要专门的 ACT 转换，且保证无缝接
+官方 lerobot ACT 训练"。**前提澄清**：官方 `lerobot-train --policy.type=act` 的输入格式就是 LeRobot
+v3（无独立于 v3 的 ACT 专用格式），所以"专属"体现在**硬保证 + 自检**而非新格式。**做法**：新模块
+`convert_to_act.py`——输入 raw session（含 episode*），内部复用 align_data → convert_to_lerobot(v2.1,
+临时目录, --keep-v21 可留) → convert_to_lerobot_v3 → **结构级自检**（stats.json 含
+observation.images.{每路}+state+action 的 mean/std（ACT VISUAL/STATE/ACTION MEAN_STD 硬需求）、
+各相机同 shape、tasks 非空、parquet+视频可读可解码，不过即退出）；**深度级自检**
+（`--check-python <现代lerobot python>`）：用该解释器真装载 `LeRobotDataset` + 构建 ACT 预处理管线 +
+逐帧解码。输出 = 官方 v3 布局，脚本结尾打印 `lerobot-train --dataset.root=... --policy.type=act` 命令。
+**验证**：`test_convert_act.py` 4 例全绿（全链路转出布局关键件齐 + 结构级自检 0 issue + 深度自检源码
+可编译、stats 缺图像统计负例报错、tasks 空负例报错、无 --overwrite 拒绝覆盖输出）；离线回归 35 例全绿；
+**真实数据端到端**（default_task 5 段 1391 帧）→ `/home/robot/loopkok/sdk/astral_data_act`，conda
+lerobot 深度自检输出 `OK episodes=5 frames=1391 cams=[video0,video2,video8]`——现代 lerobot 真装载 +
+预处理管线构建成功，即"无缝衔接官方 ACT"的实测证明。
+
 **数采 web 端可运行期切换录制目录（session）——换目录不再重启节点**——
 `astral_data_collect` × `astral_web_monitor`。**动机**：web 泳道 launch 把
 `session:=default_task` 写死，所有段都进 `~/astral_data/default_task/`——用户按 A 录完
