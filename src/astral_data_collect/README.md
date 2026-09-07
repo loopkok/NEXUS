@@ -70,6 +70,13 @@ ros2 run astral_data_collect keyboard_controller
 （长按不重复）；采集节点未运行或状态不合法时按键静默忽略（节点 info 日志说明）。
 需遥操链路 `quest3_hand_mocap` 在发布 `quest3/right_controller_joy`（mocap 没跑则无动作）。
 
+**左手柄 X 键 = 段间回位**（teleop 侧 `controller_workpos_gate`，随 `full_teleop` 同启）：
+停止跟随 VR + 沿 init_waypoints → init_pose 回到工作位，供段与段之间摆放物品。
+**录制中/暂停/保存中按 X 无效**（闸门按 `/data_collect/state` 拦截，防毁段）；无数采节点
+运行时（纯遥操）照常生效。与 web 数采卡片「段间回位」按钮同功能。**顺序要求**：B 保存后
+等状态回 IDLE 再按 X；先 grip（重标定 armed）再 A 开始下一段（否则新段 armed 覆盖率不足
+触发 validate W5）。完整流程见 `astral_teleop/README.md`「遥操操作步骤」。
+
 **web 端操作（推荐）**：「监控」tab 顶部数据采集卡片右上角**启动/重启/停止节点**
 （独立泳道，与遥操预设解耦可并存；CLI 启动的节点同样受控），卡片本体提供
 开始/停止保存/下一段/暂停继续/丢弃 + 下一段任务文本 + 录制目录（session）切换
@@ -195,7 +202,7 @@ from openpi.training.data_loader import create_data_loader
 python3 -m astral_data_collect.convert_to_act \
     --session ~/astral_data/raw/pick_place \
     --output ~/astral_data/act/pick_place \
-    --image-size 224                 # letterbox 边长；0=原分辨率
+    --image-size 224                 # letterbox 边长：224(默认)/480/720 或任意正整数；0=原生
     --check-python ~/miniconda3/envs/lerobot/bin/python   # 给则跑深度自检（金标准）
     # --keep-v21 <dir> 保留 v2.1 中间产物 | --overwrite 允许覆盖输出 | --force-align 重对齐
 
@@ -203,6 +210,9 @@ python3 -m astral_data_collect.convert_to_act \
 python3 -m astral_data_collect.convert_to_act \
     --v21-root ~/astral_data_lerobot --output ~/astral_data_act
 ```
+
+分辨率可选 224/480/720/原生：原生（0）会先探测各相机原生尺寸，不一致即报错
+（ACT 要求全部相机同 shape，如 video8=1080p、video0=720p 需 letterbox 统一）。
 
 链路 = 对齐 → v2.1（临时中间产物）→ v3 → **自检**：
 - **结构级**（脚本内强制，不过即退出）：`stats.json` 含 `observation.images.{每路}` +

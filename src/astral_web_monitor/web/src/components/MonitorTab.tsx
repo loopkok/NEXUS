@@ -32,7 +32,11 @@ export function MonitorTab({ state }: Props) {
 
   return (
     <div style={wrapStyle}>
-      <DataCollectCard dc={state?.dataCollect ?? null} launch={state?.collectLaunch ?? null} />
+      <DataCollectCard
+        dc={state?.dataCollect ?? null}
+        launch={state?.collectLaunch ?? null}
+        teleopState={state?.teleopState ?? 'stopped'}
+      />
       <div style={gridStyle}>
         <JointPanel title="左臂 (7-DoF)" joint={j.left_arm} rateHz={rates.left_arm_cmd} />
         <JointPanel title="右臂 (7-DoF)" joint={j.right_arm} rateHz={rates.right_arm_cmd} />

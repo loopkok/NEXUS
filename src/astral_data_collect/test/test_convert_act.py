@@ -129,3 +129,41 @@ def test_run_pipeline_requires_exactly_one_source(tmp_path):
         run_pipeline(str(tmp_path / "out"), image_size=64)
     with pytest.raises(ValueError, match="--session 或 --v21-root"):
         run_pipeline(str(tmp_path / "out"), session_dir="x", v21_root="y", image_size=64)
+
+
+def test_native_mode_rejects_mismatched_camera_shapes(tmp_path):
+    """原生模式（--image-size 0）下各相机分辨率不一致 → 提前报错并给出改用
+    224/480/720 的指引（ACT 要求全部相机同 shape）。"""
+    import h5py
+    import numpy as np
+
+    from conftest import make_jpeg
+
+    raw = str(tmp_path / "raw")
+    _make_raw_session(raw, n=2)
+    # 把 video0 的图像改成 32x32，video8 保持 64x48 → 原生尺寸不一致
+    for ep in os.listdir(raw):
+        h5 = os.path.join(raw, ep, "camera_data.h5")
+        with h5py.File(h5, "a") as f:
+            ds = f["video0"]["images"]
+            small = np.frombuffer(make_jpeg(color=(90, 90, 90), w=32, h=32), dtype=np.uint8)
+            for i in range(len(ds)):
+                ds[i] = small
+    with pytest.raises(ValueError, match="同 shape"):
+        run_pipeline(str(tmp_path / "act"), session_dir=raw, image_size=0)
+
+
+def test_image_size_480_end_to_end(tmp_path):
+    """480 分辨率端到端：结构自检通过，产物视频确为 480×480。"""
+    import av
+    import glob
+
+    raw = str(tmp_path / "raw")
+    _make_raw_session(raw, n=2)
+    out = str(tmp_path / "act480")
+    run_pipeline(out, session_dir=raw, image_size=480)
+    assert structural_check(out) == []
+    v = sorted(glob.glob(os.path.join(out, "videos", "**", "*.mp4"), recursive=True))[0]
+    with av.open(v) as c:
+        sv = c.streams.video[0]
+        assert (sv.codec_context.width, sv.codec_context.height) == (480, 480)

@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "controller_start_gate = astral_teleop.controller_start_gate:main",
+            "controller_workpos_gate = astral_teleop.controller_workpos_gate:main",
             "head_teleop_node = astral_teleop.head_teleop_node:main",
         ]
     },

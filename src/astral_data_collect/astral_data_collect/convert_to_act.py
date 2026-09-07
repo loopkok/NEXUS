@@ -18,7 +18,7 @@
   python3 -m astral_data_collect.convert_to_act \
       --session ~/astral_data/default_task \
       --output ~/astral_data_act \
-      [--image-size 224] [--check-python <conda lerobot 的 python>] \
+      [--image-size 224|480|720|0] [--check-python <conda lerobot 的 python>] \
       [--keep-v21 <dir>] [--overwrite] [--force-align]
 
   # 或从已有 v2.1 直接转（openpi 与 ACT 共享 v2.1）：
@@ -39,6 +39,7 @@ import tempfile
 from typing import Any, Callable
 
 import av
+import numpy as np
 import pyarrow.parquet as pq
 
 from astral_data_collect.align_data import align_session
@@ -53,6 +54,35 @@ def _info(out_root: str) -> dict:
 
 def _camera_keys(info: dict) -> list[str]:
     return sorted(k for k in info.get("features", {}) if k.startswith("observation.images."))
+
+
+def _probe_native_shapes(session_dir: str) -> dict[str, tuple[int, int]]:
+    """探测 raw 各相机原生分辨率（解第一帧 JPEG）→ {cam: (w, h)}。
+
+    仅原生模式（image_size=0）使用：ACT 要求全部相机同 shape，若各相机原生
+    尺寸不一（如 video8=1080p、video0=720p），必须 letterbox 统一。
+    """
+    import cv2
+    import h5py
+
+    shapes: dict[str, tuple[int, int]] = {}
+    for d in sorted(os.listdir(session_dir)):
+        if not d.startswith("episode"):
+            continue
+        cam_h5 = os.path.join(session_dir, d, "camera_data.h5")
+        if not os.path.exists(cam_h5):
+            continue
+        with h5py.File(cam_h5, "r") as f:
+            for cam in f:
+                if cam in shapes:
+                    continue
+                jpeg = f[cam]["images"][0]
+                arr = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                if arr is not None:
+                    shapes[cam] = (arr.shape[1], arr.shape[0])
+        if shapes and len(set(shapes.values())) > 1:
+            break  # 已发现不一致，不必扫完
+    return shapes
 
 
 def structural_check(out_root: str, log: Callable = print) -> list[str]:
@@ -173,6 +203,8 @@ def run_pipeline(
     """
     if (session_dir is None) == (v21_root is None):
         raise ValueError("必须且只能给 --session 或 --v21-root 之一")
+    if image_size == 0:
+        image_size = None  # 0 = 原生分辨率（CLI 与直接调用统一归一化）
     output_dir = os.path.abspath(os.path.expanduser(output_dir))
     if os.path.exists(output_dir) and not overwrite:
         raise FileExistsError(f"输出目录已存在（--overwrite 允许覆盖）: {output_dir}")
@@ -181,6 +213,16 @@ def run_pipeline(
         session_dir = os.path.abspath(os.path.expanduser(session_dir))
         if not os.path.isdir(session_dir):
             raise FileNotFoundError(f"session 目录不存在: {session_dir}")
+        if image_size is None:
+            # 原生模式：ACT 要求全部相机同 shape，各相机原生尺寸不一必须先报出来
+            native = _probe_native_shapes(session_dir)
+            if native and len(set(native.values())) > 1:
+                raise ValueError(
+                    f"原生分辨率各相机不一致 {native}（ACT 要求全部相机同 shape）。"
+                    "请用 --image-size 224|480|720（letterbox 统一），"
+                    "或让各相机采集分辨率一致后再用原生模式。"
+                )
+            log(f"[1/4] 原生模式，各相机同尺寸: {native}")
         log(f"[1/4] 对齐 raw session: {session_dir}")
         align_session(session_dir, force=force_align, log=log)
         v21_dir = keep_v21 or tempfile.mkdtemp(prefix="act_v21_")
@@ -242,7 +284,8 @@ def main(argv: list[str] | None = None) -> None:
                     help="已有 v2.1 数据集目录（跳过对齐/重编码，openpi 与 ACT 共享）；与 --session 二选一")
     ap.add_argument("--output", required=True, help="ACT 可训数据集输出目录（官方 v3 布局）")
     ap.add_argument("--image-size", type=int, default=224,
-                    help="letterbox 边长（默认 224；0=原分辨率；仅 --session 模式生效）")
+                    help="letterbox 边长：可选 224（默认）/480/720 或任意正整数；"
+                         "0=原生分辨率（要求各相机原生同尺寸，否则报错；仅 --session 模式生效）")
     ap.add_argument("--check-python", default=None,
                     help="现代 lerobot 的 python（conda lerobot 环境）；给则跑深度自检")
     ap.add_argument("--keep-v21", default=None, help="保留 v2.1 中间产物到该目录（仅 --session 模式）")

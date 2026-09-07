@@ -43,11 +43,104 @@ ros2 launch astral_teleop full_teleop.launch.py \
 
 不要再单独起 `astral_dual_arm_teleop` / `wujihand_real_pipeline`（会抢 mocap 或 `joint_commands`）。
 
+## 完整遥操启动（web / CLI 两条路径）
+
+### 路径 A：Web 监控（推荐，真机 / 数采）
+
+1. **启动 web 监控**（生产模式，托管已构建前端）：
+   ```bash
+   ASTRAL_WEB_MONITOR_DIST=$(ros2 pkg prefix astral_web_monitor)/../../src/astral_web_monitor/web/dist \
+     ros2 launch astral_web_monitor web_monitor.launch.py
+   ```
+   浏览器访问 `http://<host>:8080`（8080 被占换 `ASTRAL_WEB_MONITOR_PORT=8090`）。
+2. **系统 tab → 预设列表 → 选预设 → 启动**：启动只把遥操栈拉起来，**不自动使能电机**——
+   使能由 driver `auto_ready` 或「一键就绪」按钮负责。当前采集配置（单左臂+左夹爪）对应
+   预设 **「Left arm + left gripper (no right arm)」**。
+3. （数采工作流）**监控 tab 数据采集卡片**：右上角「启动节点」拉数采独立泳道（与遥操预设
+   生命周期解耦），再设「录到目录」（session）与「下一段任务文本」。
+4. 点**「工作位」**（系统 tab）让双臂走到初始工作位——启动不再自动归位
+   （`move_to_init_pose=false`），回工作位靠此按钮（或左 X）手动触发。
+
+### 路径 B：CLI 直接启动
+
+```bash
+# 单左臂 + 左夹爪（当前数采配置；对应 web 预设 "Left arm + left gripper"）
+ros2 launch astral_teleop full_teleop.launch.py \
+  with_arm_driver:=true with_hand_driver:=false \
+  right_hand_source:=none with_gripper:=true arm_side:=left
+
+# 完整真机：双臂 + 左夹爪 + 右灵巧手（Quest 右手，默认）
+ros2 launch astral_teleop full_teleop.launch.py \
+  with_arm_driver:=true with_hand_driver:=true right_hand_source:=quest3
+
+# 双夹爪：左/右捏合 → 左/右夹爪（无灵巧手）
+ros2 launch astral_teleop full_teleop.launch.py \
+  with_arm_driver:=true with_hand_driver:=false right_hand_source:=gripper with_gripper:=true
+
+# 仿真：MuJoCo 全链路
+ros2 launch astral_mujoco_sim astral_sim_pipeline.launch.py
+
+# 数采节点（独立泳道，可随后台/命令行启动）
+ros2 launch astral_data_collect data_collect.launch.py session:=pick_place
+```
+
+> CLI 启动的遥操栈，web 监控同样可监控/暂停/机器人模式（只读 + 发布已有话题）；
+> CLI 启动的数采节点，web 数采卡片同样可控（纯话题桥接）。
+
+## 遥操操作步骤（数采 episode 循环）
+
+**准备阶段**（每次新 session）：
+1. 启动 web 监控 + 遥操栈（路径 A 或 B）→ 启动数采节点 → 设 session 目录 + 任务文本。
+2. 点**「工作位」**让双臂就位（或确认已在 init_pose）。
+3. 戴 Quest3 进入软件（要视频回传则开 video feed）。
+
+**每段 episode 循环**（VR 键位与 web 按钮等价，可混用）：
+
+| 步骤 | 操作 | 说明 |
+|---|---|---|
+| ① 开始遥操 | 左手 **grip**（web「开始遥操」） | 记 `vr_init`（重标定）+ armed；再按一次 = 重新记零点 |
+| ② 开始录制 | 右手 **A**（web「开始录制」） | 仅 IDLE 有效 |
+| ③ 执行任务 | — | VR 跟随，臂 + 夹爪 |
+| ④ 停止保存 | 右手 **B**（web「停止保存」） | 仅录制中有效，保存后段号自动接续 |
+| ⑤ 段间回位 | 左手 **X**（web 数采卡片「段间回位」） | **停止跟随 VR + 回到工作位**；等状态回 IDLE 再按 |
+| ⑥ 摆放物品 | — | 手臂已回工作位、不跟随，人离开手柄布置桌面 |
+| ⑦ 回到 ① | 左手 **grip** | 重标定 + armed，开始下一段 |
+
+**关键顺序要求**（影响数据质量，不损坏数据）：
+- **先 grip 再按 A**：段间回位后臂是 disarmed，若先 A 后 grip，新段 armed 覆盖率统计不足
+  → validate **W5**（armed <50%）警告。
+- **B 保存后等状态回 IDLE 再按 X**：SAVING 期按 X 会被闸门拦截（安全但无反应），需再按一次。
+- **回位走完再 grip**：homing 中 `/teleop/start` 被臂节点拒绝（须等臂停在工作位）。
+- **先启动栈再点机器人模式按钮**（急停/阻尼/就绪/归零/位置保持）：driver 随栈退出，栈停止后
+  按钮 503 属预期。
+
+**安全/收尾**：
+- **急停（真断电）**：web 顶栏红色急停（确认后先 disarm 再 driver `~/estop`，臂失去保持力；
+  恢复需重新「一键就绪」）。
+- **暂停/恢复**：web「暂停」= 软 disarm（节点保持运行，夹爪/手/头继续）；VR 看门狗
+  （1.5s 无腕姿）disarm 后须**重新 grip 重标定**才能恢复。
+- **HOME（归零）**：web 系统 tab「HOME」（先使能电机 → disarm → 沿 init_pose → init_waypoints →
+  零位慢速收回）。
+
+### 键位速查（VR / web / 键盘 / CLI 四端等价）
+
+| 动作 | VR 手柄 | Web 按钮 | 数采键盘 | CLI 等价 |
+|---|---|---|---|---|
+| 开始遥操（重标定） | 左 **grip** | 系统tab「开始遥操」 | — | `ros2 topic pub --once /teleop/armed std_msgs/Bool "{data: true}"` + 同法 `/teleop/start` |
+| 回到工作位 | 左 **X** | 数采卡片「段间回位」/系统tab「工作位」 | — | `/teleop/disarm`(True) + `/teleop/init`(True) |
+| 开始录制 | 右 **A** | 数采卡片「开始录制」 | `s` | `ros2 topic pub --once /data_collect/control std_msgs/String "{data: 'start'}"` |
+| 停止保存 | 右 **B** | 数采卡片「停止保存」 | `q` | `/data_collect/control` `"stop"` |
+| 丢弃 | 摇杆按下 | 数采卡片「丢弃」（确认删文件） | `d` | `/data_collect/control` `"discard"` |
+| 保存并开新段 | — | 数采卡片「下一段」 | `n` | `/data_collect/control` `"next"` |
+| 暂停/继续录制 | — | 数采卡片「暂停/继续」 | `p` | `/data_collect/control` `"pause"`/`"resume"` |
+| 任务文本 | — | 数采卡片「设定任务」 | `t` | `ros2 topic pub --once /data_collect/task std_msgs/String "{data: '...'}"` |
+
 ## 手柄集成
 
 `full_teleop.launch.py` 默认起 `controller_start_gate` 节点：
 
 - **左手柄 grip 键（中指，mask bit 5）→ `/teleop/start`**：按下沿（rising edge）发一次性启动信号，等价于 web「开始遥操」或 `ros2 topic pub --once /teleop/start`。配合 `require_start_signal:=true`：手摆好初始位姿后按左 grip 即开始遥操；再按一次 = 重新记零点（re-center）。
+- **左手柄 X 键（primary，mask bit 0）→ 段间回位**：`controller_workpos_gate` 按下沿发 `/teleop/disarm` + `/teleop/init`——停止跟随 VR 并沿 init_waypoints → init_pose 回到工作位（等价于 web「工作位」按钮的信号序列，给数采段与段之间摆放物品用）。订阅 `/data_collect/state` 做录制保护：**录制中（RECORDING/PAUSED/SAVING）按 X 忽略**（防手臂回位毁段），无数采节点运行（纯遥操）时照常生效。sim 预设同启（`with_start_gate:=true`）。
 
 `pinch_gripper_node` 同时订阅 `quest3/{side}_controller_joy`：
 
@@ -74,3 +167,13 @@ ros2 launch astral_teleop full_teleop.launch.py \
 - **推哪些相机**：`quest3_video_streamer/config/params.yaml` 的 `cameras` 列表（默认 `wrist_left + wrist_right` 两路 USB，无 RealSense；接回 D435i 把 `"d435i"` 加回）；临时覆盖用 `video_cameras:=wrist_left,wrist_right`。
 - **运行时开关/选路**：不用重启——streamer 暴露 `~/set_push_enabled` 服务与 latched `~/active_cameras` 话题（被关的轨发 2fps 黑帧静音），web 监控"系统"页有对应卡片；详见 `quest3_video_streamer/README.md`「运行时推流门控」。
 - 关掉视频：`with_video:=false`。
+
+## 测试
+
+```bash
+cd /home/robot/loopkok/sdk/astral_ws/src/astral_teleop
+# 纯逻辑（无 ROS）：
+/usr/bin/python3 -m pytest test/test_controller_workpos_logic.py -q -p no:anyio
+# 节点集成（需 ROS 源环境；本机 rclpy 缺失自动 skip，机器人侧跑）：
+/usr/bin/python3 -m pytest test/test_controller_workpos_node.py -q -p no:anyio
+```

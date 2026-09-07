@@ -116,6 +116,18 @@ def _launch_setup(context, *args, **kwargs):
         condition=IfCondition(LaunchConfiguration("with_start_gate")),
     )
 
+    # Left Touch controller X button → 段间回位（/teleop/disarm + /teleop/init），
+    # 与 start_gate 同开关：sim 里也能按 X 测回位。
+    workpos_gate = Node(
+        package="astral_teleop",
+        executable="controller_workpos_gate",
+        name="controller_workpos_gate",
+        output="screen",
+        emulate_tty=True,
+        parameters=[{"joy_topic": "quest3/left_controller_joy", "button_index": 0}],
+        condition=IfCondition(LaunchConfiguration("with_start_gate")),
+    )
+
     # Right Touch thumbstick → head yaw/pitch (absolute, spring-return). Sim has
     # no head MJCF joint, but mujoco_sim_node echoes /head/joint_commands →
     # /head/joint_states + logs so the stick mapping can be verified.
@@ -161,6 +173,7 @@ def _launch_setup(context, *args, **kwargs):
     return [
         mocap,
         start_gate,
+        workpos_gate,
         head_teleop,
         gripper,
         Node(

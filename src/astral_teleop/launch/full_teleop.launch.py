@@ -146,6 +146,18 @@ def _setup(context, *args, **kwargs):
         parameters=[{"joy_topic": "quest3/left_controller_joy", "button_index": 5}],
     )
 
+    # Left Touch controller X button (primary, mask bit 0) → 段间回位：停止跟随
+    # VR 并回到工作位（/teleop/disarm + /teleop/init）。与 start_gate 对称；
+    # 录制中（RECORDING/PAUSED/SAVING）由闸门自行忽略（防止毁段）。
+    workpos_gate = Node(
+        package="astral_teleop",
+        executable="controller_workpos_gate",
+        name="controller_workpos_gate",
+        output="screen",
+        emulate_tty=True,
+        parameters=[{"joy_topic": "quest3/left_controller_joy", "button_index": 0}],
+    )
+
     # Right Touch thumbstick → head yaw/pitch (absolute, spring-return).
     # Reads /head/joint_states for head_init at start; publishes to the
     # existing /head/joint_commands that astral_robot_control consumes.
@@ -289,7 +301,7 @@ def _setup(context, *args, **kwargs):
             )
         )
 
-    return [mocap, start_gate, head_teleop, arms, gripper, right_gripper, glove, *video, *wuji]
+    return [mocap, start_gate, workpos_gate, head_teleop, arms, gripper, right_gripper, glove, *video, *wuji]
 
 
 def generate_launch_description() -> LaunchDescription:

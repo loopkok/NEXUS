@@ -4,7 +4,60 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-09-07
+
+**左手柄 X 键「段间回位」+ web 数采卡片同功能按钮（episode 间免手摆放物品）**——
+`astral_teleop`（新 `controller_workpos_gate` 闸门）× `astral_web_monitor`（数采卡片按钮）×
+`astral_mujoco_sim`（sim launch 同启）。**动机**：单人数采的段与段之间，人要离开手柄去重新摆放
+物品——需要一只手柄按键"停止跟随 VR 并回到工作位"；web 侧同功能按钮方便不戴头盔时操作。
+**做法**：①新闸门节点镜像 `controller_start_gate`（grip→start）对称——左手柄 X（primary,
+`buttons[0]`，此前完全空闲）按下沿 → 发 `/teleop/disarm` + `/teleop/init`（即 web「工作位」的
+信号序列：停止跟随 + 沿 init_waypoints→init_pose 回位，臂侧接口全现成，零改动）；②**录制保护**：
+闸门订 `/data_collect/state`（latched），RECORDING/PAUSED/SAVING 时按 X 忽略并节流告警（防手臂
+回位毁掉正在录的段）；无数采节点运行（纯遥操）时照常生效；③`full_teleop.launch.py` 无条件接入、
+sim pipeline 随 `with_start_gate` 接入；④web 数采卡片按钮组加「段间回位」（`POST
+/api/v1/teleop/workpos` 复用既有端点），仅遥操 RUNNING/PAUSED 且**非录制中**可用（录制保护与 X 键闸门一致）+ confirm 弹窗，键位小抄补
+"左手柄 X"。纯决策拆 `controller_workpos_logic.py`（无 ROS）。**对抗性审查发现并修复**：①
+**disarm/init 跨话题无保序竞态**——`/teleop/disarm` 会取消进行中的 homing（arm_teleop 刻意行为），
+背靠背连发可能"先收 init 启动回位、再收 disarm 取消回位"致 X 静默失效；闸门改为 **disarm 立即发 +
+0.1s 一次性定时器发 init**（镜像 web workpos 的 disarm→sleep(0.1)→init 时序），连按 X 取消旧待发
+init。②depth=1 BEST_EFFORT 订阅连发不消费时中间跃迁被最新帧覆盖（真实 DDS 行为）；③
+**rclpy 同进程 intra-process 双投**：闸门在 spin 回调内发布时同进程订阅会收到 2 份
+（intra 快路径 + DDS 环回各一，~6ms 间隔）——纯测试环境怪癖，非生产缺陷（跨进程单收）。
+**验证**：纯逻辑 pytest 10 例 + 节点集成 6 例（rclpy，本机 ROS humble 实测**16/16 全绿 ×2 连跑**；
+节点测试用独立 client 捕获节点 + 直接驱动 `_on_joy`（回调内发布会双投，主线程调用单投，确定性），
+含 disarm 先于 init 的时序断言、连按取消待发 init）；`colcon build astral_teleop` 后**跨进程
+DDS 冒烟 ×3 稳定 PASS**（子进程精确 PID 启停，零残留）——独立闸门进程 + rclpy 客户端：
+IDLE+X → disarm×1+init×1（0.1s 间隔）、RECORDING+X → 忽略并节流 WARN；前端 `npm run build`
+（tsc+vite）通过；smoke_test.sh 加 workpos 端点探测（遥操停止时 409 非 404）。**待办（机器人
+侧）**：实机冒烟——按 X 回位 → 再 grip 重标定开始下一段；录制中按 X 确认被忽略。
+
+**遥操完整启动命令 + 操作步骤文档化并全树同步**——`astral_teleop/README.md`（主）× 顶层
+`CLAUDE.md`（采集→训练速查）× `astral_web_monitor/README.md` × `astral_data_collect/CLAUDE.md`。
+**动机**：用户要求把"完整遥操启动（web + CLI 两条路径）与遥操步骤"写成文档，一处权威、各处引用。
+**做法**：①`astral_teleop/README.md` 新增「完整遥操启动（web/CLI）」+「遥操操作步骤（数采 episode
+循环）」两节——web 路径（起监控 → 预设启动 → 数采卡片启节点/设目录/任务 → 工作位）、CLI 路径
+（单左臂/双臂/双夹爪/仿真/数采五条命令）、七步 episode 循环表（grip→A→任务→B→X→摆物→grip）、
+键位速查（VR/web/键盘/CLI 四端等价）、顺序要求（先 grip 再 A 防 W5；B 后等 IDLE 再 X；回位完再
+grip）、安全收尾（急停/暂停/HOME）；②顶层 `CLAUDE.md` 采集→训练速查加遥操启动两条路径 + episode
+循环摘要；③`astral_web_monitor/README.md` 启动节后加「完整数采流程」指引；④`astral_data_collect/
+CLAUDE.md` 新增「数采完整流程」节（含 X 与数据的关系：`_accepting` 门控 + `dq.clear` + 录制拦截
+三保险）。**验证**：文档与代码契约逐条核对（命令与 presets.yaml/launch 参数一致、键位与
+vr_collect_logic/controller_start_gate/workpos_gate 一致）；无代码改动，无需跑测试。
+
 ## 2026-09-04
+
+**convert_to_act 分辨率选项化：224/480/720/原生（0）+ 原生同 shape 预检**——
+`astral_data_collect` × `scripts/vla_process_act.sh`。**动机**：用户要求 ACT 转换输出分辨率可
+选（224/480/720/原生）。机制本已存在（`--image-size` 任意整数、0=原生），真正的坑是**原生模式下
+各相机分辨率不同**（video8=1080p、video0=720p）会破坏 ACT 的"全部相机同 shape"要求，此前要到结构
+自检才报通用错。**做法**：①`convert_to_act` 新增 `_probe_native_shapes`——原生模式（image_size=0）
+转换前先解各相机首帧 JPEG 探测分辨率，不一致即 `ValueError` 并提示改用 224|480|720 或统一采集
+分辨率；②`run_pipeline` 内部把 `image_size==0` 归一化为 `None`（此前只有 CLI 路径做了，直连调用会
+漏判）；③help/docstring/脚本注释写明 224 默认/480/720/0=原生选项。**验证**：`test_convert_act.py`
+6→**8 例**全绿——新增 原生不一致提前报错（注入 32×32 vs 64×48 两相机）、480 端到端（结构自检 0
+issue + 产物视频实测 480×480）；`bash -n` 通过；README §5b 补分辨率选项说明。真实数据 480 全链路
++ conda lerobot 深度自检后台运行中（5 段 2 相机）。
 
 **数据目录三文件夹重组（raw/ pi/ act/）+ 剔除 video2 + 清理旧转换产物**——
 `astral_data` × `astral_data_collect` × `scripts/`。**动机**：用户要求——不要 video2（原生+转换都

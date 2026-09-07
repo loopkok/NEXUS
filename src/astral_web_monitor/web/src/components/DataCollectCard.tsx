@@ -9,6 +9,8 @@ import { pushToast } from '../hooks/useToast'
 interface Props {
   dc: DataCollectState | null
   launch: CollectLaunchInfo | null
+  // 遥操栈状态（running/paused 时「段间回位」才可用，对齐后端 workpos 409 守卫）
+  teleopState: string
 }
 
 const STATE_META: Record<string, { label: string; color: string }> = {
@@ -18,7 +20,7 @@ const STATE_META: Record<string, { label: string; color: string }> = {
   SAVING: { label: '保存中', color: '#3b82f6' },
 }
 
-export function DataCollectCard({ dc, launch }: Props) {
+export function DataCollectCard({ dc, launch, teleopState }: Props) {
   const [task, setTask] = useState('')
   const [sessionDir, setSessionDir] = useState('')
   const online = dc != null && !dc.stale
@@ -29,6 +31,11 @@ export function DataCollectCard({ dc, launch }: Props) {
   // 节点进程状态（web 泳道；CLI 启动的节点 launch 为 stopped 但 online=true）
   const launchState = launch?.state ?? 'stopped'
   const nodeRunning = launchState === 'running' || launchState === 'starting'
+  // 段间回位（与 VR 左手柄 X 同功能）：遥操 RUNNING/PAUSED 才可用（对齐后端 409 守卫）；
+  // 且录制中/保存中不可用（与 X 闸门录制保护一致——防手臂回位毁段）
+  const workposEnabled =
+    (teleopState === 'running' || teleopState === 'paused') &&
+    !(online && (st === 'RECORDING' || st === 'PAUSED' || st === 'SAVING'))
 
   async function send(cmd: string, okMsg: string) {
     const res = await api.collectControl(cmd)
@@ -67,6 +74,11 @@ export function DataCollectCard({ dc, launch }: Props) {
   function discard() {
     if (!confirm('确认丢弃当前段？录制数据将被删除（段号会被下一段复用）。')) return
     void send('discard', '已丢弃当前段')
+  }
+
+  function workpos() {
+    if (!confirm('确认段间回位？双臂将从当前位姿经 init_waypoints 走到 init_pose（期间会 disarm 停止跟随 VR，需重新「开始遥操」再操作）。')) return
+    void launchOp(api.teleopWorkpos)
   }
 
   return (
@@ -191,6 +203,14 @@ export function DataCollectCard({ dc, launch }: Props) {
         >
           丢弃
         </button>
+        <button
+          style={btn('#14b8a6')}
+          disabled={!workposEnabled}
+          title={workposEnabled ? '停止跟随 VR 并回到工作位（与左手柄 X 同功能）' : '遥操需 RUNNING/PAUSED 且非录制中才可用'}
+          onClick={workpos}
+        >
+          段间回位
+        </button>
 
         <div style={taskWrap}>
           <input
@@ -284,6 +304,10 @@ export function DataCollectCard({ dc, launch }: Props) {
             VR 右手柄：<b style={hintKeyStyle}>A</b>=开始（仅空闲）｜
             <b style={hintKeyStyle}>B</b>=停止保存（仅录制中）｜
             <b style={hintKeyStyle}>摇杆按下</b>=丢弃（仅录制中，删文件不可逆）
+          </div>
+          <div>
+            VR 左手柄：<b style={hintKeyStyle}>X</b>=段间回位（停止跟随 VR 回到工作位；
+            录制中/保存中无效）｜web「段间回位」按钮同功能（仅遥操运行中）
           </div>
           <div>
             键盘：<b style={hintKeyStyle}>s</b>=开始 <b style={hintKeyStyle}>q</b>=停止保存{' '}

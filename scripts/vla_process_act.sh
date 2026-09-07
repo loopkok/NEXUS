@@ -13,7 +13,8 @@
 # 参数:
 #   session_dir   采集 raw 会话目录（含 episode*/ 子目录），openpi/ACT 共用同一份
 #   output_dir    ACT 数据集输出目录（官方 v3 布局），建议命名 <session>_act
-#   --image-size N      letterbox 边长（默认 224；0 = 原分辨率）
+#   --image-size N      letterbox 边长（可选 224 默认 / 480 / 720 / 0=原生；
+#                          原生要求各相机原生同尺寸，否则报错并提示改用 224/480/720）
 #   --check-python PY   现代 lerobot 的 python（conda lerobot 环境）；给则跑深度自检（金标准）
 #   --keep-v21 DIR      保留 v2.1 中间产物到 DIR（那份正是 openpi 要的；不保留则临时目录用完删）
 #   --overwrite         输出目录已存在时允许覆盖

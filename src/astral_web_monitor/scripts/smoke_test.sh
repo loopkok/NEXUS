@@ -41,6 +41,10 @@ echo "=== 5. 无运行时暂停 409 ==="
 R=$(curl -s -o /dev/null -w "%{http_code}" -X POST $HOST/api/v1/pause)
 check "返回 409" "409" "$R"
 
+echo "=== 5b. 段间回位端点存在（遥操停止时应 409 而非 404）==="
+R=$(curl -s -o /dev/null -w "%{http_code}" -X POST $HOST/api/v1/teleop/workpos)
+check "返回 409" "409" "$R"
+
 echo "=== 6. Driver 服务（需 dry_run driver 运行中）==="
 for svc in ready home damping position estop; do
   R=$(curl -s -X POST $HOST/api/v1/robot/$svc)
