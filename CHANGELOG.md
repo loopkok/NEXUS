@@ -45,6 +45,24 @@ CLAUDE.md` 新增「数采完整流程」节（含 X 与数据的关系：`_acce
 三保险）。**验证**：文档与代码契约逐条核对（命令与 presets.yaml/launch 参数一致、键位与
 vr_collect_logic/controller_start_gate/workpos_gate 一致）；无代码改动，无需跑测试。
 
+**段间回位改直达（X / 数采卡片「段间回位」不经途径点）+ 工作位保持途经点**——
+`astral_arm_teleop` × `astral_teleop` × `astral_web_monitor`。**动机**：真机测试后用户要求——
+段间回位（左 X / 数采卡片）现在先回 init_waypoints 再到 init_pose，改为**直接**关节空间直线
+插补回工作位（不经途经点）；而系统 tab「工作位」按钮保持途经点路径。**做法**：①臂节点新增
+`/teleop/init_direct` 订阅 + `~/init_direct` 服务，`_go_init(direct=True)` 时 `_homing_path` 仅
+`[init_pose]`（直达），`direct=False`（原 `/teleop/init`/工作位）保持 `init_waypoints → init_pose`
+——两路共用同一 homing 慢速轨迹机（限速/限位/到点判定相同），disarm→0.1s→init 时序沿用；
+②`controller_workpos_gate` 的 `init_topic` 默认改 `/teleop/init_direct`（X 走直达）；③web 新增
+`POST /api/v1/teleop/workpos/direct`（disarm→0.1s→发 init_direct），数采卡片「段间回位」按钮改调
+直达端点，系统 tab「工作位」保持 `/api/v1/teleop/workpos`（途经点）；④`config.py` 加
+`TOPIC_INIT_DIRECT`、`monitor_node` 加 `publish_init_direct`、client.ts 加 `teleopWorkposDirect`。
+**验证**：新增臂节点级测试 `test_arm_teleop_node_init.py` **7/7 全绿**（直达路径=1 点=init_pose、
+途经点路径=途经点+init_pose=2 点、回调触发、level guard、homing 中拒绝、只读参数 init_waypoints
+经 `rclpy.init(args)` 构造期注入）；astral_teleop **16/16**（闸门节点测试改订 `/teleop/init_direct`）；
+跨进程 DDS 冒烟 **×3 PASS**（IDLE+X → disarm×1 + init_direct×1；RECORDING+X → 忽略；零残留）；
+前端 tsc+vite build 通过；`colcon build astral_teleop astral_arm_teleop` 后冒烟。**待办（机器人
+侧）**：同步构建三包后实机冒烟——X 直达回位、工作位途经点回位、录制中按 X 忽略。
+
 ## 2026-09-04
 
 **convert_to_act 分辨率选项化：224/480/720/原生（0）+ 原生同 shape 预检**——

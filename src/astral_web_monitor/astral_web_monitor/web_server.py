@@ -324,6 +324,33 @@ async def teleop_workpos() -> ApiEnvelope:
     )
 
 
+@app.post("/api/v1/teleop/workpos/direct")
+async def teleop_workpos_direct() -> ApiEnvelope:
+    """段间回位直达（go-to-init direct）：双臂从当前位姿**直接**（关节空间
+    直线插补，不经 init_waypoints）回到 init_pose——数采段与段之间快速回
+    工作位，与左 X / 数采卡片「段间回位」同功能。区别于「工作位」（途经点）。
+
+    Sequence: 发布 /teleop/disarm + /teleop/init_direct（disarm 先于 init，
+    避免臂节点先收 init 启动回位、再收 disarm 取消回位）。仅遥操运行中可用。
+    """
+    if _launch_mgr.state not in (RUNNING, PAUSED):
+        raise HTTPException(
+            status_code=409,
+            detail=f"当前状态 {_launch_mgr.state} 无法段间回位（需遥操运行中）",
+        )
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    node.publish_disarm()
+    await asyncio.sleep(0.1)
+    node.publish_init_direct()
+    return ApiEnvelope(
+        ok=True,
+        message="已下发段间回位：双臂直接移向 init_pose（不经途径点）",
+    )
+
+
+
 @app.post("/api/v1/restart")
 async def restart() -> ApiEnvelope:
     """Restart the current preset: stop then start the same preset.

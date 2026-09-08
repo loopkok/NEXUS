@@ -58,8 +58,9 @@ ros2 launch astral_teleop full_teleop.launch.py \
    预设 **「Left arm + left gripper (no right arm)」**。
 3. （数采工作流）**监控 tab 数据采集卡片**：右上角「启动节点」拉数采独立泳道（与遥操预设
    生命周期解耦），再设「录到目录」（session）与「下一段任务文本」。
-4. 点**「工作位」**（系统 tab）让双臂走到初始工作位——启动不再自动归位
-   （`move_to_init_pose=false`），回工作位靠此按钮（或左 X）手动触发。
+4. 点**「工作位」**（系统 tab）让双臂沿 init_waypoints → init_pose 走到初始工作位——启动不再
+   自动归位（`move_to_init_pose=false`），回工作位靠此按钮（途经点路径）。**段间回位（左 X）不走
+   途经点、直接回工作位**（见下）。
 
 ### 路径 B：CLI 直接启动
 
@@ -102,7 +103,7 @@ ros2 launch astral_data_collect data_collect.launch.py session:=pick_place
 | ② 开始录制 | 右手 **A**（web「开始录制」） | 仅 IDLE 有效 |
 | ③ 执行任务 | — | VR 跟随，臂 + 夹爪 |
 | ④ 停止保存 | 右手 **B**（web「停止保存」） | 仅录制中有效，保存后段号自动接续 |
-| ⑤ 段间回位 | 左手 **X**（web 数采卡片「段间回位」） | **停止跟随 VR + 回到工作位**；等状态回 IDLE 再按 |
+| ⑤ 段间回位 | 左手 **X**（web 数采卡片「段间回位」） | **停止跟随 VR + 直接回到工作位**（不经途径点）；等状态回 IDLE 再按 |
 | ⑥ 摆放物品 | — | 手臂已回工作位、不跟随，人离开手柄布置桌面 |
 | ⑦ 回到 ① | 左手 **grip** | 重标定 + armed，开始下一段 |
 
@@ -127,7 +128,8 @@ ros2 launch astral_data_collect data_collect.launch.py session:=pick_place
 | 动作 | VR 手柄 | Web 按钮 | 数采键盘 | CLI 等价 |
 |---|---|---|---|---|
 | 开始遥操（重标定） | 左 **grip** | 系统tab「开始遥操」 | — | `ros2 topic pub --once /teleop/armed std_msgs/Bool "{data: true}"` + 同法 `/teleop/start` |
-| 回到工作位 | 左 **X** | 数采卡片「段间回位」/系统tab「工作位」 | — | `/teleop/disarm`(True) + `/teleop/init`(True) |
+| 回到工作位·**直达**（段间回位） | 左 **X** | 数采卡片「段间回位」 | — | `/teleop/disarm`(True) + `/teleop/init_direct`(True) |
+| 回到工作位·途经点 | — | 系统tab「工作位」 | — | `/teleop/disarm`(True) + `/teleop/init`(True) |
 | 开始录制 | 右 **A** | 数采卡片「开始录制」 | `s` | `ros2 topic pub --once /data_collect/control std_msgs/String "{data: 'start'}"` |
 | 停止保存 | 右 **B** | 数采卡片「停止保存」 | `q` | `/data_collect/control` `"stop"` |
 | 丢弃 | 摇杆按下 | 数采卡片「丢弃」（确认删文件） | `d` | `/data_collect/control` `"discard"` |
@@ -140,7 +142,11 @@ ros2 launch astral_data_collect data_collect.launch.py session:=pick_place
 `full_teleop.launch.py` 默认起 `controller_start_gate` 节点：
 
 - **左手柄 grip 键（中指，mask bit 5）→ `/teleop/start`**：按下沿（rising edge）发一次性启动信号，等价于 web「开始遥操」或 `ros2 topic pub --once /teleop/start`。配合 `require_start_signal:=true`：手摆好初始位姿后按左 grip 即开始遥操；再按一次 = 重新记零点（re-center）。
-- **左手柄 X 键（primary，mask bit 0）→ 段间回位**：`controller_workpos_gate` 按下沿发 `/teleop/disarm` + `/teleop/init`——停止跟随 VR 并沿 init_waypoints → init_pose 回到工作位（等价于 web「工作位」按钮的信号序列，给数采段与段之间摆放物品用）。订阅 `/data_collect/state` 做录制保护：**录制中（RECORDING/PAUSED/SAVING）按 X 忽略**（防手臂回位毁段），无数采节点运行（纯遥操）时照常生效。sim 预设同启（`with_start_gate:=true`）。
+- **左手柄 X 键（primary，mask bit 0）→ 段间回位（直达）**：`controller_workpos_gate` 按下沿发
+  `/teleop/disarm` + `/teleop/init_direct`——停止跟随 VR 并**不经 init_waypoints**、直接关节空间
+  直线插补回到 init_pose 工作位（数采段与段之间快速回位；区别于 web「工作位」按钮的途经点路径
+  `/teleop/init`）。订阅 `/data_collect/state` 做录制保护：**录制中（RECORDING/PAUSED/SAVING）按 X
+  忽略**（防手臂回位毁段），无数采节点运行（纯遥操）时照常生效。sim 预设同启（`with_start_gate:=true`）。
 
 `pinch_gripper_node` 同时订阅 `quest3/{side}_controller_joy`：
 

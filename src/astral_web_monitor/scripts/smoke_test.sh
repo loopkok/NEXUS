@@ -43,7 +43,9 @@ check "返回 409" "409" "$R"
 
 echo "=== 5b. 段间回位端点存在（遥操停止时应 409 而非 404）==="
 R=$(curl -s -o /dev/null -w "%{http_code}" -X POST $HOST/api/v1/teleop/workpos)
-check "返回 409" "409" "$R"
+check "工作位 /workpos 返回 409" "409" "$R"
+R=$(curl -s -o /dev/null -w "%{http_code}" -X POST $HOST/api/v1/teleop/workpos/direct)
+check "段间回位 /workpos/direct 返回 409" "409" "$R"
 
 echo "=== 6. Driver 服务（需 dry_run driver 运行中）==="
 for svc in ready home damping position estop; do

@@ -1,11 +1,12 @@
 """controller_workpos_gate 节点集成测试（rclpy；需 ROS 环境，同 test_node_guards）。
 
 覆盖真实话题契约：/data_collect/state（latched）驱动门控、
-quest3/left_controller_joy X 键上升沿 → /teleop/disarm + /teleop/init。
+quest3/left_controller_joy X 键上升沿 → /teleop/disarm + /teleop/init_direct。
 需 ROS 源环境运行；无 ROS 时整文件 skip（sys.exit(0)）。
 
-当前映射：X（左手柄 primary, buttons[0]）= 段间回位（disarm + init）；
-录制中（RECORDING/PAUSED/SAVING）忽略；无数采节点（state=None）放行。
+当前映射：X（左手柄 primary, buttons[0]）= 段间回位（disarm + **直达**
+init_direct，不经 init_waypoints）；录制中（RECORDING/PAUSED/SAVING）忽略；
+无数采节点（state=None）放行。
 
 测试装置要点（对抗性审查沉淀）：
 - 捕获订阅放**独立 client 节点**（非闸门同节点），贴近生产"闸门 vs 臂节点
@@ -84,8 +85,12 @@ class _Harness:
         self.disarm_msgs: list[Bool] = []
         # 到达顺序（断言 disarm 必须先于 init——时序是闸门正确性的关键）
         self.order: list[str] = []
-        self.client.create_subscription(Bool, "/teleop/init", self._on_init, 10)
-        self.client.create_subscription(Bool, "/teleop/disarm", self._on_disarm, 10)
+        self.client.create_subscription(
+            Bool, "/teleop/init_direct", self._on_init, 10
+        )
+        self.client.create_subscription(
+            Bool, "/teleop/disarm", self._on_disarm, 10
+        )
         # 发现预热：让 client 捕获订阅与闸门发布建立匹配，避免 latched 补投歧义
         self._spin(0.6)
 

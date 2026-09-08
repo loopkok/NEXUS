@@ -1,10 +1,11 @@
-"""Touch 左手柄 X 键 → 段间回位闸门（停止跟随 VR + 回到工作位）。
+"""Touch 左手柄 X 键 → 段间回位闸门（停止跟随 VR + 直达回到工作位）。
 
 单人数采时，段与段之间需要把手从手柄上解放出来去重新摆放物品：按左手柄
 X 键（primary, buttons[0]）→ 发布 ``/teleop/disarm``（停止跟随 VR）+ 一次
-``/teleop/init``（臂节点自 disarm 并沿 init_waypoints → init_pose 走回工作位，
-即 web「工作位」按钮的信号序列）。与 ``controller_start_gate``（grip → start）
-对称，随遥操栈启动，纯遥操场景同样生效。
+``/teleop/init_direct``（臂节点自 disarm 并**不经 init_waypoints**、直接关节
+空间插补到 init_pose——即 web 数采卡片「段间回位」按钮的信号序列；系统 tab
+「工作位」按钮仍走途经点路径 /teleop/init）。与 ``controller_start_gate``
+（grip → start）对称，随遥操栈启动，纯遥操场景同样生效。
 
 录制保护：订阅 /data_collect/state（latched），录制中（RECORDING/PAUSED/
 SAVING）按 X 忽略并节流告警——防止手臂回位毁掉正在录的 episode。采集节点
@@ -69,7 +70,9 @@ class ControllerWorkposGate(Node):
         self.declare_parameter("joy_topic", "quest3/left_controller_joy")
         self.declare_parameter("button_index", BUTTON_X)
         self.declare_parameter("disarm_topic", "/teleop/disarm")
-        self.declare_parameter("init_topic", "/teleop/init")
+        # 段间回位 = 直达（不经 init_waypoints）；系统 tab「工作位」仍走
+        # /teleop/init（途经点）。X 的语义是"段间快速回工作位"→ 直达。
+        self.declare_parameter("init_topic", "/teleop/init_direct")
         self.declare_parameter("collect_state_topic", "/data_collect/state")
 
         joy_topic = str(self.get_parameter("joy_topic").value).strip()

@@ -5,7 +5,7 @@
 **不修改任何现有功能包的控制面**（只调用/订阅各包自己暴露的接口）。只做五件事：
 
 1. **只读订阅**现有关节话题（`joint_states` / `joint_commands`）
-2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复/急停）、`/teleop/start`（外部启动闸门）、`/teleop/home`（HOME 归位到零）、`/teleop/init`（工作位）
+2. **发布到已有控制话题** `/teleop/armed`、`/teleop/disarm`（暂停/恢复/急停）、`/teleop/start`（外部启动闸门）、`/teleop/home`（HOME 归位到零）、`/teleop/init`（工作位，途经点）、`/teleop/init_direct`（段间回位，直达）
 3. **subprocess 启停** `ros2 launch`（与命令行操作等价）
 4. **只读健康巡检**：估算各源状态流/指令流频率与新鲜度，不下发任何命令
 5. **视频回传门控**：调用 `quest3_video_streamer` 自己暴露的 `~/set_push_enabled` 服务 / `~/active_cameras` 话题（选路），并镜像其 `~/gate_state` 状态
@@ -77,7 +77,8 @@
 | `/teleop/armed` | Bool(True) | 点"恢复"（仅"暂停"后可恢复；VR 看门狗 disarm 后会被臂节点拒绝，需点"开始遥操"重标定） |
 | `/teleop/start` | Bool(True) | 点"开始遥操"（一次性，记录 `vr_init` 并 arm） |
 | `/teleop/home` | Bool(True) | 点"HOME"（一次性，双臂沿 init_pose → init_waypoints → 零位 收回并 disarm） |
-| `/teleop/init` | Bool(True) | 点"工作位"（一次性，双臂沿 init_waypoints → init_pose 走到初始工作位并 disarm；启动自动归位关闭后的手动替代） |
+| `/teleop/init` | Bool(True) | 点"工作位"（一次性，双臂沿 init_waypoints → init_pose 走到初始工作位并 disarm；**途经点路径**；启动自动归位关闭后的手动替代） |
+| `/teleop/init_direct` | Bool(True) | 点"段间回位"（一次性，双臂**不经 init_waypoints**、直接回到 init_pose 并 disarm；**直达路径**，数采段间快速回位） |
 
 - QoS：`/teleop/armed`、`/teleop/disarm` 为 **RELIABLE + TRANSIENT_LOCAL**（latched，晚启动的臂节点也能收到）
 - `/teleop/start`、`/teleop/home` 为 **RELIABLE + VOLATILE**（**非** latched 一次性触发，避免晚加入的臂节点收到旧信号自动开始/自动归位）
@@ -103,7 +104,8 @@
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
 | POST | `/api/v1/teleop/start` | 发 `/teleop/start`（一次性，记录 `vr_init` 并 arm；配合 `require_start_signal`；无条件发送，臂节点自行判断有效性） |
 | POST | `/api/v1/teleop/home` | HOME 归位：先 `~/enable` 使能（真机预设），再 disarm + 发 `/teleop/home`（双臂沿 init_pose → init_waypoints → 零位 收回；仅 RUNNING/PAUSED 可用） |
-| POST | `/api/v1/teleop/workpos` | 工作位：disarm + 发 `/teleop/init`（双臂沿 init_waypoints → init_pose 走到初始工作位；不调 `~/enable`；仅 RUNNING/PAUSED 可用） |
+| POST | `/api/v1/teleop/workpos` | 工作位：disarm + 发 `/teleop/init`（双臂沿 init_waypoints → init_pose 走到初始工作位，**途经点路径**；不调 `~/enable`；仅 RUNNING/PAUSED 可用） |
+| POST | `/api/v1/teleop/workpos/direct` | 段间回位：disarm + 发 `/teleop/init_direct`（双臂**不经 init_waypoints**、直接回 init_pose，**直达路径**；与左 X 同功能；仅 RUNNING/PAUSED 可用） |
 | POST | `/api/v1/restart` | 重启当前预设（停止后重新启动；同样只拉栈不自动使能；仅对经本监控启动的预设有效） |
 | POST | `/api/v1/robot/ready` | 先自动 disarm 遥操，再调 driver `~/ready`（one_click_ready，上电+零位） |
 | POST | `/api/v1/robot/home` | 先自动 disarm 遥操，再调 driver `~/home`（归零：阻尼中自动先切回 POSITION） |
@@ -203,7 +205,7 @@ stopped ──start──► starting ──2s暖机──► running
 
 - **数据采集卡片**（监控 tab 顶部）：`astral_data_collect` 的完整控制面，分两层：
   - **节点进程（独立泳道）**：卡片右上角「启动/重启/停止节点」，走专属 `LaunchManager` 泳道（`POST /api/v1/collect/launch/start|stop|restart`），与遥操预设**生命周期完全解耦、可并存**——数采泳道是纯订阅者，启动跳过孤儿检测；遥操侧孤儿检测对 `astral_data_collect` 命令行有对称豁免。泳道状态（运行中/启动中/已停止 + pid）随 ui_state 的 `collect_launch` 字段推送。启动命令来源仍是 `presets.yaml` 中 `package: astral_data_collect` 的条目（该条目不再出现在「系统」tab 遥操预设下拉中，避免占用主泳道）。schema 硬件配置改 `astral_data_collect/config/data_collect.yaml` 后点「重启节点」生效。
-  - **录制控制（纯话题桥接）**：按钮组（开始录制/停止保存/下一段/暂停继续/丢弃[确认后删文件]）+ **段间回位**（与 VR 左手柄 X 同功能：发 `/teleop/disarm`+`/teleop/init` 停止跟随 VR 并回到工作位，供段与段之间摆放物品；仅遥操 RUNNING/PAUSED 且**非录制中**可用——录制保护与 X 键闸门一致，确认后下发）+ 下一段任务文本输入 + 实时状态徽标（IDLE/录制中/已暂停/保存中，录制中红色）+ 状态行（session、段号、时长、state 维度、各流实测频率、掉帧红 chip）。接口为 `POST /api/v1/collect/control {cmd}`（白名单 start/stop/discard/next/pause/resume）与 `POST /api/v1/collect/task {text}`（latched，应用于下一段）、`POST /api/v1/collect/session {text}`（latched，仅 IDLE 生效的录制目录切换）；状态来自 `/data_collect/state` latched JSON 镜像（带 stale 龄期标记，采集节点退出后可识别）。CLI 启动的采集节点同样可控（此时泳道显示"已停止"但录制按钮照常可用）。
+  - **录制控制（纯话题桥接）**：按钮组（开始录制/停止保存/下一段/暂停继续/丢弃[确认后删文件]）+ **段间回位**（与 VR 左手柄 X 同功能：发 `/teleop/disarm`+`/teleop/init_direct` 停止跟随 VR 并**直接**回到工作位——**不经 init_waypoints**，供段与段之间摆放物品；仅遥操 RUNNING/PAUSED 且**非录制中**可用——录制保护与 X 键闸门一致，确认后下发）+ 下一段任务文本输入 + 实时状态徽标（IDLE/录制中/已暂停/保存中，录制中红色）+ 状态行（session、段号、时长、state 维度、各流实测频率、掉帧红 chip）。接口为 `POST /api/v1/collect/control {cmd}`（白名单 start/stop/discard/next/pause/resume）与 `POST /api/v1/collect/task {text}`（latched，应用于下一段）、`POST /api/v1/collect/session {text}`（latched，仅 IDLE 生效的录制目录切换）；状态来自 `/data_collect/state` latched JSON 镜像（带 stale 龄期标记，采集节点退出后可识别）。CLI 启动的采集节点同样可控（此时泳道显示"已停止"但录制按钮照常可用）。
 - **Toast 通知**：操作成功/失败以右上角浮窗提示（替代 alert），自动消失
 - **实时图表**：手写 SVG 折线（无第三方图表库），环形缓冲 200 样本（≈6.7s @ 30Hz）
 - **头部通道**：监视 tab 显示「头部 (yaw/pitch)」面板 + yaw/pitch 实时折线；健康巡检含头部（仅新鲜度判断——头部指令在启动前/手柄掉线时合法为 0Hz，故不设 cmd 频率下限）
@@ -269,12 +271,13 @@ cd src/astral_web_monitor/web && npm install && npm run dev
    「Left arm + left gripper (no right arm)」）→ **数采卡片「启动节点」**拉数采泳道。
 2. 数采卡片设**「录到目录」**（session）与**「下一段任务文本」**；点**「工作位」**（系统 tab）让双臂就位。
 3. 戴 Quest3 → 左手 **grip** 开始遥操（重标定）→ 右手 **A** 开始录制 → 执行任务 →
-   右手 **B** 停止保存 → 左手 **X**（或卡片**「段间回位」**）停止跟随+回工作位 → 摆物品 → 循环。
+   右手 **B** 停止保存 → 左手 **X**（或卡片**「段间回位」**）停止跟随+**直接**回工作位（不经途径点）→ 摆物品 → 循环。
 
 - **顺序要求**：先 grip 再 A（否则新段 armed 覆盖率 <50% 触发 validate W5）；B 后等状态回 IDLE
   再按 X（SAVING 期 X/「段间回位」被拦截）；回位走完再 grip（homing 中 `/teleop/start` 被拒）。
-- **「段间回位」按钮**（监控 tab 数采卡片，青色）：与左手 X 同功能（发 `/teleop/disarm`+`/teleop/init`），
-  仅遥操 RUNNING/PAUSED 且非录制中可用（录制保护与 X 闸门一致），确认后下发。
+- **「段间回位」按钮**（监控 tab 数采卡片，青色）：与左手 X 同功能（发 `/teleop/disarm`+`/teleop/init_direct`，
+  **直接**回 init_pose、不经途径点），仅遥操 RUNNING/PAUSED 且非录制中可用（录制保护与 X 闸门一致），
+  确认后下发。区别于系统 tab「工作位」（`/teleop/init`，途经点路径）。
 - 键位/按钮等价表见 `astral_teleop/README.md`「键位速查」。
 
 ## 参数 / 环境变量

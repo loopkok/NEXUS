@@ -421,6 +421,12 @@ class AstralTeleopArmNode(Node):
         # ~/init 单臂服务。VOLATILE：晚启动节点不得被历史信号误触发。
         self.create_subscription(Bool, "/teleop/init", self._on_init, 10)
         self.create_service(Trigger, "~/init", self._init_srv)
+        # 段间回位直达：/teleop/init_direct（左 X / 数采卡片「段间回位」）→
+        # **不经 init_waypoints**、直接关节空间直线插补到 init_pose（数采段间
+        # 快速回工作位）。入口与 /teleop/init 对称（全局一次性 + ~/init_direct
+        # 单臂服务），VOLATILE 语义相同。
+        self.create_subscription(Bool, "/teleop/init_direct", self._on_init_direct, 10)
+        self.create_service(Trigger, "~/init_direct", self._init_direct_srv)
 
         self._state_t: Optional[float] = None
         self._last_vr_t = 0.0
@@ -847,15 +853,35 @@ class AstralTeleopArmNode(Node):
         resp.message = message
         return resp
 
-    def _go_init(self):
-        """工作位 / go-to-init：从当前位姿慢速走 init_waypoints → init_pose。
+    def _on_init_direct(self, msg: Bool) -> None:
+        # One-shot level guard：段间回位直达（不经 init_waypoints，直接到
+        # init_pose）。与 /teleop/init 同契约：只认 Bool(true)。
+        if msg.data:
+            self._go_init(direct=True)
 
-        启动自动归位（move_to_init_pose）改由外部（web「工作位」按钮 /
-        /teleop/init / ~/init）手动触发后的同一条 init 轨迹机：动作前先
-        disarm（若在遥操/armed），期间忽略 VR/start；到 init_pose 后保持并
-        把 _at_init_pose 置位，之后可 /teleop/start 开始遥操。与启动自动
-        归位共用 _homing_* 机器，不加 park 的途经点门控/冻结守卫（实测没动
-        不能卡住去工作位——与启动 init 一致）。
+    def _init_direct_srv(
+        self, _req: Trigger.Request, resp: Trigger.Response
+    ) -> Trigger.Response:
+        ok, message = self._go_init(direct=True)
+        resp.success = ok
+        resp.message = message
+        return resp
+
+    def _go_init(self, direct: bool = False):
+        """工作位 / go-to-init：从当前位姿慢速走到 init_pose。
+
+        direct=False（默认，web「工作位」按钮 / /teleop/init / ~/init）：
+        沿 init_waypoints 正序 → init_pose，走启动同款 init 轨迹（途经点）。
+        direct=True（段间回位，左 X / 数采卡片「段间回位」/ /teleop/init_direct
+        / ~/init_direct）：**直接**关节空间直线插补到 init_pose，不经途经点——
+        数采段与段之间快速回工作位（真机实测确认直接路径安全）。
+
+        两条路径共用同一 homing 慢速轨迹机（init_speed_percent 限速、关节限位
+        裁剪、到点判定相同），仅 _homing_path 不同。动作前先 disarm（若在
+        遥操/armed），期间忽略 VR/start；到 init_pose 后保持并把 _at_init_pose
+        置位，之后可 /teleop/start 开始遥操。与启动自动归位共用 _homing_*
+        机器，不加 park 的途经点门控/冻结守卫（实测没动不能卡住去工作位——
+        与启动 init 一致）。
         """
         if self._homing:
             msg = "homing/park already in progress; wait until it finishes"
@@ -865,10 +891,14 @@ class AstralTeleopArmNode(Node):
         if self._disarm_reason != "fault":
             self._disarm_reason = "operator"
         self._homing_mode = "init"
-        # init 路径 = init_waypoints 正序 → init_pose（与启动自动归位同款）。
-        self._homing_path = self._parse_init_waypoints() + [
-            self._init_q_hw.copy()
-        ]
+        if direct:
+            # 段间回位直达：单点路径 = init_pose（关节空间直线插补）。
+            self._homing_path = [self._init_q_hw.copy()]
+        else:
+            # 工作位：init_waypoints 正序 → init_pose（与启动自动归位同款）。
+            self._homing_path = self._parse_init_waypoints() + [
+                self._init_q_hw.copy()
+            ]
         self._homing_i = 0
         self._homing_started = False
         self._homing_seeded = False
@@ -879,12 +909,16 @@ class AstralTeleopArmNode(Node):
         self._homing_last_log = 0.0
         self._homing_last_base = None
         self.pose.reset()
+        n_wp = 0 if direct else len(self._parse_init_waypoints())
         self.get_logger().warn(
-            f"[{self.side}] WORKPOS: disarm + move to init_pose via "
-            f"{len(self._parse_init_waypoints())} waypoint(s) "
+            f"[{self.side}] WORKPOS{'（直达）' if direct else ''}: disarm + "
+            f"move to init_pose via {n_wp} waypoint(s) "
             f"({self._init_joint_vel:.2f} rad/s)"
         )
-        return True, "工作位已启动 (init_waypoints → init_pose)"
+        return True, (
+            "工作位已启动（直达，不经途径点）" if direct
+            else "工作位已启动 (init_waypoints → init_pose)"
+        )
 
     def _anchor_origin_to_measured(self) -> str:
         """把机器人原点（robot_init_pos/rot + ik/safety 初始位）重锚到当前实测。

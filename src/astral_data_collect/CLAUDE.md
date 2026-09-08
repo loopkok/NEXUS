@@ -26,8 +26,9 @@
 1. 启动 web 监控 → 系统 tab 预设启动遥操（当前配置：**「Left arm + left gripper (no right arm)」**）
    → 数采卡片「启动节点」拉数采泳道 → 设 session 目录 + 下段任务文本 → 点「工作位」。
 2. 戴 Quest3 → 左 **grip** 开始遥操（重标定）→ 右 **A** 开始录制 → 执行任务 → 右 **B** 停止保存
-   → 左 **X**（或卡片「段间回位」）停止跟随+回工作位 → 摆物品 → 左 grip 开始下一段。
+   → 左 **X**（或卡片「段间回位」）停止跟随+**直接**回工作位（不经途径点）→ 摆物品 → 左 grip 开始下一段。
 3. 完整命令/键位表见 `astral_teleop/README.md`「完整遥操启动 / 键位速查」。
+   **X=直达**（`/teleop/init_direct`），系统 tab「工作位」=途经点（`/teleop/init`）。
 
 **与数据的关系**：X 段间回位发生在 IDLE（B 已保存后），`_accepting()` 门控把回位期间所有流丢弃，
 不入任何段；段前 `dq.clear()` 保证干净起点；X 在 RECORDING/PAUSED/SAVING 被闸门拦截。

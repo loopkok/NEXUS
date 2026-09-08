@@ -37,6 +37,7 @@ from .config import (
     TOPIC_START,
     TOPIC_HOME,
     TOPIC_INIT,
+    TOPIC_INIT_DIRECT,
     EXPECTED_RATES_HZ,
     DRIVER_SRV_READY,
     DRIVER_SRV_ENABLE,
@@ -133,6 +134,9 @@ class MonitorNode(Node):
         # One-shot 工作位 / go-to-init trigger (volatile, same rationale):
         # 启动不再自动归位，回 init_pose 靠 web「工作位」按钮手动触发。
         self._pub_init = self.create_publisher(Bool, TOPIC_INIT, start_qos)
+        # 段间回位直达（左 X / 数采卡片「段间回位」）：volatile 一次性，
+        # 不经 init_waypoints 直接到 init_pose（与 TOPIC_INIT 同契约）。
+        self._pub_init_direct = self.create_publisher(Bool, TOPIC_INIT_DIRECT, start_qos)
 
         # Video gate: latched active-cameras publisher + gate_state mirror.
         self._pub_video_cameras = self.create_publisher(String, VIDEO_TOPIC_CAMERAS, qos)
@@ -501,6 +505,15 @@ class MonitorNode(Node):
         warning, so publishing unconditionally is safe (mirrors publish_start).
         """
         self._pub_init.publish(Bool(data=True))
+
+    def publish_init_direct(self) -> None:
+        """One-shot /teleop/init_direct: both arm nodes return **directly** to
+        the work position (关节空间直线插补，不经 init_waypoints) — 段间回位
+        （左 X / 数采卡片「段间回位」）。
+
+        Arm nodes are the authority (same contract as publish_init).
+        """
+        self._pub_init_direct.publish(Bool(data=True))
 
     # --- driver service calls (hardware mode) -----------------------------
     # The driver node (astral_robot_control) already exposes Trigger services

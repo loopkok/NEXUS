@@ -116,7 +116,7 @@ def _launch_setup(context, *args, **kwargs):
         condition=IfCondition(LaunchConfiguration("with_start_gate")),
     )
 
-    # Left Touch controller X button → 段间回位（/teleop/disarm + /teleop/init），
+    # Left Touch controller X button → 段间回位（/teleop/disarm + /teleop/init_direct），
     # 与 start_gate 同开关：sim 里也能按 X 测回位。
     workpos_gate = Node(
         package="astral_teleop",

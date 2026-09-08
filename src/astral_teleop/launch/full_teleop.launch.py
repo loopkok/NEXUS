@@ -147,8 +147,8 @@ def _setup(context, *args, **kwargs):
     )
 
     # Left Touch controller X button (primary, mask bit 0) → 段间回位：停止跟随
-    # VR 并回到工作位（/teleop/disarm + /teleop/init）。与 start_gate 对称；
-    # 录制中（RECORDING/PAUSED/SAVING）由闸门自行忽略（防止毁段）。
+    # VR 并直达回到工作位（/teleop/disarm + /teleop/init_direct，不经途径点）。
+    # 与 start_gate 对称；录制中（RECORDING/PAUSED/SAVING）由闸门自行忽略。
     workpos_gate = Node(
         package="astral_teleop",
         executable="controller_workpos_gate",

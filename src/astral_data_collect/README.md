@@ -71,7 +71,8 @@ ros2 run astral_data_collect keyboard_controller
 需遥操链路 `quest3_hand_mocap` 在发布 `quest3/right_controller_joy`（mocap 没跑则无动作）。
 
 **左手柄 X 键 = 段间回位**（teleop 侧 `controller_workpos_gate`，随 `full_teleop` 同启）：
-停止跟随 VR + 沿 init_waypoints → init_pose 回到工作位，供段与段之间摆放物品。
+停止跟随 VR + **直接**回到 init_pose 工作位（**不经 init_waypoints**，`/teleop/init_direct`），
+供段与段之间摆放物品。区别于系统 tab「工作位」的途经点路径（`/teleop/init`）。
 **录制中/暂停/保存中按 X 无效**（闸门按 `/data_collect/state` 拦截，防毁段）；无数采节点
 运行时（纯遥操）照常生效。与 web 数采卡片「段间回位」按钮同功能。**顺序要求**：B 保存后
 等状态回 IDLE 再按 X；先 grip（重标定 armed）再 A 开始下一段（否则新段 armed 覆盖率不足

@@ -77,8 +77,8 @@ export function DataCollectCard({ dc, launch, teleopState }: Props) {
   }
 
   function workpos() {
-    if (!confirm('确认段间回位？双臂将从当前位姿经 init_waypoints 走到 init_pose（期间会 disarm 停止跟随 VR，需重新「开始遥操」再操作）。')) return
-    void launchOp(api.teleopWorkpos)
+    if (!confirm('确认段间回位？双臂将直接从当前位姿回到 init_pose 工作位（不经途径点，期间会 disarm 停止跟随 VR，需重新「开始遥操」再操作）。')) return
+    void launchOp(api.teleopWorkposDirect)
   }
 
   return (
@@ -206,7 +206,7 @@ export function DataCollectCard({ dc, launch, teleopState }: Props) {
         <button
           style={btn('#14b8a6')}
           disabled={!workposEnabled}
-          title={workposEnabled ? '停止跟随 VR 并回到工作位（与左手柄 X 同功能）' : '遥操需 RUNNING/PAUSED 且非录制中才可用'}
+          title={workposEnabled ? '停止跟随 VR 并直达回到工作位（与左手柄 X 同功能，不经途径点）' : '遥操需 RUNNING/PAUSED 且非录制中才可用'}
           onClick={workpos}
         >
           段间回位
@@ -306,8 +306,9 @@ export function DataCollectCard({ dc, launch, teleopState }: Props) {
             <b style={hintKeyStyle}>摇杆按下</b>=丢弃（仅录制中，删文件不可逆）
           </div>
           <div>
-            VR 左手柄：<b style={hintKeyStyle}>X</b>=段间回位（停止跟随 VR 回到工作位；
-            录制中/保存中无效）｜web「段间回位」按钮同功能（仅遥操运行中）
+            VR 左手柄：<b style={hintKeyStyle}>X</b>=段间回位（停止跟随 VR，**直接**回到工作位、
+            不经途径点；录制中/保存中无效）｜web「段间回位」按钮同功能（仅遥操运行中）；系统 tab
+            「工作位」=途经点路径
           </div>
           <div>
             键盘：<b style={hintKeyStyle}>s</b>=开始 <b style={hintKeyStyle}>q</b>=停止保存{' '}

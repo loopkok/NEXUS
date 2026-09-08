@@ -41,8 +41,11 @@ export const api = {
   // HOME / park-to-zero：双臂沿 init_pose → init_waypoints → 零位 收回（先使能电机）
   teleopHome: () => post<unknown>('/api/v1/teleop/home'),
   // 工作位 / go-to-init：双臂沿 init_waypoints → init_pose 走到初始工作位
-  // （启动自动归位已关闭，回工作位靠此按钮手动触发）
+  // （启动自动归位已关闭，回工作位靠此按钮手动触发；途经点路径）
   teleopWorkpos: () => post<unknown>('/api/v1/teleop/workpos'),
+  // 段间回位 / go-to-init direct：双臂**直接**（不经 init_waypoints）回到
+  // init_pose——与左 X 同功能，数采段间快速回工作位（直达路径）
+  teleopWorkposDirect: () => post<unknown>('/api/v1/teleop/workpos/direct'),
   restart: () => post<unknown>('/api/v1/restart'),
   // Robot hardware mode (driver services — real hardware actions)
   robotReady: () => post<unknown>('/api/v1/robot/ready'),
