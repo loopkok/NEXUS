@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """Tests for policy backends + factory (no network / no torch needed)."""
 
+import json
+import os
+import sys
+import tempfile
+import types
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 
 from astral_policy_inference.backend import (
+    LerobotActBackend,
     ObsBatch,
     OpenPiServerBackend,
     PolicyError,
@@ -122,6 +130,76 @@ class TestFactory(unittest.TestCase):
         self.assertIsInstance(bk, StubBackend)
         with self.assertRaises(PolicyError):
             make_backend(backend_type="nope", action_dim=ACT_DIM, camera_map={})
+
+
+class TestLerobotActBackendLoad(unittest.TestCase):
+    """Regression: ``LerobotActBackend.open()`` must resolve the concrete policy
+    class through the lerobot factory. In lerobot 0.6.2 (both this fork and
+    VLA/lerobot) ``PreTrainedPolicy`` is the *abstract* base — calling
+    ``PreTrainedPolicy.from_pretrained`` directly cannot instantiate a real
+    ACT checkpoint (``Can't instantiate abstract class``). The factory's
+    ``get_policy_class`` maps ``config.json["type"]`` ("act") -> ``ACTPolicy``.
+
+    Hermetic: lerobot is faked via ``sys.modules`` so this runs without lerobot
+    installed (matches the file's "no torch needed" contract)."""
+
+    def _fake_lerobot(self, seen):
+        fake = types.ModuleType("lerobot.policies")
+
+        class FakePolicy:
+            @classmethod
+            def from_pretrained(cls, path):
+                seen.append(("from_pretrained", path))
+                return SimpleNamespace(
+                    config=SimpleNamespace(type="act"), to=lambda *a, **k: None
+                )
+
+        fake.get_policy_class = (
+            lambda t: seen.append(("get_policy_class", t)) or FakePolicy
+        )
+        fake.make_pre_post_processors = (
+            lambda cfg, pretrained_path=None: ((lambda x: x), (lambda x: x))
+        )
+        return fake
+
+    def test_open_resolves_concrete_policy_via_factory(self):
+        seen = []
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "config.json"), "w") as f:
+                json.dump({"type": "act"}, f)
+            fake = self._fake_lerobot(seen)
+            with mock.patch.dict(
+                sys.modules,
+                {"lerobot": types.ModuleType("lerobot"), "lerobot.policies": fake},
+            ):
+                bk = LerobotActBackend(checkpoint_dir=d, action_dim=8, image_keys={})
+                bk.open()
+        self.assertEqual(
+            seen,
+            [("get_policy_class", "act"), ("from_pretrained", d)],
+        )
+        self.assertIsNotNone(bk._policy)
+        self.assertIsNotNone(bk._pre)
+        self.assertIsNotNone(bk._post)
+
+    def test_open_unknown_type_raises_policy_error(self):
+        seen = []
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "config.json"), "w") as f:
+                json.dump({"type": "nope"}, f)
+            fake = self._fake_lerobot(seen)
+
+            def boom(t):
+                raise ValueError(f"unknown policy {t}")
+
+            fake.get_policy_class = boom
+            with mock.patch.dict(
+                sys.modules,
+                {"lerobot": types.ModuleType("lerobot"), "lerobot.policies": fake},
+            ):
+                bk = LerobotActBackend(checkpoint_dir=d, action_dim=8, image_keys={})
+                with self.assertRaises(PolicyError):
+                    bk.open()
 
 
 if __name__ == "__main__":

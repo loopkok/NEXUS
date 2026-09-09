@@ -48,6 +48,14 @@
 | 第二次连续回放不保持末帧 | `_hold_end` 只在 `_start_policy` 清，播完自动 stop 后残留旧时间戳 | `_cmd_playback` 与 `_cmd_stop` 都置 `_hold_end=None` |
 | 回放总维数相同但块序不同会静默错放 | 只校验 `action_dim` | 带 schema（h5/lerobot meta）时比对 `ep.schema.state_names()` 与机器人 schema，不符拒绝 |
 | 策略与夹爪遥操抢写 `/left_gripper/command` | `astral_gripper_teleop` 原来不看 disarm 一直发 pinch 比值 | pinch 节点 `disarm_topic`+`arm_topic` 仲裁门；policy 进 POLICY/PLAYBACK 发 disarm=true、进 HUMAN/IDLE 发 false |
+| ACT 后端加载真实 checkpoint 报 "Can't instantiate abstract class PreTrainedPolicy" | lerobot 0.6.2 里 `PreTrainedPolicy` 是抽象基类，`from_pretrained` 直接调用无法实例化（两个 checkout 行为一致）；`test_backend.py` 从没覆盖过 `LerobotActBackend.open()` | `open()` 读 `config.json["type"]` → `get_policy_class` 解析具体类（ACTPolicy）再 from_pretrained；补 2 例 hermetic 回归（sys.modules 伪造 lerobot，无 torch） |
+| 逐帧评估 ACT 正确性 MAE 高达 0.20 rad（实际模型只有 0.004） | `LerobotActBackend.infer()` 走 `select_action` 内部 50 行 action 队列：后续 infer 只吐上一 chunk 缓存行、对新观测不重新推理 | 逐帧评估每帧先 `backend.reset()` 清队列（节点运行时此行为正确=ACT 自管节奏，勿"修"）；正确性脚本已内置 |
+| 正确性脚本把整段视频解码进内存 OOM 卡死 | 单个 `file-*.mp4` 含整个 chunk 所有 episode（~1 万帧 ≈15GB/相机） | PyAV `seek` 按需解码目标帧附近（O(1) 内存） |
+| HITL 接管/重启后重新进 POLICY 重放 ~1.7s 陈旧动作（危险跳变） | serve_act 的 ACT 后端常驻，`select_action` 50 行队列跨客户端连接残留；节点新会话第一推理拿到的是上一会话缓存行 | serve_act 每个新连接 `backend.reset()` 清队列（openpi 协议无 reset 消息）；节点每次 POLICY 会话正好一个新连接 |
+| ACT 部署控制率只有 13Hz（应 30Hz） | 两层：① ACT 后端返回 1 行 chunk（select_action 队列）→ 引擎分块失效；② `_planner_loop` 锁内 Event.wait 饿死控制线程 | ① 方案 A：`predict_action_chunk` 返回完整 chunk；② 锁修复（wait 移出锁外）。默认 queue_async 即 30Hz |
+| `ros2 run`/`ros2 launch` 报 "No executable found" | 缺 `setup.cfg`，console script 装进 `bin/` 而非 ament 的 `lib/<pkg>/`（data_collect 有 setup.cfg 所以正常） | 补 `setup.cfg`（`[install] install_scripts=$base/lib/<pkg>`） |
+| queue_async 控制线程饿死（瞬时推理也只有 ~15Hz；真实 ACT 0.5Hz） | `_planner_loop` 把 `self._stop.wait(0.005)` 写在 `with self._lock` 内——planner 空闲时几乎 100% 持锁，`tick()` 在锁上饿死。此前被 select_action 1 行 chunk（planner 一直重填）掩盖，方案 A 暴露 | `Event.wait` 移出锁外（空闲判定在锁内、等待在锁外）；回归 `test_queue_async_control_thread_not_starved_by_planner` |
+| ACT 后端一次 infer 只回 1 行，引擎分块/预取/网络全浪费 | `LerobotActBackend.infer` 走 `select_action`（内部 50 行队列逐行吐），引擎拿不到完整 chunk | **方案 A**：改 `predict_action_chunk` 一次返回完整 chunk（`temporal_ensemble_coeff` 非 None 回退 select_action）；图像上传从每行一次变每 chunk 一次（-96%），queue_async 达 30Hz，loop 7.9→1.26ms |
 
 ## 代码路径速查
 
@@ -59,7 +67,26 @@ engine.py    queue_sync 阻塞重填；queue_async 后台预取；rtc 后台滚�
 backend.py   make_backend(openpi|act|stub)；重依赖（websockets/torch/lerobot）在 open() 懒加载
 replay.py    PlaybackSession：target()/advance()/reanchor(offset)/done
 controller.py 纯 FSM：request/revert/snapshot；_TABLE 显式迁移表
+scripts/serve_act.py   ACT 远程 serve（py3.12 lerobot 环境），与 openpi websocket 协议兼容；
+             节点用 backend_type=openpi 远程连（解决 rclpy py3.10 × lerobot py3.12 同进程冲突）
 ```
+
+## 环境约束（改环境相关代码前必读）
+
+- **rclpy 只有 py3.10**（ROS Humble），**lerobot 0.6.2 要求 py3.12**（代码用 PEP 695 泛型，
+  py3.10 解析期 SyntaxError，无法 shim）——本机没有任何单解释器能同时跑节点 + 进程内 ACT。
+- **ACT 部署走远程 serve**（`scripts/serve_act.py`，py3.12 环境）+ 节点 `backend_type=openpi`
+  连接；pi0.5 同理走 openpi server。进程内 `backend_type=act` 仅当运行环境的 python 满足
+  lerobot 约束时可用（如换 py3.12 的 ROS 2 Jazzy）。
+- serve_act 与 node 必须用**同源 msgpack_numpy**：openpi_client 自带 vendored 版（键
+  `__ndarray__`），与 pip 版（键 `nd`）线上不互通，混用会解出 dict。
+- **真机部署 launch 必传**：`backend_type:=openpi host:=<gpu> port:=8001
+  camera_image_size:=<模型输入>`。`camera_image_size` 不传静默 224（ACT 480 崩）；
+  `engine_mode` 默认 queue_async 即 30Hz（方案 A 后无需改）。
+- **openpi_client 需可导入**（node 的 OpenPiServerBackend 用）：已 `pip install --user -e
+  openpi-client --no-deps` 到 py3.10 user-site（其 numpy<2 约束过旧，numpy 2.2.6 兼容）。
+- **openpi_client 的 `__ndarray__` msgpack 是线上契约**：serve_act 必须在 py3.12 env 里
+  通过 `_OPENPI_CLIENT_SRC` sys.path 用同源 vendored 版打包。
 
 ## 测试与验证（改后必须全绿）
 
@@ -77,6 +104,71 @@ PYTHONPATH=src/astral_data_collect:src/astral_policy_inference \
 - 改推理控制流必须补 node_flow 用例（进程内 stub 后端 + 真实 Trigger 服务，
   覆盖成功/失败接管、暂停恢复重规划、回放重锚）。
 - `astral_arm_teleop` 的 `~/reanchor` 服务另在 `astral_arm_teleop/test_reanchor_teleop.py` 有单测。
+
+### 真实 checkpoint 集成/端到端（部署前冒烟，需 GPU + lerobot + checkpoint）
+
+单测不覆盖「真实 ACT 模型加载 + 推理」路径（那需要 checkpoint/GPU/lerobot 环境），
+用 `astral_ws/scripts/` 下两个退出码脚本补齐（对齐 `run_inference_sim_smoke.py` 模式）：
+
+```bash
+# A) 模型侧集成（py3.12 lerobot 环境，无 ROS）：后端加载 + 推理 + 引擎分块/队列/reset
+/home/robot/miniconda3/envs/lerobot/bin/python astral_ws/scripts/run_act_integration.py \
+    --checkpoint-dir astral_ckpt/pickup_act_480/checkpoints/080000/pretrained_model
+
+# B) 完整节点端到端（py3.10 + ROS，需先外部启动 serve_act + policy_node）：
+#    ① serve_act（py3.12 环境）② policy_node（backend_type=openpi, camera_image_size=480）
+source /opt/ros/humble/setup.bash
+/home/robot/miniconda3/envs/ros2/bin/python astral_ws/scripts/run_act_e2e.py --check-server
+```
+
+- `run_act_integration.py` 对应后端 `get_policy_class` 修复的回归点 + 引擎队列语义
+  （50 行 1 次真推理、reset 重规划），全部 PASS 才能说「模型能用」；
+- `run_act_e2e.py --check-server` 先直连 serve_act 做推理往返（快速区分 server 问题 vs
+  节点配置），再发 policy/pause/resume/stop 验证真实 ACT 驱动指令流 + 实测控制率 ~30Hz；
+- 改 backend/engine/serve_act 后跑 A；改节点仲裁/话题/配置后跑 B。
+
+### 真实数据推理正确性 + 远程链路基准（评估「结果对不对 + 快不快」）
+
+```bash
+# C) 正确性：喂真实 episode 观测给模型，对比录制的 next-state 动作（py3.12 环境）
+/home/robot/miniconda3/envs/lerobot/bin/python astral_ws/scripts/run_act_correctness.py \
+    --checkpoint-dir astral_ckpt/pickup_act_480/checkpoints/080000/pretrained_model \
+    --dataset-dir "astral_data/act/pick up and place_480" --episode 0
+
+# D) 链路基准：serve_act 远程推理的 RTT 分布/真推理 vs 缓存/吞吐/GPU（py3.10，先起 serve_act）
+PYTHONPATH=...openpi-client/src /usr/bin/python3 astral_ws/scripts/run_act_benchmark.py --requests 250
+```
+
+**C 的两条硬规则**（都踩过）：
+1. **每帧必须 `backend.reset()`**——`select_action` 内部 50 行 action 队列，不清队列时后续
+   infer 只吐上一 chunk 缓存行、不重新推理，逐帧 MAE 会被污染（0.20→0.004 rad 的差距）。
+   节点运行时此行为是**正确**的（ACT 自管节奏），只有逐帧评估要 reset；
+2. **视频用 PyAV seek 按需解码**——单个 file-*.mp4 含整个 chunk 所有 episode（~1 万帧
+   ≈15GB/相机），整段解码会 OOM 卡死。
+实测基线：ep0/5/20/46 全 PASS，整体 MAE 0.004~0.005 rad；链路 250 请求 0 失败、吞吐
+198 req/s、稳态 RTT 4.3ms、冷启动真推理 201ms、GPU ~957MiB、节点端到端控制率 29.6Hz。
+
+### 可观测指标清单（远程链路全层）
+
+| 层 | 指标 | 获取方式 | 本机基线 |
+|---|---|---|---|
+| 载荷 | 1.38MB/请求 (8×4B + 2×480²×3B) | 计算 | 1.38MB |
+| 网络 | RTT p50/p95/p99/std | `run_act_benchmark.py` | 3.9/5.1/12.1ms, std 11 |
+| 网络 | 网络+序列化 = RTT−server_total | 同 | p50 1.94ms |
+| 网络 | 线缆下限（小消息 RTT） | 同 | 0.14ms |
+| 网络 | 本地序列化 pack/unpack | 同 | 0.26/0.04ms |
+| 服务端 | server_timing prep/pre/infer/post | serve_act 响应 `server_timing` | 1.68/0.22/1.16/0.07ms |
+| 服务端 | GPU util / mem | nvidia-smi（benchmark 采样） | ~6-10% / ~1GiB |
+| 节点 | engine plans/pops/last_plan_ms/remaining | `/policy_inference/state` | 30Hz 时 4-7ms |
+| 节点 | 控制率 pops/s | 同（增量） | queue_sync 29.6Hz |
+| 节点 | `latency_ms.loop` 新观测→指令处理耗时 | 同 | avg 7.9ms |
+| 节点 | `latency_ms.obs_age` 真实关节反馈龄期 | 同 | avg 16.5ms |
+| 节点 | `exec_events` 安全层拦截（nan/clip/slew） | 同 | 空=无拦截 |
+| 正确性 | 预测 vs 录制动作 MAE | `run_act_correctness.py` | 0.004~0.005 rad |
+| 稳定性 | serve_act 连接计数/断线 | serve_act 日志 `connection #N` | 按会话数 |
+
+埋点位置：backend `last_timing`（LerobotActBackend）/ `last_server_timing`（OpenPiServerBackend）、
+node `latency_ms`（`_policy_tick` 测，排除夹爪自回显）、serve_act `server_timing`+连接计数。
 
 ## 修改约定
 

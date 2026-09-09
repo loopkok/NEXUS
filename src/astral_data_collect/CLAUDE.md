@@ -85,10 +85,11 @@ test/                     ← pytest 全套（见下"测试"）
 5. **parquet 只含非视频列**（v2.1 规范）：视频帧由读取侧按 timestamp +
    meta 的 video_path 模板解析。struct{path,timestamp} 视频列会让 openpi
    锁定的 lerobot 0.1.0 在 `torch.tensor(dict)` 处崩（已踩过，有回归测试）。
-6. **内存红线：转换在小内存机（15GB）跑**。SVT-AV1 必须 `lp=2:lookahead=16`
+6. **内存红线：转换在小内存机（15GB）跑**。SVT-AV1 默认 `lp=2:lookahead=16`
    （深 lookahead 会吃数 GB）；图像统计必须走 `ImageStatsAccumulator` 流式
    累加（np.stack 100 帧 1080p ≈620MB/相机）。这两个优化是 exit 137 换来的，
-   别"简化"回去。
+   别"简化"回去。**核数多的机器（20 核）可在内存充裕时 `ASTRAL_AV1_LP=8` 放开
+   AV1 并行（~0.6GB/lp 峰值；本机当前 IDE 占 10GB 时 lp≤4 才安全）**。
 7. **QoS 与门控**：抽头话题仅在有订阅者时编码（无订阅零开销）；采集开关只
    管"录"，不碰 streamer 的推送门控（"看"与"录"正交，别再耦合）。
 

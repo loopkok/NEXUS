@@ -125,6 +125,34 @@ class TestThreadingSafety(unittest.TestCase):
         with self.assertRaises(EngineStateError):
             eng.start()  # _plan_blocking silently no-ops without obs
 
+    def test_queue_async_control_thread_not_starved_by_planner(self):
+        """回归：queue_async 空闲时 planner 不得持锁饿死控制线程。
+
+        根因：`_planner_loop` 把 `self._stop.wait(0.005)` 写在 `with self._lock`
+        内，空闲时 planner 几乎 100% 持有引擎锁（5ms 等待+立即重获），`tick()`
+        在锁上饿死 → 即使瞬时推理也只有 ~15Hz。修复：wait 移出锁外。
+        被 plan A（后端返回完整 chunk → planner 进入空闲路径）暴露。
+        """
+        class FullChunkBackend(StubBackend):
+            def infer(self, obs):
+                return np.zeros((50, DIM), dtype=np.float64)
+
+        eng = ActionEngine(
+            FullChunkBackend(action_dim=DIM, camera_map={}),
+            mode="queue_async", action_dim=DIM, chunk=50, policy_fps=30,
+            autostart=True,
+        )
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng.start()
+        t0 = time.monotonic()
+        n = 0
+        while time.monotonic() - t0 < 0.5:
+            if eng.tick() is not None:
+                n += 1
+        eng.stop()
+        # 修复前 ~7 pop/0.5s；修复后 >1000。200 为 10× 余量的宽松阈值。
+        self.assertGreater(n, 200, f"control thread starved: {n} pops in 0.5s")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

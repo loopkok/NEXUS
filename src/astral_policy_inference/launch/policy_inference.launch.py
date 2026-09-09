@@ -3,10 +3,18 @@
 用法：
   ros2 launch astral_policy_inference policy_inference.launch.py \
       params_file:=<path> backend_type:=openpi host:=192.168.x.x \
-      keyboard:=true
+      camera_image_size:=480 keyboard:=true
 
 顶层 robot/schema 参数通过 `policy.robot.<key>` 形如 --ros-args -p arms:="['left']"
 在 launch 里用 extra_args 传入（见 config yaml 注释）。
+
+注意：ACT 模型 preprocessor 无 resize，`camera_image_size` 必须与模型输入一致
+（本机 pickup_act_480 = 480）；launch 未传时回落 yaml 默认值 224。
+**ACT 默认 `engine_mode:=queue_async` 即 30Hz（方案 A 后无需改）**：常规 ACT
+（无 temporal_ensemble）后端返回完整 action chunk（`predict_action_chunk`），
+queue_async 预取整 chunk 可达策略速率且图像每 chunk 上传一次（网络 -96%）；
+仅时序融合 checkpoint（`temporal_ensemble_coeff` 非空，回退 `select_action`
+单行）才需 `engine_mode:=queue_sync`。
 """
 
 import os
@@ -33,6 +41,8 @@ def _node(context):
     port = LaunchConfiguration("port").perform(context)
     checkpoint_dir = LaunchConfiguration("checkpoint_dir").perform(context)
     cmd_topic = LaunchConfiguration("cmd_topic").perform(context)
+    camera_image_size = LaunchConfiguration("camera_image_size").perform(context)
+    engine_mode = LaunchConfiguration("engine_mode").perform(context)
     parameters = [params_file]
     if backend_type:
         parameters.append(
@@ -44,6 +54,10 @@ def _node(context):
                 "cmd_topic": cmd_topic,
             }
         )
+    if camera_image_size:
+        parameters.append({"camera_image_size": int(camera_image_size)})
+    if engine_mode:
+        parameters.append({"engine_mode": engine_mode})
     node = Node(
         package="astral_policy_inference",
         executable="policy_node",
@@ -74,6 +88,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("host", default_value="127.0.0.1"),
             DeclareLaunchArgument("port", default_value="8000"),
             DeclareLaunchArgument("checkpoint_dir", default_value=""),
+            DeclareLaunchArgument("camera_image_size", default_value=""),
+            DeclareLaunchArgument("engine_mode", default_value=""),
             DeclareLaunchArgument("keyboard", default_value="false"),
             DeclareLaunchArgument("cmd_topic", default_value="/policy_inference/cmd"),
             DeclareLaunchArgument("state_topic", default_value="/policy_inference/state"),

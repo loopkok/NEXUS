@@ -338,3 +338,18 @@ def test_convert_letterbox_default_224(tmp_path):
     # 64x48 源 -> 224x168 内容 + 上下 28px 黑边
     assert frame[0].max() == 0 and frame[-1].max() == 0
     assert frame[28:196].max() > 0
+
+
+def test_svt_av1_params_env_override(monkeypatch):
+    """ASTRAL_AV1_LP 环境变量控制 AV1 并行度：默认 2（内存红线），放开、非法回退。"""
+    from astral_data_collect.convert_to_lerobot import _svt_av1_params
+
+    monkeypatch.delenv("ASTRAL_AV1_LP", raising=False)
+    assert _svt_av1_params() == "lp=2:lookahead=16"   # 默认（内存红线）
+
+    monkeypatch.setenv("ASTRAL_AV1_LP", "8")
+    assert _svt_av1_params() == "lp=8:lookahead=16"   # 20 核机器放开
+
+    for bad in ("abc", "-1", "0", "  "):
+        monkeypatch.setenv("ASTRAL_AV1_LP", bad)
+        assert _svt_av1_params() == "lp=2:lookahead=16"  # 非法回退默认

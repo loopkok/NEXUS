@@ -72,9 +72,31 @@ ros2 topic echo /policy_inference/state
 
 | 后端 | 改什么 | 说明 |
 |---|---|---|
-| `backend_type: "act"` | `checkpoint_dir` 指向新 checkpoint 目录 | 进程内 `PreTrainedPolicy.from_pretrained`；换 ACT 权重/归一化/分块即换目录 |
-| `backend_type: "openpi"` | GPU 主机上换 `serve_policy.py` 加载的 checkpoint | 机器人端只填 `host/port`，**不碰**；server 换模型即可 |
+| `backend_type: "act"` | `checkpoint_dir` 指向新 checkpoint 目录 | 进程内 lerobot ACT：按 checkpoint `config.json` 的 `type` 经 `get_policy_class` 解析具体类加载（`PreTrainedPolicy` 在 lerobot 0.6.2 是抽象基类，不能直接 `from_pretrained`）；换 ACT 权重/归一化/分块即换目录。**图像尺寸须与模型 preprocessor 一致**（本模型 480×480 → `camera_image_size: 480`，默认 224 会 shape 不匹配） |
+| `backend_type: "openpi"` | GPU 主机上换 `serve_policy.py` / `serve_act.py` 加载的 checkpoint | 机器人端只填 `host/port`，**不碰**；server 换模型即可 |
 | `backend_type: "stub"` | — | 无网络冒烟 / 开发用，勿上真机 |
+
+**ACT 远程部署（推荐，解决 rclpy py3.10 与 lerobot py3.12 同进程冲突）**：lerobot 0.6.2
+要求 py3.12（代码用 PEP 695 泛型），而 ROS Humble 的 rclpy 只有 py3.10 绑定——两者无法同进程。
+用 `scripts/serve_act.py` 在 py3.12 + CUDA 环境起服务（复用本包 ACT 后端加载逻辑），节点侧
+`backend_type=openpi` + `host/port` 远程连（协议与 openpi 完全兼容，节点零改动）：
+
+```bash
+# GPU 主机（py3.12 lerobot 环境）：
+PYTHONPATH=astral_ws/src/astral_policy_inference:astral_ws/src/astral_data_collect \
+  <lerobot-env>/bin/python astral_ws/src/astral_policy_inference/scripts/serve_act.py \
+    --checkpoint-dir <act_checkpoint> --port 8001
+# 机器人侧节点（py3.10 + ROS）——三个参数必传，engine_mode 默认 queue_async 即可：
+ros2 launch astral_policy_inference policy_inference.launch.py \
+  backend_type:=openpi host:=127.0.0.1 port:=8001 \
+  camera_image_size:=480
+```
+
+- `camera_image_size` 必须与模型 preprocessor 输入一致（本机 pickup_act_480=480；默认 224 崩）；
+- ACT 后端一次返回**完整 chunk**（方案 A，`predict_action_chunk`），引擎按 50 行分块/预取，
+  默认 `queue_async` 即 30Hz、图像上传每 chunk 一次（网络 -96%）、节点 loop ~1.3ms；
+- 注意：serve_act 与 node 必须用**同源（openpi_client vendored）msgpack_numpy**，两端线上格式
+  （`__ndarray__` vs pip 的 `nd`）不互通。
 
 换**机器人配置**（加右臂/换灵巧手/加腰头）时，改 `config/policy_inference.yaml` 顶部 robot
 段，使其与采集当时的 `data_collect.yaml` 一致——观测布局/指令拆分自动跟随。
@@ -177,3 +199,35 @@ payload、错误处理、工厂）、engine（三种模式、后台规划、RTC 
 （进程内 mock 机器人 + stub 后端 + 真实 Trigger 服务的端到端状态流、HITL 成功/失败路径）。
 
 仿真冒烟（无需模型/相机，stub 后端 + sim 提供 joint_states/命令消费即可）。
+
+### 真实 ACT checkpoint 验证（部署前必跑，需 GPU + lerobot + 真实 checkpoint）
+
+单测不加载真实模型，部署前用 `astral_ws/scripts/` 下两个退出码脚本验证：
+
+```bash
+# A) 模型侧集成（py3.12 lerobot 环境，无 ROS）——后端 get_policy_class 加载 + 推理 +
+#    引擎分块/ACT 队列/reset 重规划：
+/home/robot/miniconda3/envs/lerobot/bin/python astral_ws/scripts/run_act_integration.py \
+    --checkpoint-dir <act_checkpoint>
+
+# B) 完整节点端到端（py3.10 + ROS，需先启动 serve_act + policy_node）——
+#    真实 ACT 驱动指令流 + pause/resume/stop，--check-server 先做推理往返预检：
+/home/robot/miniconda3/envs/ros2/bin/python astral_ws/scripts/run_act_e2e.py --check-server
+
+# C) 推理正确性（py3.12 环境，真实数据集 vs 模型预测）：逐帧喂 episode 观测对比录制动作
+/home/robot/miniconda3/envs/lerobot/bin/python astral_ws/scripts/run_act_correctness.py \
+    --checkpoint-dir <act_checkpoint> --dataset-dir "<act_dataset>"
+
+# D) 远程链路基准（py3.10，先起 serve_act）：RTT 分布/真推理 vs 缓存/吞吐/GPU
+PYTHONPATH=<openpi-client>/src /usr/bin/python3 astral_ws/scripts/run_act_benchmark.py
+#    含：握手、服务端分项 server_timing（prep/pre/infer/post）、网络vs模型分离、
+#        本地序列化、线缆探测、RTT 抖动
+```
+
+- A 对应「模型能不能被这个包加载并产出有效动作」，B 对应「整条 ROS 链路 + 仲裁 +
+  控制率」，C 对应「推理结果对不对」（真实数据 MAE 基线 0.004~0.005 rad），D 对应
+  「远程推理快不快」（本机基线：稳态 RTT 4.3ms、吞吐 198 req/s、冷启动真推理 201ms）；
+- **C 的两条硬规则**：每帧先 `backend.reset()`（否则 `select_action` 队列吐缓存行，
+  MAE 被污染 0.20→0.004）；视频用 PyAV seek 按需解码（整段解码 OOM）；
+- 真机部署流程：起 `serve_act.py`（py3.12）→ 起 `policy_node`（backend_type=openpi，
+  `camera_image_size` 与模型 preprocessor 一致）→ 跑 B 冒烟 → 接真话题。

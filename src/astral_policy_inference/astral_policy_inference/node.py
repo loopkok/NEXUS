@@ -28,6 +28,7 @@ upstream robot-config change propagates here with no code edits.
 
 from __future__ import annotations
 
+import collections
 import json
 import queue
 import threading
@@ -105,6 +106,9 @@ class PolicyNode(Node):
         self._images: dict[str, np.ndarray] = {}
         self._image_stamps: dict[str, float] = {}
         self._cam_frames = 0
+        # 端到端控制延迟统计（新观测 → 指令发布）：loop_ms=节点处理耗时, obs_age=观测龄期
+        self._loop_ms: "collections.deque[float]" = collections.deque(maxlen=50)
+        self._obs_age_ms: "collections.deque[float]" = collections.deque(maxlen=50)
 
         self._ctrl_rate = float(
             self.get_parameter("dataset_fps").value
@@ -813,8 +817,10 @@ class PolicyNode(Node):
 
     def _policy_tick(self, dt: float) -> None:
         self._acc += dt
+        t_loop0: Optional[float] = None
         if self._acc + 1e-9 >= self._policy_dt:
             self._acc = max(0.0, self._acc - self._policy_dt)
+            t_loop0 = time.monotonic()
             state, _ = self._state_ok()
             if state is None:
                 # Mid-run observation loss gate: never keep re-inferring (or
@@ -853,6 +859,19 @@ class PolicyNode(Node):
         else:
             self._sub += 1
         self._emit_target()
+        # 端到端控制延迟（新观测 → 指令发布）与观测龄期；只测「消费了新观测」的 tick
+        if t_loop0 is not None:
+            now = time.monotonic()
+            self._loop_ms.append((now - t_loop0) * 1000.0)
+            # 关节反馈才是真观测（ratio 是自回显，发布时刷新 stamp，会污染龄期）
+            joint_keys = [
+                k for k, src in self._layout.sources.items()
+                if src.kind != "ratio" and k in self._stamps
+            ]
+            if joint_keys:
+                self._obs_age_ms.append(
+                    (now - max(self._stamps[k] for k in joint_keys)) * 1000.0
+                )
 
     def _emit_target(self) -> None:
         """Publish one control-rate target, linearly sub-dividing frame steps."""
@@ -935,6 +954,19 @@ class PolicyNode(Node):
 
     # ---------------------------------------------------------------- state
 
+    @staticmethod
+    def _deque_stats(dq: "collections.deque[float]") -> dict | None:
+        if not dq:
+            return None
+        xs = sorted(dq)
+        n = len(xs)
+        return {
+            "avg": round(sum(xs) / n, 2),
+            "p50": round(xs[n // 2], 2),
+            "p95": round(xs[min(n - 1, int(n * 0.95))], 2),
+            "max": round(xs[-1], 2),
+        }
+
     def _state_payload(self) -> dict:
         with self._lock:
             return self._state_payload_locked()
@@ -958,6 +990,10 @@ class PolicyNode(Node):
                 else None
             ),
             "cam_frames": self._cam_frames,
+            "latency_ms": {
+                "loop": self._deque_stats(self._loop_ms),
+                "obs_age": self._deque_stats(self._obs_age_ms),
+            },
             "exec_events": self._exec_events[-20:],
             "error": getattr(self, "_last_error", None),
         }

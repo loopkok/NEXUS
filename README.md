@@ -62,6 +62,7 @@ Quest3 ← WebRTC（quest3_video_streamer，信令 :8765）
 | 包 | 作用 |
 |----|------|
 | `astral_data_collect` | VLA 数据采集：raw HDF5 录制（与遥操并行）→ 离线对齐 → 清洗校验 → LeRobot v2.1 导出（OpenPI pi0.5 可读）→ Rerun 回放 |
+| `astral_policy_inference` | 策略部署/回放/HITL 推理节点：backend 抽象（openpi 远程 / ACT 进程内或远程 serve / stub）、三种引擎节奏、`~/cmd` 仲裁、绝对动作安全层。换模型=只改后端参数，换机器人=改与采集一致的 schema yaml |
 
 开源 retarget 库仍可放在本仓库旁：`../wuji-retargeting`。
 
@@ -150,4 +151,6 @@ ros2 launch astral_data_collect data_collect.launch.py \
 | [`src/wujihand_retargeting/README.md`](src/wujihand_retargeting/README.md) | 重定向 |
 | [`src/wujihand_mujoco_sim/README.md`](src/wujihand_mujoco_sim/README.md) | 手仿真 / tuning |
 | [`src/quest3_video_streamer/README.md`](src/quest3_video_streamer/README.md) | Quest 相机 WebRTC 回传 |
+| [`src/astral_policy_inference/README.md`](src/astral_policy_inference/README.md) | 策略部署 / 数据回放 / 人在环路（HITL） |
+| [`src/astral_policy_inference/CLAUDE.md`](src/astral_policy_inference/CLAUDE.md) | 推理包架构不变量 / 环境约束 / 已解决坑 / 测试验证清单 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本记录 |

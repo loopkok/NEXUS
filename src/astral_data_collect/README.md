@@ -169,6 +169,8 @@ W3 关节跳变 >0.5rad、W4 JPEG 不可解码、W5 armed 覆盖率 <50%、W6 �
   锁定的 lerobot 0.1.0 在 `torch.tensor(dict)` 处崩（有回归断言禁止该列）。
 - 视频编码默认 libsvtav1（crf=30, g=2, yuv420p；限内存参数 `lp=2:lookahead=16`），
   不可用自动回退 h264；同相机各段 mp4 时间基/分辨率一致（后续升版按此假设串接）。
+  核数多的机器可在内存充裕时 `ASTRAL_AV1_LP=8` 放开 AV1 并行（默认 2 是内存红线；
+  实测 20 核双核 AV1-224 ≈78 帧/秒，720 ≈8 帧/秒）。
 - 图像默认在**转换期** letterbox 到 224×224（等比+对称黑边，复刻 openpi
   `resize_with_pad` 几何），`--image-size 0` 保留原分辨率；训练侧
   `ResizeImages(224,224)` 变恒等操作，解码后不再缩放。

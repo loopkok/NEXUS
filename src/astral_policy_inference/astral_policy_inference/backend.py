@@ -20,6 +20,9 @@ the module imports on machines that do not have them.
 from __future__ import annotations
 
 import dataclasses
+import json
+import os
+import sys
 import time
 from abc import ABC, abstractmethod
 from typing import Callable
@@ -103,6 +106,7 @@ class OpenPiServerBackend(PolicyBackend):
         self._client_factory = client_factory
         self._client = None
         self.last_infer_s = 0.0
+        self.last_server_timing: dict | None = None
 
     def open(self) -> None:
         if self._client is not None:
@@ -155,13 +159,24 @@ class OpenPiServerBackend(PolicyBackend):
             raise PolicyError(f"openpi server infer failed: {exc}") from exc
         if "actions" not in (response or {}):
             raise PolicyError("openpi server response missing 'actions' key")
+        self.last_server_timing = (
+            response.get("server_timing") if isinstance(response, dict) else None
+        )
         actions = _actions_from_response(response, self.action_dim, max_rows=1 << 20)
         self.last_infer_s = time.perf_counter() - t0
         return actions
 
 
 class LerobotActBackend(PolicyBackend):
-    """In-process lerobot ACT policy loaded from a checkpoint directory."""
+    """In-process lerobot ACT policy loaded from a checkpoint directory.
+
+    ``infer()`` returns the **full action chunk** (``n_action_steps`` rows) via
+    ``predict_action_chunk`` — the engine owns chunk pacing, so ``queue_async``
+    reaches the policy rate and the observation payload is uploaded once per
+    chunk instead of once per action row. Checkpoints with a
+    ``temporal_ensemble_coeff`` fall back to ``select_action`` (single row,
+    exponential weighting preserved).
+    """
 
     name = "act"
 
@@ -183,22 +198,35 @@ class LerobotActBackend(PolicyBackend):
         self._pre = None
         self._post = None
         self.last_infer_s = 0.0
+        self.last_timing: dict[str, float] = {}  # prep/pre/infer/post/total ms
 
     def open(self) -> None:
         if self._policy is not None:
             return
         try:
             from lerobot.policies import (
-                PreTrainedPolicy,
+                get_policy_class,
                 make_pre_post_processors,
             )
         except ImportError as exc:  # pragma: no cover
             raise PolicyError(
-                "lerobot (this fork, v0.6.x) not importable — run this node in "
-                "the lerobot environment or with VLA/lerobot/src on PYTHONPATH"
+                "lerobot (this fork, v0.6.x) not importable in this interpreter "
+                f"(python {sys.version_info.major}.{sys.version_info.minor}); "
+                "ACT must run remotely — start serve_act.py in a py3.12 lerobot "
+                "env and set backend_type=openpi + host/port on this node"
             ) from exc
         try:
-            policy = PreTrainedPolicy.from_pretrained(self.checkpoint_dir)
+            # PreTrainedPolicy is the *abstract* base in lerobot 0.6.x; the
+            # concrete class (ACTPolicy) is resolved via the factory from the
+            # checkpoint's own config.json "type". Directly calling
+            # PreTrainedPolicy.from_pretrained cannot instantiate a real
+            # checkpoint ("Can't instantiate abstract class").
+            with open(
+                os.path.join(self.checkpoint_dir, "config.json"), "r", encoding="utf-8"
+            ) as f:
+                policy_type = str(json.load(f).get("type", "act"))
+            policy_cls = get_policy_class(policy_type)
+            policy = policy_cls.from_pretrained(self.checkpoint_dir)
             if self.device is not None:
                 policy.to(self.device)
             pre, post = make_pre_post_processors(
@@ -239,18 +267,36 @@ class LerobotActBackend(PolicyBackend):
         try:
             from lerobot.policies.utils import prepare_observation_for_inference
 
+            timing: dict[str, float] = {}
             with torch.inference_mode():
+                t0 = time.perf_counter()
                 obs_in = prepare_observation_for_inference(
                     raw,
                     next(self._policy.parameters()).device,
                     task=obs.prompt or self.default_prompt,
                     robot_type=None,
                 )
+                timing["prep_ms"] = (time.perf_counter() - t0) * 1000.0
+                t1 = time.perf_counter()
                 obs_in = self._pre(obs_in)
-                t0 = time.perf_counter()
-                action = self._policy.select_action(obs_in)
+                timing["pre_ms"] = (time.perf_counter() - t1) * 1000.0
+                t2 = time.perf_counter()
+                if getattr(self._policy.config, "temporal_ensemble_coeff", None) is not None:
+                    # 时序融合 checkpoint：select_action 内部做指数加权，返回单行；
+                    # 引擎按 1 行 chunk 兜底（queue_async 会掉速，用 queue_sync）。
+                    action = self._policy.select_action(obs_in)
+                else:
+                    # 常规 ACT（本仓库 pickup_act_480）：一次前向返回完整 chunk
+                    # （n_action_steps 行），引擎拿回分块权 → queue_async 可达 30Hz、
+                    # 图像上传频率降 n_action_steps 倍（每 chunk 一次而非每行一次）。
+                    action = self._policy.predict_action_chunk(obs_in)
+                timing["infer_ms"] = (time.perf_counter() - t2) * 1000.0
+                t3 = time.perf_counter()
                 action = self._post(action)
-                self.last_infer_s = time.perf_counter() - t0
+                timing["post_ms"] = (time.perf_counter() - t3) * 1000.0
+            timing["total_ms"] = (time.perf_counter() - t0) * 1000.0
+            self.last_timing = timing
+            self.last_infer_s = time.perf_counter() - t0
             arr = np.asarray(action.detach().cpu().squeeze(0), dtype=np.float64)
         except Exception as exc:  # noqa: BLE001
             raise PolicyError(f"ACT infer failed: {exc}") from exc

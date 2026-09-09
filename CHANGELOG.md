@@ -4,6 +4,123 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-09-09
+
+**修复 `astral_policy_inference` ACT 后端加载真实 checkpoint 的 bug + 本机全链路验证**——
+`LerobotActBackend.open()` 原用 `PreTrainedPolicy.from_pretrained()` 直接加载，但 lerobot 0.6.2
+（`/home/robot/loopkok/lerobot` 与 `VLA/lerobot` 两个 checkout 行为一致）里 `PreTrainedPolicy`
+是**抽象基类**，直接调用必挂 `Can't instantiate abstract class`。**根因**：正确用法是经
+`factory.get_policy_class(config.json["type"])` 解析出具体类 `ACTPolicy` 再
+`from_pretrained`；`test_backend.py` 从未用真实 checkpoint 覆盖过 `LerobotActBackend.open()`
+（只测 openpi fake client / stub / factory），这条路径零覆盖。**修法**：`open()` 改读
+`checkpoint_dir/config.json` 的 `type` → `get_policy_class` → 具体类 `from_pretrained`
+（`pre/post` 处理器加载不变）；新增 2 例 hermetic 回归（`sys.modules` 伪造 lerobot，无
+torch/无网络）：`TestLerobotActBackendLoad::test_open_resolves_concrete_policy_via_factory`
+（先红后绿）+ `test_open_unknown_type_raises_policy_error`。**验证**（本机 4090D + ROS
+humble + conda lerobot env）：① 后端层——真实 checkpoint
+`astral_ckpt/pickup_act_480/checkpoints/080000/pretrained_model` 加载 0.5s 到 cuda:0，合成
+480×480 图像推理出 8 维绝对动作（夹爪 [0.33,0.33]）；② 引擎层——50 tick 产出 50 行平滑
+绝对动作（最大步长 0.0085 rad，夹爪 [0.37,0.43]），ACT 内部 50 行队列只真推理 1 次（236ms）
+其余缓存弹出（≤5ms）；reset 清空 ACT 队列后 tick 从新观测重规划（队列 49=新 50-chunk）；
+③ 节点层——colcon 可执行文件 + 参数文件（含 JSON `camera_map`）在本机 ROS 下启动成功
+（schema=8D arms=['left']），cmd→POLICY→指令流→pause 夹持（Δ=0）→resume 重规划→stop→IDLE
+全 PASS，顺带实测了运行期观测门控（关节停发 >1s 自动暂停、resume 缺新鲜观测被拦，均正确）。
+单测 81 例全绿（69 非 ROS + 12 node_flow）。**注意**：ACT 模型 preprocessor 无 resize，图像
+须 480×480（节点 `camera_image_size` 须设 480，非默认 224）。
+
+**环境硬墙 + ACT 远程 serve 化（`scripts/serve_act.py`）——真实 ACT 端到端跑通**。**动机**：
+「完整节点 + ACT 单进程」在本机不可行——lerobot 0.6.2 要求 py3.12（代码真用了 PEP 695 泛型
+`def f[T](...)`，py3.10 解析期 SyntaxError，shim 无法绕过），而 rclpy（ROS Humble）只有 py3.10
+绑定；版本约束不可调和。**做法**：新增 `scripts/serve_act.py`，在 py3.12 lerobot 环境里复用
+修好的 `LerobotActBackend` 加载 checkpoint，起一个**与 openpi websocket 协议完全兼容**的
+server（msgpack_numpy、连接先发 metadata、请求 state+images+prompt、响应 absolute actions、
+字符串响应即错误）；node 侧**零改动**直接 `backend_type=openpi` + `host/port` 连它
+（`OpenPiServerBackend` 现成）。**踩坑**：①`msgpack_numpy.Packer` 无 `unpackb`（模块级函数）；
+②openpi_client **自带 vendored msgpack_numpy**（键 `__ndarray__`），与 pip 版（键 `nd`）线上
+不兼容——server 必须用与 client 同源的 vendored 版，否则解出 dict；③编辑残留重复的
+`_make_packer` 定义导致旧 pip 版覆盖新 vendored 版（后定义覆盖前定义）。**验证**（本机
+4090D）：py3.10 `OpenPiServerBackend` client → serve_act（py3.12 + cu130 torch）真实推理回传
+8 维绝对动作（首推 187ms）；完整节点端到端——policy_node（backend_type=openpi,
+camera_image_size=480）+ 合成关节/夹爪/480² 图像驱动，**真实 ACT 驱动指令流 123 条/99 个不同值、
+夹爪比值 [0.25,0.5]、pause 夹持 Δ=0、resume 重规划、stop→IDLE，全 PASS**。环境处置：torch
+2.11.0+cu130 + torchvision 0.26.0 装入 ros2 conda env（与训练 env 同版本，满足 lerobot `<2.12`
+约束）；ros2 env 里 pip 强装的 lerobot 因 py3.10 无法解析已卸载。**部署模型**：ACT = serve_act
+进程（py3.12, GPU 主机）+ 节点（py3.10, 机器人侧）远程连；pi0.5 走原 openpi server 同理。
+**验证脚本收拢进仓库**（原 /tmp 脚本会丢）：`astral_ws/scripts/run_act_integration.py`
+（模型侧：后端 get_policy_class 加载 + 推理 + 引擎分块/队列/reset，py3.12 环境跑）与
+`astral_ws/scripts/run_act_e2e.py`（节点侧全链路 + `--check-server` 预检，py3.10 + ROS 跑），
+均已实测 ALL PASS；包 CLAUDE.md/README、顶层 README、根 CLAUDE.md 均补交接文档。
+
+**完整端到端 + 推理正确性 + 远程链路指标（真实数据集 + 真实模型，本机 4090D）**。新增
+`astral_ws/scripts/run_act_correctness.py`（正确性）与 `run_act_benchmark.py`（链路基准）。
+**正确性方法**：从 `astral_data/act/pick up and place_480` 读真实 episode（observation.state +
+video8/video0 视频帧，用 PyAV seek 按需解码，**禁止整段解码——单文件含全部 50 段 ~1 万帧 ≈15GB/相机，
+全量解码会 OOM 卡死**，已踩过），喂训练好的 checkpoint 对比录制的 next-state 动作。
+**踩坑（关键）**：`LerobotActBackend.infer()` 走 `select_action` 内部 50 行 action 队列——
+不清队列时后续 infer 只吐上一 chunk 缓存行、不重新推理。**逐帧评估必须每帧先
+`backend.reset()`**（节点运行时此行为正确=ACT 自管节奏，已验证；但逐帧正确性测量会被缓存行
+污染，MAE 0.20→0.004）。**结果**：ep0/ep5/ep20/ep46 全 ALL PASS，整体 MAE **0.004~0.005 rad**
+（≈0.3°，对齐偏移 0 确认 next-state 语义），与训练 L1=0.025 吻合——**模型能在训练数据上以
+亚毫弧度精度复现录制轨迹，推理结果正确**。**链路指标**（250 请求远程推理）：0 失败、
+吞吐 198 req/s（1.38MB/请求 → 274MB/s 上行）、稳态单请求 RTT **4.3ms**、冷启动真推理
+**201ms**（warm 后 <50ms）、GPU 显存 ~957MiB；节点端到端**实测控制率 29.6Hz**（引擎
+pops/4s，~30Hz 达标）、engine last_plan_ms 4.4ms、pause 夹持 Δ=0、resume 重规划、stop→IDLE。
+**serve_act 优雅断开**：客户端正常关闭 ws 时 `_handle` 未捕获 ConnectionClosed → 误报
+"handler failed" 刷屏，已加 try/except 捕获（0 error）。
+
+**真实部署脚本审计——发现并修复 5 个运行时会踩的坑（本机 4090D 实测）**。
+① **陈旧队列跨会话（critical）**：serve_act 的 ACT 后端常驻，`select_action` 的 50 行队列
+跨客户端连接残留——节点 HITL 接管或 stop→重启后重新进 POLICY，会先重放最多 ~1.7s（50×33ms）
+**接管前的陈旧动作**，可能造成危险跳变。实测：客户端 B 用完全不同的观测连上，第一条响应与
+A 会话残留只差 0.0007（拿到的是 A 的缓存行）。**修法**：serve_act 每个新连接建立时
+`backend.reset()`（openpi 协议无 reset 消息；节点每次 POLICY 会话正好一个新连接），修复后
+B 与 A 残留差 0.1156（新推理）。② **launch 不透传 `camera_image_size`**：`ros2 launch`
+部署 ACT 会静默用 yaml 默认 224，与模型 480 不匹配直接崩——launch 补 `camera_image_size`
+透传。③ **launch 不透传 `engine_mode` + ACT 必须 queue_sync**：ACT 后端每次返回 1 行
+（select_action 队列），queue_async 预取节流把控制率压到 **13Hz**（实测 pops/s），
+queue_sync 才是 **29.6Hz**——launch 补 `engine_mode` 透传，文档/yaml 明示 ACT 用 queue_sync。
+④ **console script 进 `bin/` 而非 `lib/<pkg>/`**：缺 `setup.cfg`，`ros2 run`/`ros2 launch`
+找不到可执行文件（README 里早有的 "No executable found" 坑根因）——补 setup.cfg
+（`[install] install_scripts=$base/lib/<pkg>`，与 astral_data_collect 一致），launch 部署验证
+通过。⑤ **openpi_client 需手动 PYTHONPATH**：`pip install --user -e openpi-client --no-deps`
+（其 numpy<2 约束过旧，numpy 2.2.6 实测兼容）免 PYTHONPATH。另：backend.py 的
+"lerobot not importable" 错误改提示 serve_act 路径（py3.10 跑进程内 ACT 的运行时护栏）；
+yaml 加醒目注释（本机 ACT 必须远程 + camera_image_size 480）。**验证**：`ros2 launch
+... backend_type:=openpi camera_image_size:=480 engine_mode:=queue_sync` + serve_act +
+run_act_e2e 全 PASS（控制率 29.6Hz、preflight 30ms、pause Δ=0）。
+
+**远程链路指标补全埋点**——所有指标可观测、有数值。① **服务端分项**：`LerobotActBackend.infer`
+加 `last_timing`（prep/pre/infer/post/total ms），serve_act 随响应返回 `server_timing`，
+`OpenPiServerBackend` 捕获 `last_server_timing`；② **节点端到端**：node `_policy_tick` 测
+`loop_ms`（新观测→指令发布处理耗时）与 `obs_age`（策略作用的真实关节反馈龄期，排除夹爪
+自回显污染），入 `/policy_inference/state` 的 `latency_ms`；③ **基准脚本补全**：握手耗时、
+本地序列化（vendored msgpack pack/unpack）、网络 vs 模型分离（RTT−server_total）、线缆探测
+（小消息 RTT 下限）、RTT 抖动（std/跨度）；④ serve_act 加连接计数（断线/重连观测）。
+**实测（本机 4090D，250 请求）**：RTT p50 3.9ms / p95 5.1ms / p99 12.1ms；服务端分项
+prep 1.68 + pre 0.22 + infer 1.16（median 0.33，真推理抬均值）+ post 0.07 ≈ total 3.14ms；
+**网络+序列化 p50 1.94ms**（线缆下限 0.14ms，大头是 1.38MB 上传）；本地序列化 pack 0.26ms /
+unpack 0.04ms；握手 39ms；吞吐 207 req/s；GPU mem ~1GiB util mean 6-10%；**节点端到端
+obs_age avg 16.5ms + loop avg 7.9ms ≈ 观测→指令 ~24ms**（受 33ms 控制周期约束）。
+
+**方案 A（ACT 返回完整 chunk）+ 引擎锁饥饿修复——queue_async 达 30Hz、网络降 96%**。**方案 A**：
+`LerobotActBackend.infer()` 从 `select_action`（每次 1 行 + 内部 50 行队列）改为
+`predict_action_chunk`（一次前向返回完整 n_action_steps 行），引擎拿回分块权；
+`temporal_ensemble_coeff` 非 None 时回退 `select_action`（保留时序融合）。**收益**：①
+queue_async 从 13Hz 提到 30Hz（引擎按 50 行 chunk 预取）；② 图像上传从"每行一次"变
+"每 chunk 一次"→ **网络降 ~96%**（e2e 实测 plans=5/4s=1.25 chunk/s vs 原 30 次/s）；③
+节点 loop avg 从 7.9ms 降到 **1.26ms**（引擎本地弹 chunk，无逐 tick 网络）；④ 周期性
+200ms 真推理停顿消失（warm infer 仅 8ms，且 queue_async 后台预取）。**对抗性审查发现并修复
+引擎锁饥饿 bug（critical）**：`_planner_loop` 把 `self._stop.wait(0.005)` 写在
+`with self._lock` **内**——planner 空闲时几乎 100% 持有引擎锁（5ms 等待+立即重获），控制线程
+`tick()` 在锁上饿死 → queue_async 即使瞬时推理也只有 ~15Hz。此前被 select_action 的 1 行
+chunk（planner 一直在重填循环）掩盖，方案 A 让它进入空闲路径后彻底暴露（真实 ACT 只有
+0.5Hz）。**修法**：`Event.wait` 移出锁外（空闲判定在锁内、等待在锁外）。验证：stub 50 行
+chunk 15→**4900Hz**、真实 ACT 0.5→**3000Hz**、e2e queue_async **30.0Hz**、loop 1.26ms、
+正确性 MAE 0.0036 不变；新增回归 `test_queue_async_control_thread_not_starved_by_planner`
+（0.5s >200 pops，修复前 ~7）。基准：3888 actions/s（130× 余量）、RTT p50 15.3ms std 3.5ms、
+每 chunk 服务端 10.4ms、GPU util 23%。**部署变化**：ACT 不再要求 `engine_mode:=queue_sync`，
+默认 queue_async 即 30Hz（launch 无需传 engine_mode）。
+
 ## 2026-09-07
 
 **左手柄 X 键「段间回位」+ web 数采卡片同功能按钮（episode 间免手摆放物品）**——
@@ -64,6 +181,17 @@ vr_collect_logic/controller_start_gate/workpos_gate 一致）；无代码改动�
 侧）**：同步构建三包后实机冒烟——X 直达回位、工作位途经点回位、录制中按 X 忽略。
 
 ## 2026-09-04
+
+**AV1 并行度可配：`ASTRAL_AV1_LP` 环境变量（默认 2 保内存红线，20 核机可放开）**——
+`astral_data_collect`。**动机**：用户问"为什么转换这么慢"——实测 20 核机器只用了 2 核
+（SVT `Level of Parallelism: 2`，内存红线），AV1-224 ≈78 帧/秒、720 ≈8 帧/秒；要求针对本机
+放开核数。**做法**：`encode_video` 的 `lp=` 从硬编码改为 `_svt_av1_params()` 读
+`ASTRAL_AV1_LP`（默认 2；非法值回退 2；>2 时 stderr 提示 ~0.6GB/lp 峰值内存），
+`lookahead=16` 不变；所有入口（脚本/模块直调）自动生效。**验证**：新增
+`test_svt_av1_params_env_override`（默认 lp=2 / 放开 lp=8 / 非法回退）通过；CLAUDE.md
+不变式 6 与 README §5 补说明。**注意**：正在运行的后台转换进程不受影响（旧代码已加载），
+配置对下次运行生效；本机当前 IDE 占 10GB（可用 ~4GB），放开建议 lp≤4（~2.4GB），
+要 lp=8 需先关 IDE/opencode。
 
 **convert_to_act 分辨率选项化：224/480/720/原生（0）+ 原生同 shape 预检**——
 `astral_data_collect` × `scripts/vla_process_act.sh`。**动机**：用户要求 ACT 转换输出分辨率可

@@ -320,10 +320,14 @@ class ActionEngine:
                     idle = not (due and self._pops_since_install >= self.rtc_min_tail)
                 else:
                     idle = True
-                if idle:
-                    self._stop.wait(0.005)
-                    continue
-                self._planning = True
+                if not idle:
+                    self._planning = True
+            # 关键：Event.wait 必须在锁外。此前写在 with self._lock 内，空闲时
+            # planner 几乎 100% 持有引擎锁（5ms 等待 + 立即重获），控制线程 tick()
+            # 在锁上饿死 → queue_async 即使瞬时推理也只有 ~15Hz（被 plan A 暴露）。
+            if idle:
+                self._stop.wait(0.005)
+                continue
             try:
                 self._run_plan()
             finally:

@@ -46,6 +46,29 @@ _IMAGE_STAT_MAX_SAMPLES = 100  # 与上游 estimate_num_samples 上限一致
 # ---------------------------------------------------------------- 视频编码
 
 
+def _svt_av1_params() -> str:
+    """SVT-AV1 编码参数：lp 并行度可经 ASTRAL_AV1_LP 环境变量放开（默认 2）。
+
+    默认 lp=2 是内存红线（15GB 小内存机 3 段 1080p 曾峰值 RSS 6.3GB 被 OOM 杀，
+    见 CLAUDE.md 不变式 6）；核数多的机器（如 20 核）可在内存充裕时
+    `ASTRAL_AV1_LP=8` 加速。lookahead=16 限前瞻深度，保持不变。
+    """
+    raw = os.environ.get("ASTRAL_AV1_LP", "2").strip()
+    try:
+        lp = int(raw)
+        if lp < 1:
+            raise ValueError
+    except ValueError:
+        lp = 2
+    if lp > 2:
+        print(
+            f"[convert] ASTRAL_AV1_LP={lp}：AV1 并行度已放开（默认 2 是内存红线），"
+            f"预计峰值内存 ~{0.6 * lp:.0f}GB，请确保内存充裕",
+            file=sys.stderr,
+        )
+    return f"lp={lp}:lookahead=16"
+
+
 def encode_video(
     frames: Iterable[np.ndarray],
     out_path: str,
@@ -82,12 +105,13 @@ def encode_video(
 
     # SVT-AV1 默认按核数并行 + 深 lookahead：1080p 时编码器内部缓冲可达
     # 数 GB（实测 15GB 小内存机转换 3 段 1080p 数据峰值 RSS 6.3GB 被 OOM
-    # 杀掉）。lp=2 限并行度、lookahead=16 限前瞻深度，内存降到 ~1GB 量级；
+    # 杀掉）。lookahead=16 限前瞻深度、lp 默认 2 限并行度（内存 ~1GB 量级）；
+    # 核数多的机器可 ASTRAL_AV1_LP=8 放开（见 _svt_av1_params）。
     # 参数名不被旧版 libsvtav1 包装识别时退化为无参数打开，再不行回退 h264。
     if codec == "libsvtav1":
         try:
             container, stream = _open(
-                codec, {"svtav1-params": "lp=2:lookahead=16"}
+                codec, {"svtav1-params": _svt_av1_params()}
             )
         except Exception:
             try:
