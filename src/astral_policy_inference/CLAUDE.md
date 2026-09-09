@@ -70,7 +70,33 @@ replay.py    PlaybackSession：target()/advance()/reanchor(offset)/done
 controller.py 纯 FSM：request/revert/snapshot；_TABLE 显式迁移表
 scripts/serve_act.py   ACT 远程 serve（py3.12 lerobot 环境），与 openpi websocket 协议兼容；
              节点用 backend_type=openpi 远程连（解决 rclpy py3.10 × lerobot py3.12 同进程冲突）
+runner.py    PolicyRunner：非 ROS 完整编排（纯线程控制循环替代 rclpy），复用全部纯核心；
+             feed_observation 喂观测 / on_action 收安全后完整动作行 / request() 命令 / FSM
+hw_io.py     非 ROS 真机 I/O：RobotIO(astral_robot_sdk 读状态/下发动作/阻尼位置 HITL/dry_run)
+             + CameraIO(每相机线程，V4L2/pyrealsense2，letterbox 到模型尺寸，单相机失败降级)
+session.py   RobotSession：泵线程喂观测 + on_action 下发/记录 + HITL 阻尼接管 + estop 兜底；
+             Hdf5SessionRecorder：aligned_data.h5 兼容记录（可直接 load_replay 回放）；
+             SessionConfig/load_session_config/build_robot_session（yaml 装配）
+scripts/robot_session_cli.py  非 ROS 真机 Session 键盘 CLI（s/y/t/空格/n/h/g/x/e/q + 状态行）
+scripts/runner_demo.py  非 ROS 全功能 demo（真实 ACT 进程内或 stub）：policy→pause→resume→
+             takeover→release→playback→stop 全链路
+scripts/act_inference.py  独立 ACT 推理（无 ROS/astral 依赖，只依赖 lerobot，可移植到任意
+             lerobot 环境）；ActPolicy 类 + 三模式 CLI（scratch/单次/真实数据批量 MAE）；
+             参数从 checkpoint config.json 自动推导，参考 VLA/lerobot 官方推理路径
 ```
+
+## 非 ROS 真机 Session（`hw_io.py` / `session.py` / `scripts/robot_session_cli.py`）
+
+复用 runner 全部纯核心，把 ROS 节点那层 I/O 换成 `astral_robot_sdk` + V4L2/pyrealsense2。
+语义镜像 `astral_robot_control` driver：绝对动作、夹爪 ratio→rad 映射、单臂只命令左臂
+（`set_target_positions(LEFT_ARM_IDS)`，缺席侧不碰）、夹爪无反馈用**回显**
+（`default_gripper_ratio` 兜底）、阻尼→位置切换 `seed_from_current` 防回跳。HITL：
+`takeover`→阻尼（人拖臂）、`release`→位置 + 按实况重规划；`stop` 默认位置保持
+（`stop_mode=damping` 才卸力）。后端两选：openpi 远程（大 VLA 走 GPU 机）/ act 进程内
+（Jetson py3.12 lerobot env，需装 astral_robot_sdk + pyrealsense2）。记录写
+aligned_data.h5 兼容格式 → `load_replay` 可直接回放本次 Session。**踩坑**：`build_robot_session`
+只把 **make_backend 认的参数**塞进 backend_cfg——`camera_image_size`/`engine_mode`/`action_chunk`
+是 Session 自身参数，混进去会 `policy_start_failed: make_backend() got an unexpected keyword argument`。
 
 ## 环境约束（改环境相关代码前必读）
 

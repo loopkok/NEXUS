@@ -83,6 +83,24 @@ class TestSources(unittest.TestCase):
         self.assertEqual(missing, [])
         self.assertAlmostEqual(state[-1], 3.0)
 
+    def test_waist_head_sliced_from_body_state(self):
+        lay = ObsLayout(schema(include_waist=True, include_head=True))
+        body = np.zeros(18)
+        body[14:16] = [0.2, -0.3]   # waist
+        body[16:18] = [0.4, 0.5]    # head
+        state, missing = lay.assemble_state({
+            "left_arm_state": np.full(7, 1.0),
+            "left_gripper_ratio": np.array([0.5]),
+            "body_state": body,
+        })
+        self.assertEqual(missing, [])
+        self.assertEqual(state.shape, (12,))  # 7 arm + 1 ee + 2 waist + 2 head
+        np.testing.assert_allclose(state[:7], np.full(7, 1.0))
+        self.assertAlmostEqual(state[8], 0.2)     # waist_0
+        self.assertAlmostEqual(state[9], -0.3)    # waist_1
+        self.assertAlmostEqual(state[10], 0.4)    # head_yaw
+        self.assertAlmostEqual(state[11], 0.5)    # head_pitch
+
 
 class TestSplitAction(unittest.TestCase):
     def test_split_single_left_gripper(self):

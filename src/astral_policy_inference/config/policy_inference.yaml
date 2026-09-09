@@ -16,7 +16,7 @@ astral_policy_inference:
     end_effector_right: "none"
     include_waist: false
     include_head: false
-    cameras: ["video8", "video0", "video2"]
+    cameras: ["video8", "video0"]   # 与数采 schema 一致（video2 已不录）
     # 模型槽位 → 相机 label（label 与 quest3_video_streamer collect tap 一致）
     # rclpy 无 struct 参数，故用 JSON 字符串（空格随 json.loads 解析无碍）
     camera_map: '{"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"}'
@@ -54,6 +54,13 @@ astral_policy_inference:
     image_timeout_s: 1.0      # 相机无帧超过此时间 → state JSON 告警（不阻断策略）
     image_required: false     # true 时无图也拒绝进入策略（建议 pi0 保持 false，
                               #   缺槽位由 server 零填充降级）
+    # 夹爪 rad↔ratio 线性映射，**必须与 driver 的 *_gripper_open/closed_rad 一致**
+    # （本机 astral_robot.yaml 为 2.5/0.0）。用途：首次进 POLICY 且
+    # /{side}_gripper/command 从未出现（无遥操在发）时，用 driver
+    # /{side}_gripper/joint_states 的 last-commanded 回显换算 ratio 作状态种子，
+    # 避免"没命令过 → obs 永远缺夹爪 → policy blocked"。
+    gripper_open_rad: 2.5
+    gripper_closed_rad: 0.0
 
     # ---------------- HITL / teleop 仲裁 ----------------------------------------
     # 接管时对每个启用臂侧 teleop 节点调用 ~/reanchor（服务名按 launch/remap 填绝对名）

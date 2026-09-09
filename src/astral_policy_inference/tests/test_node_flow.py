@@ -235,6 +235,35 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertEqual(self.node.controller.state, "IDLE")
         self.assertIsNone(self.node._engine)
 
+    def test_policy_entry_seeds_gripper_from_driver_echo(self):
+        """首次进 POLICY 且 /left_gripper/command 从未出现：用 driver 的
+        /{side}_gripper/joint_states（last-commanded rad 回显）线性换算
+        ratio 种子（open=0.8/closed=0.0 → rad 0.4 = ratio 0.5）。"""
+        js = JointState()
+        js.position = [0.4]
+        self.node._on_gripper_rad(js, "left")
+        arm = JointState()
+        arm.position = list(np.zeros(7))
+        self.node._on_joints(arm, "left_arm_state", 7)
+        state, missing = self.node._state_ok()
+        self.assertIsNotNone(state)
+        self.assertNotIn("left_gripper_ratio", missing)
+        self.assertAlmostEqual(float(state[7]), 0.5, places=6)
+        # 完整进 POLICY（stub 后端）不再被夹爪缺失挡住
+        self.node._handle_cmd("policy")
+        self.assertEqual(self.node.controller.state, "POLICY")
+
+    def test_policy_entry_blocked_without_any_gripper_source(self):
+        """无 ratio、无 driver 回显 → 仍拒绝进 POLICY（原保护不回退）。"""
+        arm = JointState()
+        arm.position = list(np.zeros(7))
+        self.node._on_joints(arm, "left_arm_state", 7)
+        state, missing = self.node._state_ok()
+        self.assertIsNone(state)
+        self.assertIn("left_gripper_ratio", missing)
+        self.node._handle_cmd("policy")
+        self.assertEqual(self.node.controller.state, "IDLE")  # reverted
+
     def test_playback_runs_to_idle(self):
         h5 = make_h5(12)
         self.node.destroy_node()

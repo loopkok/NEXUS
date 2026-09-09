@@ -197,12 +197,18 @@ class ObsLayout:
                     parts.append(np.asarray(v, dtype=np.float32)[: b.dim])
             elif b.name == "waist":
                 if body is not None:
-                    parts.append(np.asarray(body, dtype=np.float32)[b.body_slice])
+                    # body_slice is a (start, stop) pair -> a real slice on the
+                    # 1-D body vector (waist 14:16 / head 16:18).
+                    parts.append(
+                        np.asarray(body, dtype=np.float32)[slice(*b.body_slice)]
+                    )
                 else:
                     missing.append("body_state")
             elif b.name == "head":
                 if body is not None:
-                    parts.append(np.asarray(body, dtype=np.float32)[b.body_slice])
+                    parts.append(
+                        np.asarray(body, dtype=np.float32)[slice(*b.body_slice)]
+                    )
                 elif vectors.get("head_state") is not None:
                     parts.append(
                         np.asarray(vectors["head_state"], dtype=np.float32)[: b.dim]

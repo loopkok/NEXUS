@@ -98,6 +98,11 @@ class PolicyNode(Node):
         self._playback: Optional[PlaybackSession] = None
         self._last_cmds: list = []
         self._ratio_last: dict[str, tuple[float, float]] = {}  # topic -> (val, t)
+        # driver /{side}_gripper/joint_states（last-commanded rad 回显，state
+        # 定时器每拍都发）缓存：夹爪命令从未出现时的 ratio 种子来源
+        self._grip_rad: dict[str, np.ndarray] = {}
+        self._grip_open_rad = float(self.get_parameter("gripper_open_rad").value)
+        self._grip_closed_rad = float(self.get_parameter("gripper_closed_rad").value)
         self._prompt = str(self.get_parameter("default_prompt").value or "")
 
         # observation buffers ---------------------------------------------------
@@ -196,6 +201,12 @@ class PolicyNode(Node):
             "obs_stale_stop_s": 1.0,   # consecutive obs loss before POLICY auto-pauses
             "image_timeout_s": 1.0,
             "image_required": False,
+            # 夹爪 rad↔ratio 线性映射（须与 driver 的 *_gripper_open/closed_rad
+            # 一致）：首次进 POLICY 且 /{side}_gripper/command 从未出现时，用
+            # driver /{side}_gripper/joint_states（last-commanded 回显）换算
+            # ratio 作夹爪状态种子，避免"没命令过→obs 永远缺夹爪→进不了策略"
+            "gripper_open_rad": 0.8,
+            "gripper_closed_rad": 0.0,
             # hitl / topics
             "teleop_reanchor_services": ["/astral_arm_teleop_left/reanchor"],
             "teleop_disarm_topic": "/teleop/disarm",
@@ -268,6 +279,13 @@ class PolicyNode(Node):
             if src.kind == "ratio":
                 cb = lambda msg, k=key: self._on_ratio(msg, k)  # noqa: E731
                 self.create_subscription(Float64, src.topic, cb, _SENSOR_QOS)
+                side = src.key.split("_", 1)[0]
+                self.create_subscription(
+                    JointState,
+                    f"/{side}_gripper/joint_states",
+                    lambda msg, s=side: self._on_gripper_rad(msg, s),
+                    _SENSOR_QOS,
+                )
             else:
                 cb = lambda msg, k=key, d=src.dim: self._on_joints(msg, k, d)  # noqa: E731
                 self.create_subscription(JointState, src.topic, cb, _SENSOR_QOS)
@@ -292,6 +310,11 @@ class PolicyNode(Node):
     def _on_ratio(self, msg: Float64, key: str) -> None:
         self._values[key] = np.asarray([msg.data], dtype=np.float64)
         self._stamps[key] = time.monotonic()
+
+    def _on_gripper_rad(self, msg: JointState, side: str) -> None:
+        if not msg.position:
+            return
+        self._grip_rad[side] = np.asarray([msg.position[0]], dtype=np.float64)
 
     def _on_image(self, msg: CompressedImage, label: str) -> None:
         img = decode_jpeg_rgb(msg.data)
@@ -389,9 +412,22 @@ class PolicyNode(Node):
         for key, src in self._layout.sources.items():
             if key in vectors:
                 continue
-            if src.kind == "ratio" and src.topic in self._ratio_last:
-                val, _ts = self._ratio_last[src.topic]
-                vectors[key] = np.asarray([val], dtype=np.float64)
+            if src.kind == "ratio":
+                if src.topic in self._ratio_last:
+                    val, _ts = self._ratio_last[src.topic]
+                    vectors[key] = np.asarray([val], dtype=np.float64)
+                elif src.key.split("_", 1)[0] in self._grip_rad:
+                    # 命令从未出现且自身未发过：driver joint_states 的
+                    # last-commanded rad 回显线性换算回 ratio（open↔closed）
+                    side = src.key.split("_", 1)[0]
+                    rad = float(self._grip_rad[side][0])
+                    span = self._grip_open_rad - self._grip_closed_rad
+                    if span <= 0.0:
+                        continue
+                    ratio = (self._grip_open_rad - rad) / span
+                    vectors[key] = np.asarray(
+                        [min(1.0, max(0.0, ratio))], dtype=np.float64
+                    )
         state, missing = self._layout.assemble_state(vectors)
         images_missing = [
             lab for lab in self._camera_map.values()

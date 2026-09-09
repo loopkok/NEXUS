@@ -38,8 +38,12 @@ astral_policy_inference/
 ├── controller.py   Controller：IDLE/POLICY(_PAUSED)/PLAYBACK(_PAUSED)/HUMAN FSM
 ├── replay.py       读取 aligned_data.h5 / LeRobot v2.1 目录，PlaybackSession 步进
 ├── node.py         policy_node：装配以上全部 + HITL 仲裁 + 控制定时器
+├── runner.py       PolicyRunner：非 ROS 完整编排（纯线程控制循环替代 rclpy）
+├── hw_io.py        非 ROS 真机 I/O：RobotIO(astral_robot_sdk) + CameraIO(V4L2/pyrealsense2)
+├── session.py      RobotSession（编排+记录+配置）+ Hdf5SessionRecorder（可回放记录）
 ├── keyboard.py     键盘驱动（s/y/空格/n/h/g/x）
 ├── config/policy_inference.yaml
+├── config/robot_session.yaml   非 ROS Session 配置（schema/板卡/相机/后端/记录）
 └── launch/policy_inference.launch.py
 ```
 
@@ -168,6 +172,41 @@ install/astral_policy_inference/bin/policy_node --ros-args \
 console script 放进 `install/astral_policy_inference/bin/` 而无 resource index 所致，直接跑
 上面 `bin/policy_node` 路径即可。
 
+### 6) 非 ROS 真机推理 Session（独立脚本，无 ROS2）
+
+`runner.py` 的纯线程编排 + 真机 I/O 适配，**完全脱离 ROS2** 在机器人侧跑完整推理 Session。
+结构：`hw_io.py`（`RobotIO`=astral_robot_sdk 适配、`CameraIO`=V4L2/pyrealsense2 采集）→
+`session.py`（`RobotSession` 编排 + `Hdf5SessionRecorder` 记录 + yaml 装配）→
+`scripts/robot_session_cli.py`（键盘 CLI）。后端两选：**openpi 远程**（大 VLA 跑在 GPU 主机，
+机器人侧只连 websocket）/ **act 进程内**（Jetson 本地 py3.12 lerobot env）。
+
+```bash
+# 机器人侧（无需 ROS；相机 + 控制板在本机）
+# openpi 远程（GPU 机 4090D 起 serve_policy.py / serve_act.py）：
+/usr/bin/python3 astral_ws/src/astral_policy_inference/scripts/robot_session_cli.py \
+    --config astral_ws/src/astral_policy_inference/config/robot_session.yaml \
+    --host 192.168.0.80 --port 8001 --camera-image-size 480
+# ACT 本机进程内（py3.12 lerobot env，需装 astral_robot_sdk + pyrealsense2）：
+<lerobot-env>/bin/python .../robot_session_cli.py --config ... \
+    --backend-type act --checkpoint-dir <本地 checkpoint>
+# bring-up 冒烟（无板/无相机/无模型）：
+/usr/bin/python3 .../robot_session_cli.py --config ... --dry-run --backend-type stub
+```
+
+键盘（镜像 ROS keyboard）：`s` 策略 / `y [path:ep]` 回放 / `t <text>` 指令 / 空格 暂停 /
+`n` 恢复 / `h` 接管（臂→**阻尼**，真人拖臂）/ `g` 交还（位置 + 按实况重规划）/ `x` 停止
+（**位置保持**）/ `e` 急停断电 / `q` 退出。状态行每 1s 打到 stderr。
+
+**记录**：`session.record_dir` 或 `--record-dir` 开启，每次 Session 写
+`session_<ts>.h5`（`/action`+`/state`+`/prompt`+`/t_stamp`+`/wall_t`+`/streams/<label>`
+图像，attrs 带 fps/schema）——**`load_replay` 可直接回放本次 Session**：
+`y <path>/session_<ts>.h5`。
+
+**语义与 ROS 部署一致**（镜像 `astral_robot_control` driver）：绝对动作、夹爪 ratio→rad
+映射、单臂只命令左臂、夹爪无反馈用回显、阻尼→位置 `seed_from_current` 防回跳、`stop_mode`
+默认 hold（不卸力）。编程接口 = `RobotSession`（`session.py`）：`start/stop/estop`、
+`request(verb)`、`set_prompt(text)`、`stats()`。
+
 ## 关键设计
 
 - **观测/动作布局 = `astral_data_collect.schema.CollectSchema`**。state 向量按 `meta.json`
@@ -211,6 +250,11 @@ payload、错误处理、工厂）、engine（三种模式、后台规划、RTC 
 #    引擎分块/ACT 队列/reset 重规划：
 /home/robot/miniconda3/envs/lerobot/bin/python astral_ws/scripts/run_act_integration.py \
     --checkpoint-dir <act_checkpoint>
+
+# A0) 独立 ACT 推理（无 ROS，只依赖 lerobot，可移植）——合成冒烟 / 单次 / 真实数据 MAE：
+PYTHONPATH=VLA/lerobot/src <lerobot-env>/bin/python \
+    astral_ws/src/astral_policy_inference/scripts/act_inference.py \
+    --checkpoint-dir <act_checkpoint> --dataset-dir <v3数据集> --episode 0
 
 # B) 完整节点端到端（py3.10 + ROS，需先启动 serve_act + policy_node）——
 #    真实 ACT 驱动指令流 + pause/resume/stop，--check-server 先做推理往返预检：

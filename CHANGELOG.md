@@ -6,6 +6,46 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-09
 
+**真机推理"policy blocked: missing left_gripper_ratio"修复——夹爪状态三级种子**——
+`astral_policy_inference`。**症状**：机器人侧纯 POLICY 部署（无遥操在发）按 policy 直接被拒
+`incomplete obs, missing=['left_gripper_ratio']`。**根因**：夹爪观测订 `/left_gripper/command`
+（命令回显约定），节点对 ratio 有两级种子（收到过命令 / 自己发过命令），但**首次进 POLICY 时
+两者皆空**（teleop 不在 → 无人发命令；节点还没输出过动作）→ 鸡蛋问题死锁。**做法**：加第三级
+种子——订阅 driver **每拍都发**的 `/{side}_gripper/joint_states`（last-commanded rad 回显，
+从未命令过则 0.0），按 rad↔ratio 线性映射换算回 ratio（新参数 `gripper_open_rad/closed_rad`，
+**须与 driver yaml 一致**，本机 2.5/0.0）；优先级 = 收到命令 > 自身命令 > driver 回显。
+**验证**：test_node_flow 12→**14 例**全绿（driver 回显 rad=0.4→ratio 0.5 且完整进 POLICY、
+无任何夹爪源仍拒绝进策略），全套件 **106 例**全绿；yaml 同步 cameras=[video8,video0] 与新参数。
+**部署**：机器人侧同步包代码 + colcon build 后重启 policy_node，确认 driver yaml 的
+open/closed_rad 与节点参数一致。
+
+
+**新增 `astral_policy_inference` 非 ROS 真机推理 Session（`hw_io.py` + `session.py` +
+`scripts/robot_session_cli.py` + `config/robot_session.yaml`）——脱离 ROS2 完成完整真机推理 Session。**
+**动机**：`runner.py` 已是纯线程的非 ROS 完整编排（FSM/引擎/安全层/回放/HITL），但输入输出没接
+真实硬件——`runner_demo.py` 只喂合成观测、把动作丢进列表，无法实机使用。**做法**：新增三层 I/O
+装配——① `hw_io.py`：`RobotIO`（`astral_robot_sdk` 适配：读 18 维关节反馈按 schema 拼状态、
+夹爪 ratio 回显、绝对动作行按块下发 `set_target_positions(左臂 motor ids)`/`set_gripper_angle`
+（ratio→rad 映射，单臂不命令右臂）、阻尼/位置 HITL 带 `seed_from_current` 防回跳、
+`dry_run` 无硬件模式）+ `CameraIO`（每相机后台线程：V4L2/pyrealsense2，帧 letterbox 到模型
+尺寸，**单相机失败不拖垮 Session**）；② `session.py`：`RobotSession`（泵线程按 fps 喂观测 +
+`on_action` 下发/记录 + HITL 阻尼接管映射 + estop 兜底，SDK 调用异常不杀控制线程）+ 
+`Hdf5SessionRecorder`（写 **aligned_data.h5 兼容格式** `/action`+attrs{fps,schema}，可直接
+`load_replay` 回放本次 Session）+ `SessionConfig`/`load_session_config`/`build_robot_session`
+（yaml 装配，schema 段必须与 `data_collect.yaml` 一致）；③ `scripts/robot_session_cli.py`：
+键盘 CLI（s/y/t/空格/n/h/g/x/e/q + 1s 状态行到 stderr）。**后端两选**：openpi 远程（大 VLA
+走 GPU 主机 serve_policy/serve_act，机器人侧只连 websocket）/ act 进程内（Jetson py3.12
+lerobot env，需装 astral_robot_sdk + pyrealsense2）。**数值**（dry-run + stub 冒烟）：策略
+30Hz 动作下发、引擎 loop 0.5-0.6ms、POLICY→PAUSED→POLICY→IDLE 全通、HITL 阻尼→位置切换
+正确、56 帧记录可被 `load_replay` 回读（action_dim 8/fps 30/schema 齐全）。**顺带修一个潜伏
+bug**：`robot_io.assemble_state` 对 waist/head 用 `body[(14,16)]` 当二元索引（必 IndexError，
+现有部署关腰/头从未触发），改 `slice(*body_slice)`（先红后绿，新增用例
+`test_waist_head_sliced_from_body_state`）。单测 104 例全绿（新增 18 例 hermetic：RobotIO
+状态拼装/单臂只发左/ratio→rad/HITL/dry-run、CameraIO letterbox、记录→回读一致、
+RobotSession 编排/HITL、config 解析）。**部署注意**：真机参数（控制板/相机）本机无法验证，
+Jetson 侧需装 `astral_robot_sdk`（act 进程内还要 + pyrealsense2 + lerobot env）；`camera_map`
+与 ACT 图像键就是 `observation.images.video8/video0`（`make_backend` label→label 路径正确）。
+
 **修复 `astral_policy_inference` ACT 后端加载真实 checkpoint 的 bug + 本机全链路验证**——
 `LerobotActBackend.open()` 原用 `PreTrainedPolicy.from_pretrained()` 直接加载，但 lerobot 0.6.2
 （`/home/robot/loopkok/lerobot` 与 `VLA/lerobot` 两个 checkout 行为一致）里 `PreTrainedPolicy`
@@ -134,6 +174,37 @@ OOD 输入误报（合成 state 让模型预测向均值，|action-state| 达 1.
 （16× 余量）。集成/e2e 改用真实位姿（含 d3≈-1.9）喂守卫并全部通过；测试合成 OOD 状态禁用
 守卫（部署中状态恒在分布内）。新增 3 例单测（拒 delta / 收绝对 / 关闭）。`abs_action_min_scale`
 yaml 可配（默认 0.5，≤0 关闭）。单测 85 例全绿。
+
+**独立 ACT 推理脚本 `scripts/act_inference.py`（无 ROS、可移植）**。单文件、**只依赖
+lerobot**（`get_policy_class` / `make_pre_post_processors` / `prepare_observation_for_inference`），
+不 import 任何 ROS/astral 包——`PYTHONPATH=VLA/lerobot/src` 或任意 lerobot 环境可跑，参考
+VLA/lerobot 官方推理路径（`lerobot_eval.py`）。`ActPolicy` 类：load（get_policy_class +
+from_pretrained，含方案 A 的时序融合守卫）→ `predict_chunk`（一次前向完整 n_action_steps 行，
+绝对量）/ `select_action`（单行，官方逐行路径，独立观测需 reset）；全部参数（action_dim /
+image_keys / image_size / n_action_steps / temporal_ensemble）从 checkpoint config.json 的
+input/output_features **自动推导**，CLI 可覆盖。三模式 CLI：`--scratch`（合成冒烟）/
+`--state`+`--image label=path`（单次推理，可存 .npy）/ `--dataset-dir`（真实数据批量 +
+逐帧 reset 对比录制动作 MAE）。**验证**（PYTHONPATH=VLA/lerobot/src）：三模式全通过，ep5/46
+MAE 0.0052/0.0036 与正确性脚本一致。**对抗性审查修复**：① `device` 参数与同名 property 冲突
+→ 删 property；② preprocessor 用 checkpoint 保存的 device（cuda）→ `--device cpu` 时观测被
+pre 搬回 cuda 与 cpu 策略冲突 → 加 `preprocessor_overrides={"device_processor":{...}}` 强制
+一致（参考 lerobot_eval.py），cpu 实测通过。
+
+**非 ROS 完整推理包 `runner.PolicyRunner` + `runner_demo.py`**。推理包的编排层（node.py）依赖
+rclpy，但核心（backend/engine/executor/controller/replay/robot_io）本就纯 Python——新增
+`PolicyRunner` 用**纯线程控制循环**替代 ROS 定时器/话题/回调，复用全部纯核心，覆盖推理包全部
+功能：三种引擎节奏、绝对动作 + 语义守卫、SafeExecutor、FSM（POLICY/PLAYBACK/PAUSED/HUMAN）、
+回放（h5/v2.1）、暂停恢复重规划、HITL 接管交还、延迟/引擎指标。**I/O 可插拔**：`feed_observation
+(state, images, prompt)` 喂观测（任意频率）、`on_action(row)` 收**安全处理后的完整绝对动作行**
+（你下发真机/仿真）、`on_acquire_control/on_release_control` 镜像 disarm 电平门（外部遥操可接）、
+`request("policy|playback|pause|resume|takeover|release|stop")` 命令。**真机/无 ROS 都能跑**：
+demo 用真实 ACT 进程内后端（lerobot 环境，无需 serve_act）全链路 PASS——policy 30Hz →
+pause 夹持 → resume 重规划 → takeover HUMAN 静默 → release 回 POLICY → playback 回放 →
+stop；stub 后端（任意 python，无模型）同样全 PASS。**对抗性审查修复**：① `_resend_last` 把
+逐流 CmdTarget（7/1 维）发给 on_action → 改为重发最近一次完整行；② `on_action` 给原始行而非
+安全层处理值 → 按 schema 块序把 clip/slew 后的流拼回完整行再回调（消费者拿到实际下发值）；
+③ 控制率测量用 on_state tick 计数（避免 resend 干扰）；④ demo 断言按 FSM 实际语义修正
+（release 回到被打断的活动）。
 
 ## 2026-09-07
 
