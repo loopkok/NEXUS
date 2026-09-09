@@ -177,6 +177,8 @@ console script 放进 `install/astral_policy_inference/bin/` 而无 resource ind
   无需混合；`engine` 只在“仍在执行中换新 chunk”时做延迟补偿跳行。
 - **安全兜底独立于策略**：`SafeExecutor` 拦截 NaN/Inf、夹爪比值 [0,1]、关节限位与
   `max_joint_vel` 速率限制后才发话题（`max_joint_vel<=0` 关闭限速）。
+- **绝对动作语义守卫**（`abs_action_min_scale`，默认 0.5）：机器人离开零位时 chunk 首行量级
+  不得塌缩（检测后端把 delta 当绝对返回），违例即安全 stop。
 - **模型无关**：`ObsBatch`（state+images+prompt）为中性输入；后端只负责输出与
   `state_dim` 同维的绝对 chunk。
 - **仲裁先效应后提交（事件驱动）**：进入 HUMAN 前先对全部遥操节点发起 `~/reanchor`（效应），

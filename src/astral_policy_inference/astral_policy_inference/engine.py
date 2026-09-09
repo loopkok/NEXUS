@@ -48,6 +48,7 @@ class ActionEngine:
         rtc_min_tail: Optional[int] = None,
         queue_min_replan_interval_s: float = 0.05,
         autostart: bool = True,
+        abs_action_min_scale: float = 0.5,
     ):
         if mode not in ("queue_sync", "queue_async", "rtc"):
             raise ValueError(f"mode={mode!r} not in queue_sync|queue_async|rtc")
@@ -56,6 +57,9 @@ class ActionEngine:
         self.action_dim = int(action_dim)
         self.chunk = int(chunk)
         self.policy_fps = int(policy_fps)
+        # 绝对动作语义守卫：机器人离开零位时，chunk 首行目标值须保持量级；
+        # <=0 关闭。见 _check_absolute_semantics。
+        self.abs_action_min_scale = float(abs_action_min_scale)
         self.async_prefetch_ahead = (
             int(async_prefetch_ahead)
             if async_prefetch_ahead is not None
@@ -268,8 +272,43 @@ class ActionEngine:
                 self._last_error = f"infer failed: {exc}"
                 return False
             ms = (time.perf_counter() - t0) * 1000.0
+            try:
+                self._check_absolute_semantics(full, obs.state)
+            except PolicyError as exc:
+                self._last_error = str(exc)
+                return False
             self._install(full, latency_ms=ms)
             return True
+
+    def _check_absolute_semantics(self, full: np.ndarray, state: np.ndarray) -> None:
+        """绝对动作语义守卫：机器人明显离开零位时，chunk 首行目标值不得全是小值。
+
+        后端契约是绝对动作（next-state ≈ 当前 state，量级一致）。若某后端把 delta
+        当绝对返回（openpi server 漏 AbsoluteActions / 错 checkpoint），首行≈小 delta
+        （~0.03 rad）；而当前 state 离开零位（max|state|>1）时，绝对目标不可能对离开
+        零位的关节给近零值 → 拒绝。只查 |state|>1 的维（臂关节；夹爪 state∈[0,1] 自动
+        排除），机器人接近零位时 fail-open（绝对与 delta 目标都近零，危害可忽略）。
+        不做「|action-state| 必须小」的假设（对 OOD 输入/激进模型会误报）。
+        abs_action_min_scale<=0 关闭。
+        """
+        if self.abs_action_min_scale <= 0 or full is None or len(full) == 0:
+            return
+        row = np.asarray(full[0], dtype=np.float64).reshape(-1)
+        state = np.asarray(state, dtype=np.float64).reshape(-1)
+        if row.shape[0] != state.shape[0]:
+            return  # 维度不一致交给 action_dim 校验
+        informative = np.abs(state) > 1.0
+        if not informative.any():
+            return
+        arm_scale = np.abs(row)[informative].max()
+        if arm_scale < self.abs_action_min_scale:
+            raise PolicyError(
+                f"action does not look absolute: on dims where |state|>1.0, chunk "
+                f"first row max|action|={arm_scale:.3f} < "
+                f"{self.abs_action_min_scale} (delta-as-absolute?). Check backend "
+                f"config (openpi server missing AbsoluteActions?) or "
+                f"abs_action_min_scale."
+            )
 
     def _install(self, full: np.ndarray, latency_ms: float) -> None:
         """Swap the chunk and resume at the latency-compensated index."""

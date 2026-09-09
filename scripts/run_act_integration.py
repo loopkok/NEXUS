@@ -40,8 +40,12 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 def build_obs(dim: int, cam_size: int, rng: np.random.Generator) -> ObsBatch:
+    # 用接近真实的关节位姿（含离开零位的 d3≈-1.9，取自真实数据），保证引擎绝对语义
+    # 守卫在真实模型上通过。合成 OOD 状态（如 normal(0,0.5) 偶发 |state|>1）会让 ACT
+    # 预测向训练均值 → arm_scale 变小 → 守卫误报（部署中状态永远在分布内，不会出现）。
+    state = np.array([-0.35, 0.19, -0.004, -1.89, -0.20, -0.001, 0.014, 0.5])[:dim]
     return ObsBatch(
-        state=rng.normal(0, 0.5, dim),
+        state=state,
         images={
             "video8": rng.integers(0, 256, (cam_size, cam_size, 3), dtype=np.uint8),
             "video0": rng.integers(0, 256, (cam_size, cam_size, 3), dtype=np.uint8),

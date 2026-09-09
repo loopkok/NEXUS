@@ -129,8 +129,10 @@ class Driver(Node):
 
     def start_pump(self) -> None:
         def _pump():
+            # 真实量级的关节位姿（含离开零位的 d3≈-1.9），让绝对语义守卫被真实模型
+            # 验证通过（合成近零位姿会 fail-open，测不到守卫）
             home = np.zeros(7)
-            home[1] = -0.3
+            home[3] = -1.8
             while not self._stop.is_set():
                 m = JointState()
                 m.header.stamp = self.get_clock().now().to_msg()

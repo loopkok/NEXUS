@@ -184,6 +184,7 @@ class PolicyNode(Node):
             "action_chunk": 50,
             "control_interp": 1,
             "camera_image_size": 224,
+            "abs_action_min_scale": 0.5,
             "default_prompt": "",
             # replay
             "replay_source": "",
@@ -456,6 +457,9 @@ class PolicyNode(Node):
             chunk=int(self.get_parameter("action_chunk").value),
             policy_fps=int(self.get_parameter("dataset_fps").value),
             autostart=True,
+            abs_action_min_scale=float(
+                self.get_parameter("abs_action_min_scale").value
+            ),
         )
 
     def _cmd_policy(self) -> None:

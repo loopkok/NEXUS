@@ -56,6 +56,7 @@
 | `ros2 run`/`ros2 launch` 报 "No executable found" | 缺 `setup.cfg`，console script 装进 `bin/` 而非 ament 的 `lib/<pkg>/`（data_collect 有 setup.cfg 所以正常） | 补 `setup.cfg`（`[install] install_scripts=$base/lib/<pkg>`） |
 | queue_async 控制线程饿死（瞬时推理也只有 ~15Hz；真实 ACT 0.5Hz） | `_planner_loop` 把 `self._stop.wait(0.005)` 写在 `with self._lock` 内——planner 空闲时几乎 100% 持锁，`tick()` 在锁上饿死。此前被 select_action 1 行 chunk（planner 一直重填）掩盖，方案 A 暴露 | `Event.wait` 移出锁外（空闲判定在锁内、等待在锁外）；回归 `test_queue_async_control_thread_not_starved_by_planner` |
 | ACT 后端一次 infer 只回 1 行，引擎分块/预取/网络全浪费 | `LerobotActBackend.infer` 走 `select_action`（内部 50 行队列逐行吐），引擎拿不到完整 chunk | **方案 A**：改 `predict_action_chunk` 一次返回完整 chunk（`temporal_ensemble_coeff` 非 None 回退 select_action）；图像上传从每行一次变每 chunk 一次（-96%），queue_async 达 30Hz，loop 7.9→1.26ms |
+| 后端把 delta 当绝对返回（openpi server 漏 AbsoluteActions/错 checkpoint），Jetson 静默跳到错误目标 | 节点信任 backend「返回绝对」契约，无语义断言；安全层 `joint_limits` 也未填充（只有 slew 限速） | **绝对语义守卫** `abs_action_min_scale`：机器人离开零位（|state|>1 臂维）时 chunk 首行量级不得塌缩（arm_scale≥0.5），否则 PolicyError→安全 stop；3 例单测 |
 
 ## 代码路径速查
 

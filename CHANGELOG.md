@@ -121,6 +121,20 @@ chunk 15→**4900Hz**、真实 ACT 0.5→**3000Hz**、e2e queue_async **30.0Hz**
 每 chunk 服务端 10.4ms、GPU util 23%。**部署变化**：ACT 不再要求 `engine_mode:=queue_sync`，
 默认 queue_async 即 30Hz（launch 无需传 engine_mode）。
 
+**绝对动作语义守卫（`abs_action_min_scale`）——对抗性审查发现信任边界后加固**。审查结论：
+Jetson 侧对两后端（openpi 内部 delta / ACT 绝对）统一按绝对动作处理，delta↔绝对转换完全在
+server 层——但节点**原先无任何"返回的是绝对"断言**（信任 backend 契约）。若 openpi server 漏
+`AbsoluteActions` 输出变换或错 checkpoint，会静默返回 delta → 机器人到错误目标。**加固**：
+引擎 `_check_absolute_semantics`：机器人明显离开零位（max|state|>1，即臂关节）时，chunk 首行
+目标值须保持量级（`arm_scale` = 在这些维上 max|action| ≥ 阈值 0.5），否则 `PolicyError` →
+引擎报错 → 节点安全 stop（不静默跳到错误目标）。只查 |state|>1 的维（夹爪 state∈[0,1] 自动
+排除），接近零位 fail-open。**对抗迭代**：初版用「|action-state| 必须小」判别，被真实模型的
+OOD 输入误报（合成 state 让模型预测向均值，|action-state| 达 1.05）；改为「离开零位时动作
+量级不得塌缩」后，真实模型在所有真实量级 state 下 arm_scale≈1.7（3.4× 余量）、delta≈0.03
+（16× 余量）。集成/e2e 改用真实位姿（含 d3≈-1.9）喂守卫并全部通过；测试合成 OOD 状态禁用
+守卫（部署中状态恒在分布内）。新增 3 例单测（拒 delta / 收绝对 / 关闭）。`abs_action_min_scale`
+yaml 可配（默认 0.5，≤0 关闭）。单测 85 例全绿。
+
 ## 2026-09-07
 
 **左手柄 X 键「段间回位」+ web 数采卡片同功能按钮（episode 间免手摆放物品）**——

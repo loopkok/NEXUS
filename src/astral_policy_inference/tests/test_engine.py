@@ -154,5 +154,57 @@ class TestThreadingSafety(unittest.TestCase):
         self.assertGreater(n, 200, f"control thread starved: {n} pops in 0.5s")
 
 
+class TestAbsoluteSemanticsGuard(unittest.TestCase):
+    """回归：后端返回 delta 语义（远离当前 state 的小值）时引擎拒绝 chunk。
+
+    后端契约是绝对动作；openpi server 若漏 AbsoluteActions、或错 checkpoint，
+    会把 delta 当绝对返回 → 首行≈小 delta，在 |state|>1 的维上 |action-state|≈|state|
+    超阈值 → 引擎报错（节点据此安全 stop，不静默跳到错误目标）。
+    """
+
+    def _away_state(self):
+        st = np.zeros(DIM)
+        st[0], st[3] = 1.5, -1.8  # 臂维明显离开零位
+        return st
+
+    def test_rejects_delta_like_actions(self):
+        class DeltaBackend(StubBackend):
+            def infer(self, obs):
+                return np.full((4, DIM), 0.03, dtype=np.float64)  # 小 delta
+
+        eng = ActionEngine(DeltaBackend(action_dim=DIM, camera_map={}),
+                           mode="queue_sync", action_dim=DIM, chunk=50,
+                           policy_fps=30, autostart=False, abs_action_min_scale=0.5)
+        eng.feed_obs(ObsBatch(state=self._away_state(), images={}, prompt=""))
+        with self.assertRaises(EngineStateError):
+            eng.start()  # 首次 plan 的绝对语义检查失败 → engine error
+
+    def test_accepts_absolute_actions(self):
+        class AbsBackend(StubBackend):
+            def infer(self, obs):
+                out = np.zeros((4, DIM))
+                out[0] = obs.state  # 绝对 next-state ≈ 当前 state
+                return out
+
+        eng = ActionEngine(AbsBackend(action_dim=DIM, camera_map={}),
+                           mode="queue_sync", action_dim=DIM, chunk=50,
+                           policy_fps=30, autostart=False, abs_action_min_scale=0.5)
+        eng.feed_obs(ObsBatch(state=self._away_state(), images={}, prompt=""))
+        eng.start()  # 不应 raise
+        self.assertIsNotNone(eng._chunk)
+
+    def test_disabled_when_threshold_nonpositive(self):
+        class DeltaBackend(StubBackend):
+            def infer(self, obs):
+                return np.full((4, DIM), 0.03, dtype=np.float64)
+
+        eng = ActionEngine(DeltaBackend(action_dim=DIM, camera_map={}),
+                           mode="queue_sync", action_dim=DIM, chunk=50,
+                           policy_fps=30, autostart=False, abs_action_min_scale=0.0)
+        eng.feed_obs(ObsBatch(state=self._away_state(), images={}, prompt=""))
+        eng.start()  # 关闭时不拦截
+        self.assertIsNotNone(eng._chunk)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
