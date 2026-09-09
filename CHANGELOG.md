@@ -19,6 +19,15 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 **部署**：机器人侧同步包代码 + colcon build 后重启 policy_node，确认 driver yaml 的
 open/closed_rad 与节点参数一致。
 
+**夹爪冷启动种子语义修正——"从未命令"回显 open_rad（全开）而非 0.0（全合）**——
+`astral_robot_control`（driver）。**动机**：用户指出整机上电时夹爪实际是**全开**的；原 driver
+对"从未命令过"的夹爪回显 0.0 rad，经 policy_node 的 rad→ratio 换算得 1.0=全合——与物理现实
+相反；且 0.0 rad 在话题层与"真命令到全合"无法区分。**做法**：driver state 定时器的夹爪回显
+改为"从未命令 → 回显 `open_rad`（按侧取 `*_gripper_open_rad`，本机 2.5）"，节点换算自然得
+ratio 0.0=开；命令过则照旧回显真实最后命令。**验证**：`test_driver_services.py` 20 例全绿；
+policy_node 侧换算链路（open_rad→ratio 0.0）由 node_flow 的 driver 回显种子用例覆盖。**部署**：
+driver 与 policy_inference 两个包都要同步 + colcon build。
+
 
 **新增 `astral_policy_inference` 非 ROS 真机推理 Session（`hw_io.py` + `session.py` +
 `scripts/robot_session_cli.py` + `config/robot_session.yaml`）——脱离 ROS2 完成完整真机推理 Session。**

@@ -662,20 +662,27 @@ class AstralRobotDriverNode(Node):
         msg_h.position = [float(x) for x in head]
         self._pub_head.publish(msg_h)
 
-        # 夹爪无 OBS 槽位（0x31/0x32 是头）；发布最近一次指令角
+        # 夹爪无 OBS 槽位（0x31/0x32 是头）；发布最近一次指令角。
+        # 从未命令过 → 回显 open_rad（而非 0.0）：整机上电约定夹爪为全开，
+        # 且 0.0 rad 与"真命令到全合"在话题层无法区分——下游（policy_node
+        # 的 rad→ratio 种子换算）只有拿到 open_rad 才能正确得到"开"。
         with self._lock:
             gl = self._grip_rad.get("left")
             gr = self._grip_rad.get("right")
         msg_gl = JointState()
         msg_gl.header.stamp = stamp
         msg_gl.name = ["left_gripper"]
-        msg_gl.position = [0.0 if gl is None else float(gl)]
+        msg_gl.position = [
+            float(self._grip_open_rad.get("left", 0.0)) if gl is None else float(gl)
+        ]
         self._pub_left_grip.publish(msg_gl)
 
         msg_gr = JointState()
         msg_gr.header.stamp = stamp
         msg_gr.name = ["right_gripper"]
-        msg_gr.position = [0.0 if gr is None else float(gr)]
+        msg_gr.position = [
+            float(self._grip_open_rad.get("right", 0.0)) if gr is None else float(gr)
+        ]
         self._pub_right_grip.publish(msg_gr)
 
     # ------------------------------------------------------------------ srvs
