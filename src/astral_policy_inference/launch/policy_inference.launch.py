@@ -44,6 +44,7 @@ def _node(context):
     engine_mode = LaunchConfiguration("engine_mode").perform(context)
     temporal_ensemble_coeff = LaunchConfiguration("temporal_ensemble_coeff").perform(context)
     metrics_log_file = LaunchConfiguration("metrics_log_file").perform(context)
+    joint_stream_log_file = LaunchConfiguration("joint_stream_log_file").perform(context)
     parameters = [params_file]
     if backend_type:
         parameters.append(
@@ -65,6 +66,8 @@ def _node(context):
         parameters.append({"temporal_ensemble_coeff": float(temporal_ensemble_coeff)})
     if metrics_log_file:
         parameters.append({"metrics_log_file": metrics_log_file})
+    if joint_stream_log_file:
+        parameters.append({"joint_stream_log_file": joint_stream_log_file})
     node = Node(
         package="astral_policy_inference",
         executable="policy_node",
@@ -104,6 +107,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "metrics_log_file", default_value="",
                 description="非空则节点把 state JSON（延迟/引擎指标）追加写该文件并终端打印"),
+            DeclareLaunchArgument(
+                "joint_stream_log_file", default_value="",
+                description="非空则节点把每次下发的关节指令流（30Hz JSON 行）追加写该文件"),
             DeclareLaunchArgument("keyboard", default_value="false"),
             DeclareLaunchArgument("cmd_topic", default_value="/policy_inference/cmd"),
             DeclareLaunchArgument("state_topic", default_value="/policy_inference/state"),

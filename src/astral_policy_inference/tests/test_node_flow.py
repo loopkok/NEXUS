@@ -474,6 +474,31 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertIn("latency_ms", rec)
         self.assertIn("engine", rec)
 
+    def test_joint_stream_log_writes_commanded_values(self):
+        """joint_stream_log_file 非空时，每次实际下发（_policy_tick）把带时间戳的
+        各话题指令值记录成 JSON 行——排障卡顿用的指令流日志。"""
+        self._stop_server()
+        self._stop_node_spin()
+        if self.node.context.ok():
+            self.node.destroy_node()
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "pi_cmds.jsonl")
+        self.node = PolicyNode(parameter_overrides=params(joint_stream_log_file=path))
+        feed_state(self.node)  # 先给观测，policy 门才放行（与现有 POLICY 用例同序）
+        self._cmd("policy")
+        self.assertEqual(self.node.controller.state, "POLICY")
+        self.node._policy_tick(1.0 / FPS)
+        self.node._policy_tick(1.0 / FPS)
+        self._cmd("stop")
+        with open(path) as f:
+            lines = [l for l in f.read().splitlines() if l.strip()]
+        self.assertGreaterEqual(len(lines), 1, "下发后指令流文件应有内容")
+        rec = json.loads(lines[0])
+        self.assertIn("t", rec)
+        self.assertIn("/left_arm/joint_commands", rec, "应记录臂指令话题")
+        self.assertEqual(len(rec["/left_arm/joint_commands"]), 7)
+        self.assertTrue(all(isinstance(v, float) for v in rec["/left_arm/joint_commands"]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -115,6 +115,16 @@ class PolicyNode(Node):
             except OSError as exc:
                 self.get_logger().warn(f"metrics_log_file {metrics_log!r} open failed: {exc}")
 
+        # 关节指令流句柄（joint_stream_log_file 为空则关闭）
+        self._js_fh: Optional[object] = None
+        js_log = str(self.get_parameter("joint_stream_log_file").value or "")
+        if js_log:
+            try:
+                self._js_fh = open(js_log, "a", buffering=1)
+                self.get_logger().info(f"joint stream log -> {js_log}")
+            except OSError as exc:
+                self.get_logger().warn(f"joint_stream_log_file {js_log!r} open failed: {exc}")
+
         # observation buffers ---------------------------------------------------
         self._values: dict[str, np.ndarray] = {}
         self._stamps: dict[str, float] = {}
@@ -231,6 +241,9 @@ class PolicyNode(Node):
             # 指标调试：非空时每次 _publish_state（1Hz + 状态变化）把带时间戳的
             # state JSON 追加写文件，并在终端打印一行延迟/引擎摘要（launch output=screen 可见）
             "metrics_log_file": "",
+            # 关节指令流：非空时每次实际下发（30Hz）把带时间戳的各话题指令值
+            # 追加写该文件（JSON 行，排障卡顿用；与 metrics_log_file 相互独立）
+            "joint_stream_log_file": "",
         }
         for name, val in defaults.items():
             self.declare_parameter(name, val)
@@ -983,6 +996,18 @@ class PolicyNode(Node):
         self._exec_events += [f"{e.kind}:{e.stream}" for e in self._executor.events]
         self._publish_targets(safe)
         self._last_cmds = safe
+        if self._js_fh is not None:
+            self._log_joint_stream(safe)
+
+    def _log_joint_stream(self, targets: list) -> None:
+        """joint_stream_log_file 开启时：每次实际下发（30Hz）记录各话题指令值。"""
+        rec: dict = {"t": round(time.time(), 4)}
+        for tg in targets:
+            rec[tg.topic] = [float(v) for v in tg.values]
+        try:
+            self._js_fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001  写失败不干扰控制流
+            pass
 
     def _resend_last(self) -> None:
         if self._last_cmds:
@@ -1096,6 +1121,12 @@ class PolicyNode(Node):
             except Exception:  # noqa: BLE001
                 pass
             self._metrics_fh = None
+        if self._js_fh is not None:
+            try:
+                self._js_fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._js_fh = None
         super().destroy_node()
 
     def _maybe_publish_state(self, now: float) -> None:

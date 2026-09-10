@@ -112,7 +112,9 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 **真机指标自动记录**：launch 传 `metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点
 每次发布 state（1Hz + 状态变化）把带时间戳的 JSON（含 `latency_ms.loop/obs_age`、engine
 `pops/plans/last_plan_ms/remaining`、`exec_events`）追加写该文件，并在终端打印一行 `[MET]` 摘要。
-排障时另可用（传感器话题**必须**加 QoS flag，否则收 0 条）：
+排障卡顿再加 `joint_stream_log_file:=/tmp/pi_cmds.jsonl`——节点把**每次实际下发（30Hz）的
+关节指令值**（各话题 JSON 行）也追加写文件，可直接分析指令步长/节奏。
+另可用（传感器话题**必须**加 QoS flag，否则收 0 条）：
 
 ```bash
 ros2 topic echo /policy_inference/state --qos-reliability reliable

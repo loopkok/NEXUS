@@ -6,6 +6,16 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-10
 
+**节点关节指令流自动记录 `joint_stream_log_file`**——`astral_policy_inference`。
+**症状**：排障真机卡顿需要实际的关节指令流（30Hz 步长/节奏），但 metrics_log_file 只记
+state 高层指标，不含指令值；`ros2 topic echo` 又因 BEST_EFFORT depth=1 需手加 QoS flag 且
+输出 YAML 难解析。**做法**：节点新增参数 `joint_stream_log_file`（默认空=关闭）：非空时每次
+实际下发（`_send_targets_from`）把带时间戳的各话题指令值（JointState 7 维位置 + 夹爪比值）
+追加写该文件（JSON 行，与 metrics_log_file 相互独立）；launch 新增透传。**验证**：新增
+`test_joint_stream_log_writes_commanded_values`（下发 2 拍 → 文件含 `/left_arm/joint_commands`
+7 维浮点行），套件 94→**95 例**全绿。**用途**：`joint_stream_log_file:=/tmp/pi_cmds.jsonl`
+后可直接分析"每 25 行（0.83s）边界步长是否偏大、指令到达间隔是否均匀"。
+
 **引擎级 ACT 时序融合 `temporal_ensemble_coeff`**——`astral_policy_inference`。
 **症状**：真机 POLICY 一卡一卡（换 chunk 时指令硬跳）。已排除网络（直连网线后延迟
 116→21ms 卡顿依旧）、GPU 争用、数据抖动、夹爪 clip（实测模型输出仅越界 ≤0.008）。
