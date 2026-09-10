@@ -199,6 +199,9 @@ class PolicyNode(Node):
             "engine_mode": "queue_async",
             "action_chunk": 50,
             "control_interp": 1,
+            # ACT 时序融合系数（借鉴 lerobot ACTTemporalEnsembler）：>0 时换 chunk
+            # 做指数加权平均消除边界跳变（ACT 推荐 0.01）；0 = 关闭。yaml 默认 0.01。
+            "temporal_ensemble_coeff": 0.0,
             "camera_image_size": 224,
             "abs_action_min_scale": 0.5,
             "default_prompt": "",
@@ -510,6 +513,9 @@ class PolicyNode(Node):
             autostart=True,
             abs_action_min_scale=float(
                 self.get_parameter("abs_action_min_scale").value
+            ),
+            temporal_ensemble_coeff=float(
+                self.get_parameter("temporal_ensemble_coeff").value
             ),
         )
 

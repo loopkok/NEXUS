@@ -88,6 +88,10 @@ GPU 主机起统一 `scripts/serve.py`，节点 `backend_type=remote` 连它（�
 # GPU 主机（py3.12 lerobot 环境，serve ACT）：
 <lerobot-env>/bin/python astral_ws/src/astral_policy_inference/scripts/serve.py \
   --model act --checkpoint-dir <act_checkpoint> --port 8001
+# 或直接用运维脚本（参数外置 serve_policy.env，启动前查端口冲突，--status/--stop 配套）：
+astral_ws/scripts/serve_policy.sh            # 启动（改参编辑 serve_policy.env，不动脚本）
+astral_ws/scripts/serve_policy.sh --status   # 查看端口/pidfile 状态
+astral_ws/scripts/serve_policy.sh --stop     # 优雅停止本脚本起的 serve
 # pi05（需 openpi env + openpi 格式 checkpoint）：
 <openpi-env>/bin/python .../scripts/serve.py --model pi05 --checkpoint-dir <openpi_ckpt> --port 8001
 # 机器人侧节点（py3.10 + ROS）——三个参数必传，engine_mode 默认 queue_async 即可：
@@ -99,6 +103,10 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 - `camera_image_size` 必须与模型 preprocessor 输入一致（本机 pickup_act_480=480；默认 224 崩）；
 - 后端一次返回**完整 chunk**（方案 A），引擎按 50 行分块/预取，默认 `queue_async` 即 30Hz、
   图像上传每 chunk 一次（网络 -96%）、节点 loop ~1.3ms；
+- **`temporal_ensemble_coeff`（引擎级 ACT 时序融合，借鉴 lerobot ACTTemporalEnsembler）**：
+  真机换 chunk 时把旧尾段与新头部按 `exp(-coeff·i)` 权重平均，消除切换跳变（缓解一卡一卡）。
+  yaml 默认 `0.01`（ACT 推荐）；`0` = 关闭（硬切换，A/B 对比用）。A/B：
+  `temporal_ensemble_coeff:=0.01` vs `:=0.0`。
 - 序列化用包内 vendored `protocol`（`__ndarray__`），client/serve/node 三端一致。
 
 **真机指标自动记录**：launch 传 `metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点

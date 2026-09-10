@@ -42,6 +42,7 @@ def _node(context):
     cmd_topic = LaunchConfiguration("cmd_topic").perform(context)
     camera_image_size = LaunchConfiguration("camera_image_size").perform(context)
     engine_mode = LaunchConfiguration("engine_mode").perform(context)
+    temporal_ensemble_coeff = LaunchConfiguration("temporal_ensemble_coeff").perform(context)
     metrics_log_file = LaunchConfiguration("metrics_log_file").perform(context)
     parameters = [params_file]
     if backend_type:
@@ -60,6 +61,8 @@ def _node(context):
         parameters.append({"camera_image_size": int(camera_image_size)})
     if engine_mode:
         parameters.append({"engine_mode": engine_mode})
+    if temporal_ensemble_coeff:
+        parameters.append({"temporal_ensemble_coeff": float(temporal_ensemble_coeff)})
     if metrics_log_file:
         parameters.append({"metrics_log_file": metrics_log_file})
     node = Node(
@@ -95,6 +98,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("checkpoint_dir", default_value=""),
             DeclareLaunchArgument("camera_image_size", default_value=""),
             DeclareLaunchArgument("engine_mode", default_value=""),
+            DeclareLaunchArgument(
+                "temporal_ensemble_coeff", default_value="",
+                description=">0 开启 ACT 时序融合（换 chunk 加权平均，消切换跳变；0=关）"),
             DeclareLaunchArgument(
                 "metrics_log_file", default_value="",
                 description="非空则节点把 state JSON（延迟/引擎指标）追加写该文件并终端打印"),

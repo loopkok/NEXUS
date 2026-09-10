@@ -65,6 +65,8 @@ node.py      policy_node：参数/schema → 布局/后端 → 引擎 → 100Hz 
              _policy_tick / _playback_tick / _emit_target(插值) / _send_targets_from(安全层)
              _cmd_{policy,playback,pause,resume,takeover,release,stop}  仲裁入口
 engine.py    queue_sync 阻塞重填；queue_async 后台预取；rtc 后台滚切尾段（min_tail）
+             TemporalEnsembler：ACT 时序融合（借鉴 lerobot ACTTemporalEnsembler），
+             参数 temporal_ensemble_coeff>0 时换 chunk 加权平均消切换跳变；0=关
 backend.py   make_backend(backend_type=remote|inproc|stub, model=act|pi05|...)；
              RemoteBackend(远程 client) / InprocBackend(本地进程内) / StubBackend
 client.py    自包含 websocket client + vendored __ndarray__ 序列化（无 openpi_client 依赖）

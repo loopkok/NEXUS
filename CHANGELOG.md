@@ -6,6 +6,37 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-10
 
+**引擎级 ACT 时序融合 `temporal_ensemble_coeff`**——`astral_policy_inference`。
+**症状**：真机 POLICY 一卡一卡（换 chunk 时指令硬跳）。已排除网络（直连网线后延迟
+116→21ms 卡顿依旧）、GPU 争用、数据抖动、夹爪 clip（实测模型输出仅越界 ≤0.008）。
+**做法**：借鉴 lerobot `ACTTemporalEnsembler`（ACT 论文 Algorithm 2：重规划的新 chunk 与
+历史预测做在线指数加权平均，权重 wᵢ=exp(-coeff·i)，coeff>0 旧预测权重大→新 chunk 无法
+瞬间跳变）。lerobot 版每 tick 重规划，我们的引擎 ~chunk/2 行才重规划一次，故把 update()
+推广为**部分消费后重规划**：新 chunk 头部与旧缓冲未消费尾段（时间对齐）按 ACT 权重平均，
+尾部直接追加（engine.py 新增 `TemporalEnsembler`，numpy 实现）。引擎新增参数
+`temporal_ensemble_coeff`（0=关默认，>0 开启；yaml 默认 0.01=ACT 推荐值），node/yaml/
+launch 全链路透传，`reset()` 清融合计数。**验证**：新增 2 例（注入 0→1 硬跳变 chunk：
+无融合步长 1.0、融合后 <0.9 且确实降低最大步；首块采用+reset 清计数），套件 91→**93 例**
+全绿。**诚实备注**：离线仿真喂录制观测显示切换步无明显变化（录制观测下切换本就平滑，
+新[0]≈旧[24]），真机卡顿源于真实观测的闭环发散，离线复现不了——真机 A/B
+（`temporal_ensemble_coeff:=0.01` vs `0.0`）才能定论；若 A/B 无改善说明跳变不在 chunk
+边界，需抓 joint_commands 定位。**对抗性审查修复 2 处**：① `TemporalEnsembler.update`
+重叠行数只按 `min(M-i, n)` 取，旧缓冲短于 chunk_size（StubBackend 4 行/截断响应）时
+`old[i+k]/counts[i+k]` **越界 IndexError**——改为 `min(max(0,len(old)-i), n)`，新增
+`test_ensembling_short_chunk_does_not_crash` 回归（修复前红、修复后绿）；②
+`engine.reset()` 的 `ensembler.reset()` 原在锁外，与 planner 线程锁内的 `_install` 改计数
+竞态——移入锁内。套件 93→**94 例**全绿。
+
+**GPU 主机 serve 启动脚本 `serve_policy.sh`**——`astral_ws/scripts/`。包装
+`serve.py` 为可运维入口：参数**外置**在 `serve_policy.env`（PY/MODEL/CHECKPOINT_DIR/HOST/
+PORT/ACTION_DIM/SLOT_MAP/...），改参不动脚本；CLI 可临时覆盖（`--port`/`--config`）。**启动前
+两道冲突检查**：① pidfile 认"是否本脚本旧实例"（是→默认拒绝、`--force` 优雅停旧再起新）；
+② 端口被**他人**进程监听→拒绝并列出占用者（`ss -ltnp`）。`--status`/`--stop` 配套。
+**验证**（全路径实测）：正常启动→真实推理往返 ALL PASS→stop 端口释放；重复启动拒绝；
+`--force` 停旧起新（pid 更换）；他人占端口拒绝。**踩坑**：bash `${VAR:-默认}` 里不能放
+JSON——`${SLOT_MAP:-'{"a":...}'}` 解析时词内 `}` 被当闭合符，**变量已设也被尾部 `"}` 污染**
+（实测 54→56 字符、serve 报 JSON Extra data）；默认值改用 `:?` 必填，注释已写明。
+
 **节点指标自动记录 `metrics_log_file`**——`astral_policy_inference`。**症状**：真机推理想
 看延迟/引擎指标（`latency_ms.loop/obs_age`、engine pops/plans/plan_ms/remaining、
 exec_events），只能手动 `ros2 topic echo /policy_inference/state > file`，且 echo 输出是
@@ -1324,3 +1355,4 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 - 真机与 MuJoCo **二选一**，勿抢同一 `joint_commands`
 - `*_serial` 可空（按 `hand_side` 连）
 - USB：`0483` 需 udev `MODE="0666"`
+ # 查看lerobot他这个ACT推理过程中，是怎么解决抖动问题的，借鉴他的处理方法，再借鉴他的ACTTemporalEnsembler方法，集成到我的实现中

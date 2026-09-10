@@ -206,5 +206,102 @@ class TestAbsoluteSemanticsGuard(unittest.TestCase):
         self.assertIsNotNone(eng._chunk)
 
 
+class JumpBackend(StubBackend):
+    """第 2 次起每次推理都返回一个全 1 的 (10, dim) chunk（第 1 次全 0）。
+    故意制造"换 chunk 时 0→1 的硬跳变"，用于验证时序融合把边界步压下去。"""
+
+    def __init__(self, dim=DIM):
+        super().__init__(action_dim=dim, camera_map={})
+        self.plans = 0
+
+    def infer(self, obs):
+        self.plans += 1
+        val = 1.0 if self.plans >= 2 else 0.0
+        return np.full((10, self.action_dim), val)
+
+
+class TestTemporalEnsembling(unittest.TestCase):
+    """引擎级 ACT 时序融合：换 chunk 时旧尾段与新头部按权重平均，边界不再硬跳。"""
+
+    def _drive(self, coeff, chunk=10, prefetch=5, ticks=40):
+        eng = ActionEngine(
+            JumpBackend(), mode="queue_async", action_dim=DIM, chunk=chunk,
+            autostart=False, async_prefetch_ahead=prefetch,
+            temporal_ensemble_coeff=coeff,
+        )
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng.set_enabled(True)
+        eng.start()  # 首块（plans=1, 全 0）
+        rows = []
+        for _ in range(ticks):
+            # 模拟 _planner_loop 判定：还有 >0 行可消费且剩余 <= prefetch → 重规划
+            if 0 < eng.remaining <= prefetch:
+                eng._run_plan()
+            r = eng.tick()
+            if r is None:  # 意外耗尽（async 无线程时兜底）
+                eng._run_plan()
+                r = eng.tick()
+            if r is not None:
+                rows.append(r)
+        eng.stop()
+        return np.asarray(rows)
+
+    def test_ensembling_bounds_boundary_step(self):
+        raw = self._drive(coeff=0.0)   # 无融合：0→1 硬跳
+        ens = self._drive(coeff=0.01)  # 融合：边界步被压
+        raw_steps = np.abs(np.diff(raw, axis=0)).max(axis=1)
+        ens_steps = np.abs(np.diff(ens, axis=0)).max(axis=1)
+        self.assertGreater(raw_steps.max(), 0.9, "无融合时应出现 ~1.0 的硬跳变")
+        self.assertLess(ens_steps.max(), 0.9, "融合后边界步必须显著小于硬跳变")
+        self.assertLess(ens_steps.max(), raw_steps.max(), "融合必须实际降低最大步长")
+        self.assertEqual(ens.shape[1], DIM)
+        self.assertTrue(np.isfinite(ens).all())
+
+    def test_ensembling_first_plan_adopts_and_reset_clears(self):
+        eng = ActionEngine(
+            JumpBackend(), mode="queue_async", action_dim=DIM, chunk=10,
+            autostart=False, temporal_ensemble_coeff=0.01,
+        )
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng.set_enabled(True)
+        eng.start()
+        self.assertIsNotNone(eng._ensembler)
+        self.assertIsNotNone(eng._ensembler.counts, "首块后计数应初始化")
+        eng.reset()
+        self.assertIsNone(eng._ensembler.counts, "reset 必须清空融合计数")
+        self.assertEqual(eng.remaining, 0)
+        eng.stop()
+
+    def test_ensembling_short_chunk_does_not_crash(self):
+        """后端返回行数 < chunk_size（StubBackend 4 行、截断响应）时不得越界。
+
+        对抗性回归：update() 里 r 若只按 chunk_size 与 n 取小，会用 old[i+k]
+        (k 到 r-1) 越出旧缓冲长度 → IndexError。r 必须同时受 len(old)-i 约束。
+        """
+        class ShortBackend(StubBackend):
+            def __init__(self, dim=DIM):
+                super().__init__(action_dim=dim, camera_map={})
+
+            def infer(self, obs):
+                return np.full((4, DIM), 0.5, dtype=np.float64)
+
+        eng = ActionEngine(
+            ShortBackend(), mode="queue_async", action_dim=DIM, chunk=10,
+            autostart=False, async_prefetch_ahead=2, temporal_ensemble_coeff=0.01,
+        )
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng.set_enabled(True)
+        eng.start()
+        for _ in range(30):
+            if 0 < eng.remaining <= 2:
+                eng._run_plan()  # 剩余 2 行时重规划 → 旧缓冲仅 4 行、已消费 2 行
+            r = eng.tick()
+            if r is None:
+                eng._run_plan()
+                r = eng.tick()
+            self.assertIsNotNone(r, "短 chunk + 融合不应断流")
+        eng.stop()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

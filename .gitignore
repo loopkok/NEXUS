@@ -24,3 +24,8 @@ venv/
 .venv/
 .env/
 .conda/
+
+# ==================== 运行时产物 ====================
+# policy_inference metrics_log_file 写出的指标日志（yaml 注释推荐 /tmp，误落工作区根时勿提交）
+pi_metrics.jsonl
+*.jsonl

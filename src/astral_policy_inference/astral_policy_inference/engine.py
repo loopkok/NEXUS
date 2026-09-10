@@ -34,6 +34,69 @@ class EngineStateError(RuntimeError):
     """Engine has no usable chunk (planner failed / no observation yet)."""
 
 
+class TemporalEnsembler:
+    """ACT 时序融合——借鉴 lerobot ``ACTTemporalEnsembler``（ACT 论文 Algorithm 2）。
+
+    lerobot 版在 ``temporal_ensemble_coeff`` 非空时**每 tick 都重规划**，新 chunk 与
+    历史预测做在线指数加权平均，权重 ``w_i = exp(-coeff*i)``（coeff>0 → 旧预测权重更高），
+    于是单个新 chunk 无法瞬间跳变。我们的引擎每 ~chunk/2 行才重规划一次，这里把
+    ``update`` 推广到**部分消费后重规划**：新 chunk 的头部与缓冲里未消费的尾段（时间
+    对齐，都是"从现在起的后续行"）按 ACT 权重平均，超出重叠的新尾部直接追加。
+
+    权重语义：某时步被预测 c 次时，新值权重 = ``w_c / Σ_{0..c} w_i``；c=1 时 ≈1/2
+    （边界步直接减半），之后指数衰减（坏 chunk 的影响被逐步稀释）。
+    """
+
+    def __init__(self, coeff: float, chunk_size: int) -> None:
+        self.coeff = float(coeff)
+        self.chunk_size = int(chunk_size)
+        self.weights = np.exp(-self.coeff * np.arange(self.chunk_size))
+        self.weights_cumsum = np.cumsum(self.weights)
+        self.reset()
+
+    def reset(self) -> None:
+        self.counts: Optional[np.ndarray] = None
+
+    def update(
+        self,
+        new: np.ndarray,
+        old: Optional[np.ndarray] = None,
+        i: int = 0,
+    ) -> np.ndarray:
+        """并入新 chunk，返回融合后的 (n, dim) 缓冲。
+
+        ``new``：新 chunk（(n, dim)，从"当前"起预测）；``old`` + ``i``：旧缓冲（已消费
+        i 行，未消费尾段与 ``new`` 头部时间对齐）。``old`` 为 None 或首次调用 → 直接采用。
+        """
+        new = np.asarray(new, dtype=np.float64)
+        n = new.shape[0]
+        out = np.array(new, copy=True)
+        if old is None or self.counts is None:
+            self.counts = np.ones(n, dtype=np.int64)
+            return out
+        M = self.chunk_size
+        # 重叠行数 = 旧缓冲剩余未消费行数 ∩ 新 chunk 长度。只按 min(M-i, n) 取会在
+        # 旧缓冲短于 chunk_size（后端返回行数 < chunk，如 StubBackend 4 行/截断响应）
+        # 时越界（old[i+k]/counts[i+k]）。对抗性回归 test_ensembling_short_chunk_*。
+        r = int(min(max(0, len(old) - i), n))
+        if r > 0:
+            for k in range(r):
+                c = int(self.counts[i + k])  # 该时步已被预测次数（本次融合前）
+                ci = min(c, M - 1)
+                w_new = float(self.weights[ci])
+                w_old = float(self.weights_cumsum[ci - 1]) if ci >= 1 else 0.0
+                out[k] = (old[i + k] * w_old + new[k] * w_new) / (w_old + w_new)
+            if n > r:
+                out[r:] = new[r:]
+        self.counts = np.concatenate(
+            [
+                self.counts[i : i + r] + 1 if r > 0 else np.zeros(0, dtype=np.int64),
+                np.ones(max(0, n - r), dtype=np.int64),
+            ]
+        )
+        return out
+
+
 class ActionEngine:
     def __init__(
         self,
@@ -49,6 +112,7 @@ class ActionEngine:
         queue_min_replan_interval_s: float = 0.05,
         autostart: bool = True,
         abs_action_min_scale: float = 0.5,
+        temporal_ensemble_coeff: float = 0.0,
     ):
         if mode not in ("queue_sync", "queue_async", "rtc"):
             raise ValueError(f"mode={mode!r} not in queue_sync|queue_async|rtc")
@@ -60,6 +124,14 @@ class ActionEngine:
         # 绝对动作语义守卫：机器人离开零位时，chunk 首行目标值须保持量级；
         # <=0 关闭。见 _check_absolute_semantics。
         self.abs_action_min_scale = float(abs_action_min_scale)
+        # ACT 时序融合系数：>0 时换 chunk 用 TemporalEnsembler 加权平均（借鉴 lerobot
+        # ACTTemporalEnsembler），边界不再硬跳；0 = 关闭（默认，行为不变）。ACT 推荐 0.01。
+        self.temporal_ensemble_coeff = float(temporal_ensemble_coeff)
+        self._ensembler: Optional[TemporalEnsembler] = (
+            TemporalEnsembler(self.temporal_ensemble_coeff, self.chunk)
+            if self.temporal_ensemble_coeff > 0
+            else None
+        )
         self.async_prefetch_ahead = (
             int(async_prefetch_ahead)
             if async_prefetch_ahead is not None
@@ -151,6 +223,9 @@ class ActionEngine:
             self._i = 0
             self._pops_since_install = 0
             self._last_error = None
+            if self._ensembler is not None:
+                # 必须在锁内：planner 线程的 _install 也在锁内改融合计数，锁外清会竞态
+                self._ensembler.reset()
         try:
             self.backend.reset()
         except Exception:  # noqa: BLE001
@@ -331,7 +406,16 @@ class ActionEngine:
             i0 = int(np.clip(latency_rows, 0, max(0, rows - 1)))
         else:
             i0 = 0
-        self._chunk = tail
+        if self._ensembler is not None:
+            # ACT 时序融合：正在执行时，新 chunk 头部与旧缓冲未消费尾段加权平均，
+            # 消除切换跳变；首次/边界直接采用。
+            self._chunk = self._ensembler.update(
+                tail,
+                old=self._chunk if was_moving else None,
+                i=self._i if was_moving else 0,
+            )
+        else:
+            self._chunk = tail
         self._i = i0
         self._pops_since_install = 0
         self._plans += 1

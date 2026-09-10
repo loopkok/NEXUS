@@ -37,6 +37,10 @@ astral_policy_inference:
     port: 8000                # remote：serve.py 端口
     engine_mode: "queue_async"  # queue_sync | queue_async | rtc
     action_chunk: 50          # 每个 chunk 消费的行数（openpi action_horizon=50）
+    # ACT 时序融合系数（借鉴 lerobot ACTTemporalEnsembler，ACT 论文 Algorithm 2）：
+    # >0 时引擎换 chunk 把旧尾段与新头部按 exp(-coeff*i) 权重平均，消除切换跳变
+    # （缓解真机"一卡一卡"）。ACT 推荐 0.01；0 = 关闭（硬切换）。开/关可 A/B 对比。
+    temporal_ensemble_coeff: 0.01
     control_interp: 1         # 控制率 = dataset_fps × N（1=每策略步发一次）
     # 绝对动作语义守卫：chunk 首行在 |state|>1.0 的维上离当前 state 超过该值即拒绝
     # （检测后端把 delta 当绝对返回，如 openpi server 漏 AbsoluteActions）。<=0 关闭。
