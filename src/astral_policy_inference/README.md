@@ -33,17 +33,14 @@
 astral_policy_inference/
 ├── robot_io.py     ObsLayout：由 CollectSchema 生成订阅表 / 观测向量 / 指令拆分
 ├── executor.py     SafeExecutor：NaN/限位/速率安全层（纯逻辑，可单测）
-├── backend.py      PolicyBackend：openpi(远程 ws) / act(进程内 lerobot) / stub
+├── backend.py      PolicyBackend：RemoteBackend(remote) / InprocBackend(inproc) / StubBackend
+├── client.py       自包含 websocket client + vendored __ndarray__ 序列化（无 openpi_client）
 ├── engine.py       ActionEngine：queue_sync / queue_async / rtc 三种分块引擎
 ├── controller.py   Controller：IDLE/POLICY(_PAUSED)/PLAYBACK(_PAUSED)/HUMAN FSM
 ├── replay.py       读取 aligned_data.h5 / LeRobot v2.1 目录，PlaybackSession 步进
 ├── node.py         policy_node：装配以上全部 + HITL 仲裁 + 控制定时器
-├── runner.py       PolicyRunner：非 ROS 完整编排（纯线程控制循环替代 rclpy）
-├── hw_io.py        非 ROS 真机 I/O：RobotIO(astral_robot_sdk) + CameraIO(V4L2/pyrealsense2)
-├── session.py      RobotSession（编排+记录+配置）+ Hdf5SessionRecorder（可回放记录）
 ├── keyboard.py     键盘驱动（s/y/空格/n/h/g/x）
 ├── config/policy_inference.yaml
-├── config/robot_session.yaml   非 ROS Session 配置（schema/板卡/相机/后端/记录）
 └── launch/policy_inference.launch.py
 ```
 
@@ -74,33 +71,35 @@ ros2 topic echo /policy_inference/state
 
 ### 2) 换模型 = 只改 backend 参数（其余配置零改动）
 
-| 后端 | 改什么 | 说明 |
-|---|---|---|
-| `backend_type: "act"` | `checkpoint_dir` 指向新 checkpoint 目录 | 进程内 lerobot ACT：按 checkpoint `config.json` 的 `type` 经 `get_policy_class` 解析具体类加载（`PreTrainedPolicy` 在 lerobot 0.6.2 是抽象基类，不能直接 `from_pretrained`）；换 ACT 权重/归一化/分块即换目录。**图像尺寸须与模型 preprocessor 一致**（本模型 480×480 → `camera_image_size: 480`，默认 224 会 shape 不匹配） |
-| `backend_type: "openpi"` | GPU 主机上换 `serve_policy.py` / `serve_act.py` 加载的 checkpoint | 机器人端只填 `host/port`，**不碰**；server 换模型即可 |
-| `backend_type: "stub"` | — | 无网络冒烟 / 开发用，勿上真机 |
+`backend_type` = **传输方式**：`remote`（连 serve.py）/ `inproc`（进程内）/ `stub`（冒烟）。
+`model` = **模型族**：`act`（lerobot）/ `pi05`（openpi）/ 后续扩展——决定 serve/inproc 加载路径。
 
-**ACT 远程部署（推荐，解决 rclpy py3.10 与 lerobot py3.12 同进程冲突）**：lerobot 0.6.2
-要求 py3.12（代码用 PEP 695 泛型），而 ROS Humble 的 rclpy 只有 py3.10 绑定——两者无法同进程。
-用 `scripts/serve_act.py` 在 py3.12 + CUDA 环境起服务（复用本包 ACT 后端加载逻辑），节点侧
-`backend_type=openpi` + `host/port` 远程连（协议与 openpi 完全兼容，节点零改动）：
+| 传输 | model | 改什么 | 说明 |
+|---|---|---|---|
+| `remote` | `act`/`pi05`/… | GPU 主机上换 `serve.py --model <模型> --checkpoint-dir` 加载的 checkpoint | 机器人端只填 `host/port`，**不碰**；server 换模型即可 |
+| `inproc` | `act`（lerobot） | `checkpoint_dir` 指向新 checkpoint | 本地进程内：按 checkpoint `config.json` 的 `type` 经 `get_policy_class` 解析具体类加载；换权重/归一化/分块即换目录。**图像尺寸须与模型 preprocessor 一致**（本模型 480×480 → `camera_image_size: 480`） |
+| `stub` | — | — | 无网络冒烟 / 开发用，勿上真机 |
+
+**远程部署（推荐，解决 rclpy py3.10 与 lerobot py3.12 同进程冲突）**：模型（lerobot/pi05）在
+GPU 主机起统一 `scripts/serve.py`，节点 `backend_type=remote` 连它（同一 websocket 协议，
+包内 self-contained client，**无需 openpi_client 安装**）：
 
 ```bash
-# GPU 主机（py3.12 lerobot 环境）：
-PYTHONPATH=astral_ws/src/astral_policy_inference:astral_ws/src/astral_data_collect \
-  <lerobot-env>/bin/python astral_ws/src/astral_policy_inference/scripts/serve_act.py \
-    --checkpoint-dir <act_checkpoint> --port 8001
+# GPU 主机（py3.12 lerobot 环境，serve ACT）：
+<lerobot-env>/bin/python astral_ws/src/astral_policy_inference/scripts/serve.py \
+  --model act --checkpoint-dir <act_checkpoint> --port 8001
+# pi05（需 openpi env + openpi 格式 checkpoint）：
+<openpi-env>/bin/python .../scripts/serve.py --model pi05 --checkpoint-dir <openpi_ckpt> --port 8001
 # 机器人侧节点（py3.10 + ROS）——三个参数必传，engine_mode 默认 queue_async 即可：
 ros2 launch astral_policy_inference policy_inference.launch.py \
-  backend_type:=openpi host:=127.0.0.1 port:=8001 \
+  backend_type:=remote host:=127.0.0.1 port:=8001 \
   camera_image_size:=480
 ```
 
 - `camera_image_size` 必须与模型 preprocessor 输入一致（本机 pickup_act_480=480；默认 224 崩）；
-- ACT 后端一次返回**完整 chunk**（方案 A，`predict_action_chunk`），引擎按 50 行分块/预取，
-  默认 `queue_async` 即 30Hz、图像上传每 chunk 一次（网络 -96%）、节点 loop ~1.3ms；
-- 注意：serve_act 与 node 必须用**同源（openpi_client vendored）msgpack_numpy**，两端线上格式
-  （`__ndarray__` vs pip 的 `nd`）不互通。
+- 后端一次返回**完整 chunk**（方案 A），引擎按 50 行分块/预取，默认 `queue_async` 即 30Hz、
+  图像上传每 chunk 一次（网络 -96%）、节点 loop ~1.3ms；
+- 序列化用包内 vendored `protocol`（`__ndarray__`），client/serve/node 三端一致。
 
 换**机器人配置**（加右臂/换灵巧手/加腰头）时，改 `config/policy_inference.yaml` 顶部 robot
 段，使其与采集当时的 `data_collect.yaml` 一致——观测布局/指令拆分自动跟随。
@@ -172,41 +171,6 @@ install/astral_policy_inference/bin/policy_node --ros-args \
 console script 放进 `install/astral_policy_inference/bin/` 而无 resource index 所致，直接跑
 上面 `bin/policy_node` 路径即可。
 
-### 6) 非 ROS 真机推理 Session（独立脚本，无 ROS2）
-
-`runner.py` 的纯线程编排 + 真机 I/O 适配，**完全脱离 ROS2** 在机器人侧跑完整推理 Session。
-结构：`hw_io.py`（`RobotIO`=astral_robot_sdk 适配、`CameraIO`=V4L2/pyrealsense2 采集）→
-`session.py`（`RobotSession` 编排 + `Hdf5SessionRecorder` 记录 + yaml 装配）→
-`scripts/robot_session_cli.py`（键盘 CLI）。后端两选：**openpi 远程**（大 VLA 跑在 GPU 主机，
-机器人侧只连 websocket）/ **act 进程内**（Jetson 本地 py3.12 lerobot env）。
-
-```bash
-# 机器人侧（无需 ROS；相机 + 控制板在本机）
-# openpi 远程（GPU 机 4090D 起 serve_policy.py / serve_act.py）：
-/usr/bin/python3 astral_ws/src/astral_policy_inference/scripts/robot_session_cli.py \
-    --config astral_ws/src/astral_policy_inference/config/robot_session.yaml \
-    --host 192.168.0.80 --port 8001 --camera-image-size 480
-# ACT 本机进程内（py3.12 lerobot env，需装 astral_robot_sdk + pyrealsense2）：
-<lerobot-env>/bin/python .../robot_session_cli.py --config ... \
-    --backend-type act --checkpoint-dir <本地 checkpoint>
-# bring-up 冒烟（无板/无相机/无模型）：
-/usr/bin/python3 .../robot_session_cli.py --config ... --dry-run --backend-type stub
-```
-
-键盘（镜像 ROS keyboard）：`s` 策略 / `y [path:ep]` 回放 / `t <text>` 指令 / 空格 暂停 /
-`n` 恢复 / `h` 接管（臂→**阻尼**，真人拖臂）/ `g` 交还（位置 + 按实况重规划）/ `x` 停止
-（**位置保持**）/ `e` 急停断电 / `q` 退出。状态行每 1s 打到 stderr。
-
-**记录**：`session.record_dir` 或 `--record-dir` 开启，每次 Session 写
-`session_<ts>.h5`（`/action`+`/state`+`/prompt`+`/t_stamp`+`/wall_t`+`/streams/<label>`
-图像，attrs 带 fps/schema）——**`load_replay` 可直接回放本次 Session**：
-`y <path>/session_<ts>.h5`。
-
-**语义与 ROS 部署一致**（镜像 `astral_robot_control` driver）：绝对动作、夹爪 ratio→rad
-映射、单臂只命令左臂、夹爪无反馈用回显、阻尼→位置 `seed_from_current` 防回跳、`stop_mode`
-默认 hold（不卸力）。编程接口 = `RobotSession`（`session.py`）：`start/stop/estop`、
-`request(verb)`、`set_prompt(text)`、`stats()`。
-
 ## 关键设计
 
 - **观测/动作布局 = `astral_data_collect.schema.CollectSchema`**。state 向量按 `meta.json`
@@ -251,12 +215,7 @@ payload、错误处理、工厂）、engine（三种模式、后台规划、RTC 
 /home/robot/miniconda3/envs/lerobot/bin/python astral_ws/scripts/run_act_integration.py \
     --checkpoint-dir <act_checkpoint>
 
-# A0) 独立 ACT 推理（无 ROS，只依赖 lerobot，可移植）——合成冒烟 / 单次 / 真实数据 MAE：
-PYTHONPATH=VLA/lerobot/src <lerobot-env>/bin/python \
-    astral_ws/src/astral_policy_inference/scripts/act_inference.py \
-    --checkpoint-dir <act_checkpoint> --dataset-dir <v3数据集> --episode 0
-
-# B) 完整节点端到端（py3.10 + ROS，需先启动 serve_act + policy_node）——
+# B) 完整节点端到端（py3.10 + ROS，需先启动 serve.py + policy_node）——
 #    真实 ACT 驱动指令流 + pause/resume/stop，--check-server 先做推理往返预检：
 /home/robot/miniconda3/envs/ros2/bin/python astral_ws/scripts/run_act_e2e.py --check-server
 
@@ -264,8 +223,8 @@ PYTHONPATH=VLA/lerobot/src <lerobot-env>/bin/python \
 /home/robot/miniconda3/envs/lerobot/bin/python astral_ws/scripts/run_act_correctness.py \
     --checkpoint-dir <act_checkpoint> --dataset-dir "<act_dataset>"
 
-# D) 远程链路基准（py3.10，先起 serve_act）：RTT 分布/真推理 vs 缓存/吞吐/GPU
-PYTHONPATH=<openpi-client>/src /usr/bin/python3 astral_ws/scripts/run_act_benchmark.py
+# D) 远程链路基准（py3.10，先起 serve.py）：RTT 分布/真推理 vs 缓存/吞吐/GPU
+/usr/bin/python3 astral_ws/scripts/run_act_benchmark.py
 #    含：握手、服务端分项 server_timing（prep/pre/infer/post）、网络vs模型分离、
 #        本地序列化、线缆探测、RTT 抖动
 ```
@@ -275,5 +234,5 @@ PYTHONPATH=<openpi-client>/src /usr/bin/python3 astral_ws/scripts/run_act_benchm
   「远程推理快不快」（本机基线：稳态 RTT 4.3ms、吞吐 198 req/s、冷启动真推理 201ms）；
 - **C 的两条硬规则**：每帧先 `backend.reset()`（否则 `select_action` 队列吐缓存行，
   MAE 被污染 0.20→0.004）；视频用 PyAV seek 按需解码（整段解码 OOM）；
-- 真机部署流程：起 `serve_act.py`（py3.12）→ 起 `policy_node`（backend_type=openpi，
-  `camera_image_size` 与模型 preprocessor 一致）→ 跑 B 冒烟 → 接真话题。
+- 真机部署流程：起 `serve.py --model <act|pi05>`（GPU 机）→ 起 `policy_node`
+  （backend_type=remote，`camera_image_size` 与模型 preprocessor 一致）→ 跑 B 冒烟 → 接真话题。

@@ -13,10 +13,10 @@ from unittest import mock
 import numpy as np
 
 from astral_policy_inference.backend import (
-    LerobotActBackend,
+    InprocBackend,
     ObsBatch,
-    OpenPiServerBackend,
     PolicyError,
+    RemoteBackend,
     StubBackend,
     _actions_from_response,
     make_backend,
@@ -52,12 +52,12 @@ class FakeClient:
 
 class TestPayloadMapping(unittest.TestCase):
     def _make(self, client):
-        return OpenPiServerBackend(
+        return RemoteBackend(
             host="h", port=8000, action_dim=ACT_DIM,
             slot_keys=CAM_MAP, client_factory=lambda *a, **k: client,
         )
 
-    def test_openpi_payload_keys(self):
+    def test_remote_payload_keys(self):
         client = FakeClient("h", 8000)
         bk = self._make(client)
         bk.open()
@@ -117,13 +117,13 @@ class TestActionsFromResponse(unittest.TestCase):
 
 
 class TestFactory(unittest.TestCase):
-    def test_openpi_selected(self):
-        bk = make_backend(backend_type="openpi", action_dim=ACT_DIM, camera_map=CAM_MAP)
-        self.assertIsInstance(bk, OpenPiServerBackend)
+    def test_remote_selected(self):
+        bk = make_backend(backend_type="remote", action_dim=ACT_DIM, camera_map=CAM_MAP)
+        self.assertIsInstance(bk, RemoteBackend)
 
-    def test_act_requires_checkpoint(self):
+    def test_inproc_requires_checkpoint(self):
         with self.assertRaises(PolicyError):
-            make_backend(backend_type="act", action_dim=ACT_DIM, camera_map=CAM_MAP)
+            make_backend(backend_type="inproc", action_dim=ACT_DIM, camera_map=CAM_MAP)
 
     def test_stub_and_unknown(self):
         bk = make_backend(backend_type="stub", action_dim=ACT_DIM, camera_map={})
@@ -132,12 +132,12 @@ class TestFactory(unittest.TestCase):
             make_backend(backend_type="nope", action_dim=ACT_DIM, camera_map={})
 
 
-class TestLerobotActBackendLoad(unittest.TestCase):
-    """Regression: ``LerobotActBackend.open()`` must resolve the concrete policy
+class TestInprocBackendLoad(unittest.TestCase):
+    """Regression: ``InprocBackend.open()`` must resolve the concrete policy
     class through the lerobot factory. In lerobot 0.6.2 (both this fork and
     VLA/lerobot) ``PreTrainedPolicy`` is the *abstract* base — calling
     ``PreTrainedPolicy.from_pretrained`` directly cannot instantiate a real
-    ACT checkpoint (``Can't instantiate abstract class``). The factory's
+    checkpoint (``Can't instantiate abstract class``). The factory's
     ``get_policy_class`` maps ``config.json["type"]`` ("act") -> ``ACTPolicy``.
 
     Hermetic: lerobot is faked via ``sys.modules`` so this runs without lerobot
@@ -172,7 +172,7 @@ class TestLerobotActBackendLoad(unittest.TestCase):
                 sys.modules,
                 {"lerobot": types.ModuleType("lerobot"), "lerobot.policies": fake},
             ):
-                bk = LerobotActBackend(checkpoint_dir=d, action_dim=8, image_keys={})
+                bk = InprocBackend(checkpoint_dir=d, action_dim=8, image_keys={})
                 bk.open()
         self.assertEqual(
             seen,
@@ -197,9 +197,36 @@ class TestLerobotActBackendLoad(unittest.TestCase):
                 sys.modules,
                 {"lerobot": types.ModuleType("lerobot"), "lerobot.policies": fake},
             ):
-                bk = LerobotActBackend(checkpoint_dir=d, action_dim=8, image_keys={})
+                bk = InprocBackend(checkpoint_dir=d, action_dim=8, image_keys={})
                 with self.assertRaises(PolicyError):
                     bk.open()
+
+
+class TestProtocol(unittest.TestCase):
+    """Vendored __ndarray__ serializer: round-trip + wire format lock.
+
+    The wire keys must stay ``b"__ndarray__"`` (openpi/ACT serve compatible),
+    NOT pip msgpack-numpy's ``b"nd"`` — both the node client and serve.py use
+    this one serializer, so the two ends always agree.
+    """
+
+    def test_ndarray_round_trip(self):
+        from astral_policy_inference import protocol
+
+        for arr in (np.arange(8, dtype=np.float32),
+                    np.zeros((50, 8), dtype=np.float64),
+                    np.ones((480, 480, 3), dtype=np.uint8),
+                    np.float32(3.5)):
+            blob = protocol.packb(arr)
+            out = protocol.unpackb(blob)
+            self.assertTrue(np.array_equal(np.asarray(out), np.asarray(arr)),
+                            f"round-trip failed for {np.asarray(arr).shape}")
+
+    def test_wire_key_is_ndarray(self):
+        from astral_policy_inference import protocol
+
+        blob = protocol.packb(np.zeros(4, dtype=np.float32))
+        self.assertIn(b"__ndarray__", blob, "wire format must use __ndarray__")
 
 
 if __name__ == "__main__":

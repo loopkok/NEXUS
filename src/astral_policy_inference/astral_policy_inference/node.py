@@ -181,7 +181,8 @@ class PolicyNode(Node):
             ),
             "dataset_fps": 30,
             # backend / engine
-            "backend_type": "openpi",
+            "backend_type": "remote",  # remote | inproc | stub（传输方式）
+            "model": "act",            # act | pi05 | ...（模型族）
             "checkpoint_dir": "",
             "host": "127.0.0.1",
             "port": 8000,
@@ -247,6 +248,7 @@ class PolicyNode(Node):
         self._image_required = bool(self.get_parameter("image_required").value)
         self._backend_cfg = {
             "backend_type": str(self.get_parameter("backend_type").value),
+            "model": str(self.get_parameter("model").value),
             "checkpoint_dir": str(self.get_parameter("checkpoint_dir").value),
             "host": str(self.get_parameter("host").value),
             "port": int(self.get_parameter("port").value),

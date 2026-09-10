@@ -6,6 +6,28 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 ## 2026-09-09
 
+**推理包重构：传输/模型解耦命名 + 统一 serve.py + 自包含 client**。`backend_type` 原来用
+`"openpi"|"act"` 把传输和模型名混在一起（openpi 实为远程传输、act 实为进程内加载，且都支持
+任意模型），与后续多模型扩展冲突。**做法**：① `backend_type` 改为表达**传输**（`remote` 连
+serve.py / `inproc` 进程内 / `stub` 冒烟），新增 `model` 表达**模型族**（`act` / `pi05` / 后续，
+决定 serve/inproc 加载路径）；类重命名 `OpenPiServerBackend→RemoteBackend`、
+`LerobotActBackend→InprocBackend`（体现本地非远程），**不留** "openpi"/"act" 旧别名；
+② **统一 serve**：`scripts/serve.py --model act|pi05` 单入口替代 serve_act.py/serve_policy.py
+分离（act=lerobot InprocBackend，pi05=openpi create_trained_policy，同一 websocket 协议）；
+③ **client 自包含**：新增 `protocol.py`（vendor openpi `__ndarray__` 序列化器）+ `client.py`
+（websocket client），节点 RemoteBackend 不再依赖外部 openpi_client——**Jetson 无需再装
+openpi-client**，也去掉 serve_act 的 `_OPENPI_CLIENT_SRC` sys.path hack。④ node/yaml/launch
+同步：`backend_type: remote` + `model: act`，launch 新增 `model` 透传。**验证**：90 例单测全绿
+（新增 protocol round-trip + wire-key 锁定、make_backend remote/inproc/stub、RemoteBackend
+payload）；`serve.py --model act` + RemoteBackend(自包含 client) 真实 ACT 推理返回 (50,8) 绝对。
+
+**移除非 ROS 推理实现（决策：主用 ROS 侧）**。删除：`runner.py`/`session.py`/`hw_io.py`/
+`scripts/runner_demo.py`/`scripts/act_inference.py`/`scripts/robot_session_cli.py`/
+`config/robot_session.yaml` + `tests/test_hw_io.py`/`tests/test_session.py`（共 9 文件），
+并清 CLAUDE.md/README 的非 ROS 章节。包回到纯 ROS 侧结构（node/keyboard/backend/engine/
+executor/controller/replay/robot_io + scripts/serve_act.py）。`s` 键盘问题（launch 子进程
+stdin=/dev/null）按「单独终端 `ros2 run astral_policy_inference policy_keyboard`」解决。
+
 **真机推理"policy blocked: missing left_gripper_ratio"修复——夹爪状态三级种子**——
 `astral_policy_inference`。**症状**：机器人侧纯 POLICY 部署（无遥操在发）按 policy 直接被拒
 `incomplete obs, missing=['left_gripper_ratio']`。**根因**：夹爪观测订 `/left_gripper/command`

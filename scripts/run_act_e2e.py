@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""完整节点端到端（真实 ACT via serve_act）——合成观测驱动 policy_node。
+"""完整节点端到端（真实 ACT via serve.py）——合成观测驱动 policy_node。
 
 前提（外部已启动）：
-  * serve_act.py（py3.12 lerobot 环境）加载真实 checkpoint；
-  * policy_node（py3.10 + ROS）backend_type=openpi，host/port 指向 serve_act，
+  * serve.py（py3.12 lerobot 环境）加载真实 checkpoint；
+  * policy_node（py3.10 + ROS）backend_type=remote，host/port 指向 serve.py，
     camera_image_size=480（与模型 preprocessor 一致）。
 
 本脚本：
-  1.（可选 --check-server）用真实的 OpenPiServerBackend 直连 serve_act 做一次推理往返，
+  1.（可选 --check-server）用真实的 RemoteBackend 直连 serve.py 做一次推理往返，
      快速定位「节点连不上」是 server 问题还是节点配置问题；
   2. 发布合成观测（关节 + 夹爪比值 + video8/video0 的 480×480 JPEG），
      发 policy 命令，验证真实 ACT 驱动指令流 → pause 夹持 → resume 重规划 → stop。
@@ -66,15 +66,14 @@ def make_jpeg(size: int = 480) -> bytes:
 
 
 def check_server(host: str, port: int) -> None:
-    """用真实 OpenPiServerBackend 直连 serve_act 做一次推理往返。"""
+    """用真实 RemoteBackend 直连 serve.py 做一次推理往返。"""
     import sys
-    sys.path.insert(0, "/home/robot/loopkok/sdk/VLA/openpi/packages/openpi-client/src")
     sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_policy_inference")
     sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_data_collect")
-    from astral_policy_inference.backend import ObsBatch, OpenPiServerBackend
+    from astral_policy_inference.backend import ObsBatch, RemoteBackend
 
     rng = np.random.default_rng(7)
-    bk = OpenPiServerBackend(
+    bk = RemoteBackend(
         host=host, port=port, action_dim=8,
         slot_keys={"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"},
     )
@@ -86,7 +85,7 @@ def check_server(host: str, port: int) -> None:
         prompt="round trip",
     )
     out = np.asarray(bk.infer(obs))
-    check("preflight: OpenPiServerBackend -> serve_act round trip",
+    check("preflight: RemoteBackend -> serve.py round trip",
           out.ndim == 2 and out.shape[1] == 8 and bool(np.isfinite(out).all()),
           f"shape={out.shape} infer_ms={bk.last_infer_s*1000:.0f}")
     bk.close()
@@ -178,7 +177,7 @@ def main() -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--check-server", action="store_true",
-                    help="先直连 serve_act 做一次推理往返，快速定位 server 是否正常")
+                    help="先直连 serve.py 做一次推理往返，快速定位 server 是否正常")
     args = ap.parse_args()
 
     if args.check_server:
@@ -188,7 +187,7 @@ def main() -> int:
                 print("preflight 失败，中止节点流程")
                 return 1
         except Exception as exc:  # noqa: BLE001
-            check("preflight: connect serve_act", False, f"{type(exc).__name__}: {exc}")
+            check("preflight: connect serve.py", False, f"{type(exc).__name__}: {exc}")
             return 1
 
     rclpy.init()

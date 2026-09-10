@@ -2,7 +2,7 @@
 """真实 ACT checkpoint 的模型侧集成验证（无 ROS，需 py3.12 + lerobot + CUDA）。
 
 把 /tmp 时代散落的后端/引擎验证收拢为可复用脚本。验证三段：
-  1. 后端：LerobotActBackend 加载 checkpoint + 合成观测推理（get_policy_class 路径，
+  1. 后端：InprocBackend 加载 checkpoint + 合成观测推理（get_policy_class 路径，
      即 backend.py 修复的回归点）；
   2. 引擎：ActionEngine 接真实后端，50 tick 产出 50 行平滑绝对动作；ACT 内部队列语义
      （50 行只真推理 1 次，其余缓存弹出）；reset 后从新观测重规划；
@@ -25,7 +25,7 @@ sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_data_collect")
 
 import numpy as np
 
-from astral_policy_inference.backend import LerobotActBackend, ObsBatch
+from astral_policy_inference.backend import InprocBackend, ObsBatch
 from astral_policy_inference.engine import ActionEngine
 
 DEFAULT_TASK = "Pick up the red-capped liquid container and place it into the box"
@@ -67,7 +67,7 @@ def main() -> int:
     args = ap.parse_args()
 
     # ---- 1. 后端：加载 + 推理 ----
-    back = LerobotActBackend(
+    back = InprocBackend(
         checkpoint_dir=args.checkpoint_dir,
         action_dim=args.action_dim,
         image_keys={"video8": "video8", "video0": "video0"},
@@ -94,7 +94,7 @@ def main() -> int:
           f"got {arr.shape[0]} (期望 {args.n_action_steps}; select_action 老行为=1)")
 
     # ---- 2. 引擎：按 chunk 分块 + 边界重规划 + reset 重规划 ----
-    back2 = LerobotActBackend(
+    back2 = InprocBackend(
         checkpoint_dir=args.checkpoint_dir,
         action_dim=args.action_dim,
         image_keys={"video8": "video8", "video0": "video0"},

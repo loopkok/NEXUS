@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""远程推理链路完整指标基准（py3.10，连 serve_act）。
+"""远程推理链路完整指标基准（py3.10，连 serve.py）。
 
 覆盖全部链路指标：
   * 握手：建立 websocket 会话耗时；
@@ -11,10 +11,9 @@
   * GPU 利用率/显存（推理期间采样）；
   * 吞吐（requests/s 与 MB/s）。
 
-用法（先起 serve_act）：
+用法（先起 serve.py）：
   source /opt/ros/humble/setup.bash
-  PYTHONPATH=/home/robot/loopkok/sdk/VLA/openpi/packages/openpi-client/src \
-    /usr/bin/python3 astral_ws/scripts/run_act_benchmark.py --host 127.0.0.1 --port 8001
+  /usr/bin/python3 astral_ws/scripts/run_act_benchmark.py --host 127.0.0.1 --port 8001
 
 退出码 0=链路正常；非 0=异常。
 """
@@ -46,10 +45,10 @@ def main() -> int:
                     help="ACT chunk 长度：每次 infer 产出的动作行数")
     args = ap.parse_args()
 
-    sys.path.insert(0, "/home/robot/loopkok/sdk/VLA/openpi/packages/openpi-client/src")
     sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_policy_inference")
     sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_data_collect")
-    from astral_policy_inference.backend import ObsBatch, OpenPiServerBackend
+    from astral_policy_inference import protocol as _proto
+    from astral_policy_inference.backend import ObsBatch, RemoteBackend
 
     rng = np.random.default_rng(1)
     cam = args.camera_size
@@ -63,7 +62,7 @@ def main() -> int:
     print(f"payload: {nbytes/1e6:.2f} MB/request")
 
     # ---- 握手耗时 ----
-    bk = OpenPiServerBackend(
+    bk = RemoteBackend(
         host=args.host, port=args.port, action_dim=8,
         slot_keys={"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"},
     )
@@ -72,22 +71,21 @@ def main() -> int:
     handshake_ms = (time.perf_counter() - t_h) * 1000.0
     print(f"connected (handshake {handshake_ms:.1f}ms)")
 
-    # ---- 本地序列化探测（vendored msgpack pack/unpack 载荷）----
-    from openpi_client import msgpack_numpy as MN
+    # ---- 本地序列化探测（包内 vendored msgpack pack/unpack 载荷）----
     payload = {
         "observation/state": obs.state.astype(np.float32),
         "observation/camera/base_0_rgb": obs.images["video8"],
         "observation/camera/left_wrist_0_rgb": obs.images["video0"],
         "prompt": obs.prompt,
     }
-    _pk = MN.Packer()
+    _pk = _proto.Packer()
     t0 = time.perf_counter()
     for _ in range(10):
         blob = _pk.pack(payload)
     pack_ms = (time.perf_counter() - t0) / 10 * 1000.0
     t0 = time.perf_counter()
     for _ in range(10):
-        MN.unpackb(blob)
+        _proto.unpackb(blob)
     unpack_ms = (time.perf_counter() - t0) / 10 * 1000.0
     print(f"local serialization: pack {pack_ms:.2f}ms, unpack {unpack_ms:.2f}ms "
           f"(blob {len(blob)/1e6:.2f}MB)")
@@ -169,9 +167,9 @@ def main() -> int:
               f"p95 {pct(net_ms,95):.2f}  max {max(net_ms):.2f} ms")
 
     # ---- 线缆探测：小消息往返（畸形请求被快速拒绝）----
-    from openpi_client.websocket_client_policy import WebsocketClientPolicy
+    from astral_policy_inference.client import WebsocketClient
     try:
-        raw = WebsocketClientPolicy(args.host, args.port)
+        raw = WebsocketClient(args.host, args.port)
         t0 = time.perf_counter()
         try:
             raw.infer({"bad": 1})  # 缺 observation/state → server 快速回错误串
@@ -179,6 +177,7 @@ def main() -> int:
             pass
         tiny_ms = (time.perf_counter() - t0) * 1000.0
         print(f"线缆探测（小消息 RTT 下限）: {tiny_ms:.2f} ms")
+        raw.close()
     except Exception as exc:  # noqa: BLE001
         print(f"线缆探测失败: {exc}")
 

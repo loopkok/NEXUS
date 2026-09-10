@@ -5,9 +5,9 @@
 #       --ros-args --params-file <this file>
 #
 # ── 换模型 = 只改 policy 段 ──
-#   backend_type: "act"    → checkpoint_dir 指向训练好的 ACT checkpoint 目录
-#   backend_type: "openpi" → 在 GPU 主机另起 `scripts/serve_policy.py`（该 server
-#                           加载 checkpoint），这里只填 host/port；机器人端零改动
+#   backend_type: "remote" → GPU 主机起 `scripts/serve.py --model <act|pi05> --checkpoint-dir <ckpt>`
+#                            （该 server 加载 checkpoint），这里只填 host/port；机器人端零改动
+#   backend_type: "inproc" → checkpoint_dir 指向本地 checkpoint（node 与模型同解释器时）
 astral_policy_inference:
   ros__parameters:
     # ---------------- robot：必须与数采当时一致（schema 真源） ----------------
@@ -24,14 +24,17 @@ astral_policy_inference:
     dataset_fps: 30           # 策略/回放节奏（= 采集对齐 fps）
 
     # ---------------- policy / backend / engine --------------------------------
+    # backend_type = 传输方式：remote(连 serve.py) | inproc(进程内) | stub(冒烟)。
+    # model = 模型族：act(lerobot) | pi05(openpi) | ...（决定 serve/inproc 加载路径）。
     # ⚠️ 本机（ROS Humble py3.10）无法进程内跑 ACT（lerobot 0.6.2 要求 py3.12）。
-    #    部署 ACT 必须：① py3.12 环境起 `scripts/serve_act.py`；② 本节点
-    #    backend_type="openpi" + host/port 指向它。backend_type="act" 只适用于
-    #    node 与 lerobot 同解释器（如 ROS 2 Jazzy py3.12）的环境。
-    backend_type: "act"       # "openpi" | "act"
-    checkpoint_dir: ""        # act：LerobotActBackend 用 from_pretrained 加载目录
-    host: "127.0.0.1"         # openpi：policy server 主机
-    port: 8000                # openpi：policy server 端口
+    #    部署 ACT：① py3.12 环境起 `scripts/serve.py --model act --checkpoint-dir <ckpt>`；
+    #    ② 本节点 backend_type="remote" + host/port 指向它。backend_type="inproc" 只适用于
+    #    node 与模型同解释器（如 ROS 2 Jazzy py3.12、或非 ROS 直连）的环境。
+    backend_type: "remote"    # remote | inproc | stub
+    model: "act"              # act | pi05 | ...（模型族）
+    checkpoint_dir: ""        # inproc：InprocBackend 加载目录
+    host: "127.0.0.1"         # remote：serve.py 主机
+    port: 8000                # remote：serve.py 端口
     engine_mode: "queue_async"  # queue_sync | queue_async | rtc
     action_chunk: 50          # 每个 chunk 消费的行数（openpi action_horizon=50）
     control_interp: 1         # 控制率 = dataset_fps × N（1=每策略步发一次）

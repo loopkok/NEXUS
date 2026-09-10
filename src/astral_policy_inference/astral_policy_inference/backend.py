@@ -1,14 +1,17 @@
-"""Policy backends — swap a checkpoint directory / server, nothing else changes.
+"""Policy backends — swap a checkpoint / server, nothing else changes.
 
-``PolicyBackend`` protocol + two concrete backends:
+``PolicyBackend`` protocol + concrete backends. ``backend_type`` names the
+**transport** (remote / inproc / stub); the **model family** (act / pi05 / …)
+is a separate ``model`` parameter consumed by :func:`make_backend` and
+``serve.py``.
 
-* :class:`OpenPiServerBackend` — talks to a remote ``openpi`` websocket policy
-  server (``scripts/serve_policy.py``). The *server* owns the checkpoint, so
-  changing models never touches the robot side; only the server command
-  changes (``--policy.config`` + ``--policy.dir``).
-* :class:`LerobotActBackend` — in-process ``PreTrainedPolicy.from_pretrained``
-  + its serialized pre/post processor pipeline, so pointing at a different
-  checkpoint directory swaps model, normalization, chunking — all at once.
+* :class:`RemoteBackend` — talks to a remote policy server (``scripts/serve.py``,
+  model-agnostic websocket protocol) using the self-contained
+  :mod:`astral_policy_inference.client`. The *server* owns the checkpoint, so
+  changing models never touches the robot side.
+* :class:`InprocBackend` — in-process local (non-remote) loader: resolves the
+  concrete lerobot policy class from the checkpoint's own ``config.json``
+  (``get_policy_class``) + its serialized pre/post processor pipeline.
 
 Both emit **absolute** action rows (arm joint rad + gripper ratio 0..1) in the
 dataset layout order, exactly what the driver/MuJoCo consumers take.
@@ -79,10 +82,15 @@ def _actions_from_response(
     return actions[:max_rows]
 
 
-class OpenPiServerBackend(PolicyBackend):
-    """Remote openpi websocket policy (pi0.5 served via ``serve_policy.py``)."""
+class RemoteBackend(PolicyBackend):
+    """Remote policy backend — websocket to ``scripts/serve.py`` (model-agnostic).
 
-    name = "openpi"
+    Speaks the same protocol for any served model family (act / pi05 / …); the
+    payload (``observation/state`` + ``observation/camera/<slot>`` + ``prompt``)
+    is assembled here and the server does the inference.
+    """
+
+    name = "remote"
 
     def __init__(
         self,
@@ -114,20 +122,15 @@ class OpenPiServerBackend(PolicyBackend):
         if self._client_factory is not None:
             self._client = self._client_factory(self.host, self.port)
             return
-        try:
-            from openpi_client.websocket_client_policy import WebsocketClientPolicy
-        except ImportError as exc:  # pragma: no cover - env dependent
-            raise PolicyError(
-                "openpi_client not importable — run this node inside the openpi "
-                "environment (uv) or `pip install -e packages/openpi-client`"
-            ) from exc
-        self._client = WebsocketClientPolicy(self.host, self.port)
+        # 自包含 client（vendored __ndarray__ 序列化 + websockets），无需 openpi_client
+        from astral_policy_inference.client import WebsocketClient
+
+        self._client = WebsocketClient(self.host, self.port)
 
     def close(self) -> None:
-        ws = getattr(self._client, "_ws", None)
-        if ws is not None:
+        if self._client is not None:
             try:
-                ws.close()
+                self._client.close()
             except Exception:  # noqa: BLE001
                 pass
         self._client = None
@@ -141,7 +144,7 @@ class OpenPiServerBackend(PolicyBackend):
 
     def infer(self, obs: ObsBatch) -> np.ndarray:
         if self._client is None:
-            raise PolicyError("OpenPiServerBackend not open()ed")
+            raise PolicyError("RemoteBackend not open()ed")
         payload: dict = {self.state_key: obs.state.astype(np.float32)}
         for slot, label in self.slot_keys.items():
             img = obs.images.get(label)
@@ -156,9 +159,9 @@ class OpenPiServerBackend(PolicyBackend):
         try:
             response = self._client.infer(payload)
         except Exception as exc:  # noqa: BLE001
-            raise PolicyError(f"openpi server infer failed: {exc}") from exc
+            raise PolicyError(f"remote server infer failed: {exc}") from exc
         if "actions" not in (response or {}):
-            raise PolicyError("openpi server response missing 'actions' key")
+            raise PolicyError("remote server response missing 'actions' key")
         self.last_server_timing = (
             response.get("server_timing") if isinstance(response, dict) else None
         )
@@ -167,18 +170,21 @@ class OpenPiServerBackend(PolicyBackend):
         return actions
 
 
-class LerobotActBackend(PolicyBackend):
-    """In-process lerobot ACT policy loaded from a checkpoint directory.
+class InprocBackend(PolicyBackend):
+    """Local (non-remote) in-process policy backend loaded from a checkpoint dir.
 
-    ``infer()`` returns the **full action chunk** (``n_action_steps`` rows) via
-    ``predict_action_chunk`` — the engine owns chunk pacing, so ``queue_async``
-    reaches the policy rate and the observation payload is uploaded once per
-    chunk instead of once per action row. Checkpoints with a
-    ``temporal_ensemble_coeff`` fall back to ``select_action`` (single row,
-    exponential weighting preserved).
+    Resolves the concrete lerobot policy class from the checkpoint's own
+    ``config.json`` via ``get_policy_class`` (works for any lerobot policy
+    family, not just ACT). ``infer()`` returns the **full action chunk**
+    (``n_action_steps`` rows) via ``predict_action_chunk`` — the engine owns
+    chunk pacing, so ``queue_async`` reaches the policy rate and the observation
+    payload is uploaded once per chunk instead of once per action row.
+    Checkpoints with a ``temporal_ensemble_coeff`` fall back to ``select_action``
+    (single row, exponential weighting preserved). Requires lerobot+torch in
+    this interpreter (py3.12).
     """
 
-    name = "act"
+    name = "inproc"
 
     def __init__(
         self,
@@ -212,13 +218,13 @@ class LerobotActBackend(PolicyBackend):
             raise PolicyError(
                 "lerobot (this fork, v0.6.x) not importable in this interpreter "
                 f"(python {sys.version_info.major}.{sys.version_info.minor}); "
-                "ACT must run remotely — start serve_act.py in a py3.12 lerobot "
-                "env and set backend_type=openpi + host/port on this node"
+                "use backend_type=remote — start serve.py --model act in a py3.12 "
+                "lerobot env and set host/port on this node"
             ) from exc
         try:
             # PreTrainedPolicy is the *abstract* base in lerobot 0.6.x; the
-            # concrete class (ACTPolicy) is resolved via the factory from the
-            # checkpoint's own config.json "type". Directly calling
+            # concrete policy class (ACTPolicy etc.) is resolved via the factory
+            # from the checkpoint's own config.json "type". Directly calling
             # PreTrainedPolicy.from_pretrained cannot instantiate a real
             # checkpoint ("Can't instantiate abstract class").
             with open(
@@ -235,7 +241,7 @@ class LerobotActBackend(PolicyBackend):
             )
         except Exception as exc:  # noqa: BLE001
             raise PolicyError(
-                f"ACT checkpoint load failed from {self.checkpoint_dir}: {exc}"
+                f"checkpoint load failed from {self.checkpoint_dir}: {exc}"
             ) from exc
         self._policy = policy
         self._pre = pre
@@ -255,7 +261,7 @@ class LerobotActBackend(PolicyBackend):
 
     def infer(self, obs: ObsBatch) -> np.ndarray:
         if self._policy is None or self._pre is None or self._post is None:
-            raise PolicyError("LerobotActBackend not open()ed")
+            raise PolicyError("InprocBackend not open()ed")
         import torch
 
         raw: dict[str, np.ndarray] = {"observation.state": obs.state.astype(np.float32)}
@@ -286,7 +292,7 @@ class LerobotActBackend(PolicyBackend):
                     # 引擎按 1 行 chunk 兜底（queue_async 会掉速，用 queue_sync）。
                     action = self._policy.select_action(obs_in)
                 else:
-                    # 常规 ACT（本仓库 pickup_act_480）：一次前向返回完整 chunk
+                    # 常规策略（本仓库 pickup_act_480）：一次前向返回完整 chunk
                     # （n_action_steps 行），引擎拿回分块权 → queue_async 可达 30Hz、
                     # 图像上传频率降 n_action_steps 倍（每 chunk 一次而非每行一次）。
                     action = self._policy.predict_action_chunk(obs_in)
@@ -299,12 +305,12 @@ class LerobotActBackend(PolicyBackend):
             self.last_infer_s = time.perf_counter() - t0
             arr = np.asarray(action.detach().cpu().squeeze(0), dtype=np.float64)
         except Exception as exc:  # noqa: BLE001
-            raise PolicyError(f"ACT infer failed: {exc}") from exc
+            raise PolicyError(f"inproc infer failed: {exc}") from exc
         if arr.ndim == 1:
             arr = arr.reshape(1, -1)
         if arr.shape[1] != self.action_dim:
             raise PolicyError(
-                f"ACT action_dim {arr.shape[1]} != robot action_dim {self.action_dim}"
+                f"inproc action_dim {arr.shape[1]} != robot action_dim {self.action_dim}"
             )
         return arr
 
@@ -354,6 +360,7 @@ class StubBackend(PolicyBackend):
 def make_backend(
     *,
     backend_type: str,
+    model: str = "act",
     action_dim: int,
     camera_map: dict[str, str],
     checkpoint_dir: str | None = None,
@@ -362,20 +369,25 @@ def make_backend(
     default_prompt: str = "",
     device: str | None = None,
 ) -> PolicyBackend:
-    """Factory used by the node; backend_type in {openpi, act, stub}."""
-    bt = (backend_type or "openpi").strip().lower()
-    if bt in ("openpi", "pi0", "pi05", "pi"):
-        return OpenPiServerBackend(
+    """Backend factory. ``backend_type`` = transport: remote | inproc | stub.
+
+    ``model`` = model family (act | pi05 | …) — consumed by the inproc loader
+    for validation and by ``serve.py`` to pick the loading path; the remote
+    backend is model-agnostic (the server owns the model).
+    """
+    bt = (backend_type or "remote").strip().lower()
+    if bt == "remote":
+        return RemoteBackend(
             host=host,
             port=port,
             action_dim=action_dim,
             slot_keys=camera_map,
             default_prompt=default_prompt,
         )
-    if bt in ("act", "lerobot"):
+    if bt == "inproc":
         if not checkpoint_dir:
-            raise PolicyError("act backend requires checkpoint_dir")
-        return LerobotActBackend(
+            raise PolicyError("inproc backend requires checkpoint_dir")
+        return InprocBackend(
             checkpoint_dir=checkpoint_dir,
             action_dim=action_dim,
             image_keys={label: label for label in camera_map.values()},
@@ -384,4 +396,4 @@ def make_backend(
         )
     if bt == "stub":
         return StubBackend(action_dim=action_dim, camera_map=camera_map)
-    raise PolicyError(f"unknown backend_type={backend_type!r} (openpi|act|stub)")
+    raise PolicyError(f"unknown backend_type={backend_type!r} (remote|inproc|stub)")
