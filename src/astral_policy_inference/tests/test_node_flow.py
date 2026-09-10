@@ -6,6 +6,7 @@ synthetic joint/ratio/image feedback; stands up a real Trigger service to
 exercise the HUMAN takeover path (effect → commit ordering).
 """
 
+import json
 import os
 import tempfile
 import threading
@@ -451,6 +452,27 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertEqual(node.controller.state, "PLAYBACK")
         self.assertIsNotNone(node._hold_end)
         node._handle_cmd("stop")
+
+    def test_metrics_log_writes_file(self):
+        """metrics_log_file 非空时，每次 _publish_state 追加一行带 t 的 state JSON。"""
+        self._stop_server()
+        self._stop_node_spin()
+        if self.node.context.ok():
+            self.node.destroy_node()
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "pi_metrics.jsonl")
+        self.node = PolicyNode(parameter_overrides=params(metrics_log_file=path))
+        feed_state(self.node)
+        self.node._publish_state()
+        self.node._publish_state()
+        with open(path) as f:
+            lines = f.read().splitlines()
+        self.assertEqual(len(lines), 2)  # 每次发布一行
+        rec = json.loads(lines[0])
+        self.assertIn("t", rec)
+        self.assertIn("state", rec)
+        self.assertIn("latency_ms", rec)
+        self.assertIn("engine", rec)
 
 
 if __name__ == "__main__":

@@ -105,6 +105,16 @@ class PolicyNode(Node):
         self._grip_closed_rad = float(self.get_parameter("gripper_closed_rad").value)
         self._prompt = str(self.get_parameter("default_prompt").value or "")
 
+        # 指标 log 文件句柄（metrics_log_file 为空则关闭此功能，零开销）
+        self._metrics_fh: Optional[object] = None
+        metrics_log = str(self.get_parameter("metrics_log_file").value or "")
+        if metrics_log:
+            try:
+                self._metrics_fh = open(metrics_log, "a", buffering=1)  # 行缓冲
+                self.get_logger().info(f"metrics log -> {metrics_log}")
+            except OSError as exc:
+                self.get_logger().warn(f"metrics_log_file {metrics_log!r} open failed: {exc}")
+
         # observation buffers ---------------------------------------------------
         self._values: dict[str, np.ndarray] = {}
         self._stamps: dict[str, float] = {}
@@ -215,6 +225,9 @@ class PolicyNode(Node):
             "cmd_topic": "/policy_inference/cmd",
             "state_topic": "/policy_inference/state",
             "task_topic": "/policy_inference/task",
+            # 指标调试：非空时每次 _publish_state（1Hz + 状态变化）把带时间戳的
+            # state JSON 追加写文件，并在终端打印一行延迟/引擎摘要（launch output=screen 可见）
+            "metrics_log_file": "",
         }
         for name, val in defaults.items():
             self.declare_parameter(name, val)
@@ -1041,9 +1054,43 @@ class PolicyNode(Node):
         }
 
     def _publish_state(self) -> None:
+        payload = self._state_payload()
         msg = String()
-        msg.data = json.dumps(self._state_payload(), ensure_ascii=False)
+        msg.data = json.dumps(payload, ensure_ascii=False)
         self._state_pub.publish(msg)
+        if self._metrics_fh is not None:
+            self._write_metrics(payload)
+
+    def _write_metrics(self, payload: dict) -> None:
+        """metrics_log_file 开启时：state JSON + 终端一行延迟/引擎摘要。"""
+        try:
+            self._metrics_fh.write(
+                json.dumps({"t": round(time.time(), 3), **payload}, ensure_ascii=False) + "\n"
+            )
+        except Exception:  # noqa: BLE001  写失败不干扰控制流
+            pass
+        eng = payload.get("engine") or {}
+        lat = payload.get("latency_ms") or {}
+        loop = lat.get("loop") or {}
+        obs = lat.get("obs_age") or {}
+        exec_ev = ",".join(payload.get("exec_events") or [])
+        print(
+            f"[MET] {time.strftime('%H:%M:%S')} state={payload.get('state')} "
+            f"loop_avg={loop.get('avg')}ms obs_avg={obs.get('avg')}ms "
+            f"pops={eng.get('pops')} plans={eng.get('plans')} "
+            f"plan_ms={eng.get('last_plan_ms')} rem={eng.get('remaining')} "
+            f"exec=[{exec_ev}]",
+            flush=True,
+        )
+
+    def destroy_node(self) -> None:
+        if self._metrics_fh is not None:
+            try:
+                self._metrics_fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._metrics_fh = None
+        super().destroy_node()
 
     def _maybe_publish_state(self, now: float) -> None:
         if now - self._last_publish > 0.5:

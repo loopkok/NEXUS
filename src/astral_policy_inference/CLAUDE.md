@@ -88,6 +88,11 @@ scripts/serve.py   统一 serve：--model act(lerobot)|pi05(openpi)，同一 web
 - **真机部署 launch 必传**：`backend_type:=remote host:=<gpu> port:=8001
   camera_image_size:=<模型输入>`。`camera_image_size` 不传静默 224（ACT 480 崩）；
   `engine_mode` 默认 queue_async 即 30Hz（方案 A 后无需改）。
+- **指标排障**：launch 传 `metrics_log_file:=/tmp/pi_metrics.jsonl` → 节点把带时间戳的 state
+  JSON（latency/engine/exec_events）追加写文件 + 终端打 `[MET]` 摘要行（node.py
+  `_write_metrics`）。抓关节指令流用 `ros2 topic echo` 且**必须**加
+  `--qos-reliability best_effort --qos-depth 1`（节点发布的 cmd/gripper 是 BEST_EFFORT depth=1，
+  默认 RELIABLE 的 echo 匹配不上、收 0 条）。
 
 ## 测试与验证（改后必须全绿）
 

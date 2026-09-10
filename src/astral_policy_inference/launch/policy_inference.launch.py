@@ -42,6 +42,7 @@ def _node(context):
     cmd_topic = LaunchConfiguration("cmd_topic").perform(context)
     camera_image_size = LaunchConfiguration("camera_image_size").perform(context)
     engine_mode = LaunchConfiguration("engine_mode").perform(context)
+    metrics_log_file = LaunchConfiguration("metrics_log_file").perform(context)
     parameters = [params_file]
     if backend_type:
         parameters.append(
@@ -59,6 +60,8 @@ def _node(context):
         parameters.append({"camera_image_size": int(camera_image_size)})
     if engine_mode:
         parameters.append({"engine_mode": engine_mode})
+    if metrics_log_file:
+        parameters.append({"metrics_log_file": metrics_log_file})
     node = Node(
         package="astral_policy_inference",
         executable="policy_node",
@@ -92,6 +95,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("checkpoint_dir", default_value=""),
             DeclareLaunchArgument("camera_image_size", default_value=""),
             DeclareLaunchArgument("engine_mode", default_value=""),
+            DeclareLaunchArgument(
+                "metrics_log_file", default_value="",
+                description="非空则节点把 state JSON（延迟/引擎指标）追加写该文件并终端打印"),
             DeclareLaunchArgument("keyboard", default_value="false"),
             DeclareLaunchArgument("cmd_topic", default_value="/policy_inference/cmd"),
             DeclareLaunchArgument("state_topic", default_value="/policy_inference/state"),

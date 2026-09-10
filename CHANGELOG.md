@@ -4,6 +4,19 @@ Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 REA
 
 时间均为北京时间。
 
+## 2026-09-10
+
+**节点指标自动记录 `metrics_log_file`**——`astral_policy_inference`。**症状**：真机推理想
+看延迟/引擎指标（`latency_ms.loop/obs_age`、engine pops/plans/plan_ms/remaining、
+exec_events），只能手动 `ros2 topic echo /policy_inference/state > file`，且 echo 输出是
+YAML 非 JSON 行、传感器话题还常因 QoS 不匹配收到 0 条。**做法**：节点新增参数
+`metrics_log_file`（默认空=关闭，零开销）：非空时每次 `_publish_state`（1Hz + 状态变化）
+把带时间戳的 state JSON 追加写该文件，并在终端（launch output=screen）打印一行摘要
+`[MET] ... loop_avg obs_avg pops plans plan_ms rem exec`；launch 新增 `metrics_log_file` 透传，
+yaml 已加注释项。**验证**：新增 `test_metrics_log_writes_file`（两次发布=两行 JSON，含
+t/latency_ms/engine），套件 90→**91 例**全绿。顺带修 `run_act_correctness.py` 残留的
+`LerobotActBackend` 旧类名引用（重构漏网）。
+
 ## 2026-09-09
 
 **推理包重构：传输/模型解耦命名 + 统一 serve.py + 自包含 client**。`backend_type` 原来用

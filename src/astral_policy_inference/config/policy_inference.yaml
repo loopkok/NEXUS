@@ -44,6 +44,9 @@ astral_policy_inference:
     # ⚠️ 必须与模型 preprocessor 输入一致（本机 pickup_act_480 = 480；默认 224 会 shape 崩）
     camera_image_size: 224    # collect JPEG 解码后 letterbox 边长（与转换期一致）
     default_prompt: ""        # policy 缺省语言指令（运行中可用 /policy_inference/task 改）
+    # 指标调试：非空时把 state JSON（含 latency_ms/engine/exec_events，1Hz + 状态变化）
+    # 追加写入该文件，并在节点终端打印一行摘要。真机排障推荐：/tmp/pi_metrics.jsonl
+    metrics_log_file: ""
 
     # ---------------- replay（真机回放） ---------------------------------------
     replay_source: ""         # LeRobot v2.1 数据集目录 或 aligned_data.h5 文件

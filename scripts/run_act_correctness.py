@@ -111,12 +111,12 @@ def main() -> int:
     ap.add_argument("--action-dim", type=int, default=8)
     args = ap.parse_args()
 
-    from astral_policy_inference.backend import LerobotActBackend, ObsBatch
+    from astral_policy_inference.backend import InprocBackend, ObsBatch
 
     states, actions, video_files, video_offsets, task, idxs = load_episode(
         args.dataset_dir, args.episode, args.max_frames, args.stride)
 
-    back = LerobotActBackend(
+    back = InprocBackend(
         checkpoint_dir=args.checkpoint_dir,
         action_dim=args.action_dim,
         image_keys={"video8": "video8", "video0": "video0"},

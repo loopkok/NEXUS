@@ -101,6 +101,16 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   图像上传每 chunk 一次（网络 -96%）、节点 loop ~1.3ms；
 - 序列化用包内 vendored `protocol`（`__ndarray__`），client/serve/node 三端一致。
 
+**真机指标自动记录**：launch 传 `metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点
+每次发布 state（1Hz + 状态变化）把带时间戳的 JSON（含 `latency_ms.loop/obs_age`、engine
+`pops/plans/last_plan_ms/remaining`、`exec_events`）追加写该文件，并在终端打印一行 `[MET]` 摘要。
+排障时另可用（传感器话题**必须**加 QoS flag，否则收 0 条）：
+
+```bash
+ros2 topic echo /policy_inference/state --qos-reliability reliable
+ros2 topic echo /left_arm/joint_commands --qos-reliability best_effort --qos-depth 1
+```
+
 换**机器人配置**（加右臂/换灵巧手/加腰头）时，改 `config/policy_inference.yaml` 顶部 robot
 段，使其与采集当时的 `data_collect.yaml` 一致——观测布局/指令拆分自动跟随。
 
