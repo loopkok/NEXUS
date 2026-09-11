@@ -330,29 +330,43 @@ class ActionEngine:
     def _run_plan(self) -> bool:
         """Infer one chunk and (re)install it. Returns success.
 
-        Holds the engine lock across inference: queue_sync plans run on the
-        control thread and planner-thread plans on the planner thread, so this
-        serializes them and guarantees ``stop()``/``backend.close()`` (also
-        lock-guarded) can never race an in-flight ``infer()``.
+        推理在引擎锁**外**执行。之前锁跨 ``infer()`` 持有，慢推理（远程网络 ~100ms+）
+        会堵住控制线程的 ``tick()`` 整个推理时长 → 每次重规划都产生指令空档
+        （"hold → lunge"）。现在：锁内只做观测快照 + 记录 ``_i_snap``（融合对齐锚点），
+        释放锁推理，再取锁安装；续播索引用**实测** ``consumed``（推理期间控制线程
+        实际消费的行数），比 ``latency_ms`` 估算更准——旧估算在"控制线程被锁堵、机器人
+        实际没动"时还会超前跳。
+
+        并发安全：queue_sync 走 ``_plan_blocking``（外层仍持锁），控制线程重填保持原子；
+        queue_async 的 planner 线程锁外推理，``stop()`` 先 join planner 再锁内关后端，
+        都不会与在飞推理竞态。
         """
         with self._lock:
+            if self._obs is None:
+                return False
             obs = self._snapshot_obs()
-            t0 = time.perf_counter()
-            try:
-                full = np.asarray(self.backend.infer(obs), dtype=np.float64)
-            except PolicyError as exc:
+            snap_i = self._i  # 观测时刻的消费位置（时间对齐锚点）
+        t0 = time.perf_counter()
+        try:
+            full = np.asarray(self.backend.infer(obs), dtype=np.float64)
+        except PolicyError as exc:
+            with self._lock:
                 self._last_error = str(exc)
-                return False
-            except Exception as exc:  # noqa: BLE001
+            return False
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
                 self._last_error = f"infer failed: {exc}"
-                return False
-            ms = (time.perf_counter() - t0) * 1000.0
+            return False
+        ms = (time.perf_counter() - t0) * 1000.0
+        with self._lock:
+            # 推理期间控制线程继续消费，机器人确实前进了 consumed 行 → 从这里续播
+            consumed = max(0, self._i - snap_i)
             try:
                 self._check_absolute_semantics(full, obs.state)
             except PolicyError as exc:
                 self._last_error = str(exc)
                 return False
-            self._install(full, latency_ms=ms)
+            self._install(full, latency_ms=ms, snap_i=snap_i, consumed=consumed)
             return True
 
     def _check_absolute_semantics(self, full: np.ndarray, state: np.ndarray) -> None:
@@ -385,8 +399,20 @@ class ActionEngine:
                 f"abs_action_min_scale."
             )
 
-    def _install(self, full: np.ndarray, latency_ms: float) -> None:
-        """Swap the chunk and resume at the latency-compensated index."""
+    def _install(
+        self,
+        full: np.ndarray,
+        latency_ms: float,
+        snap_i: Optional[int] = None,
+        consumed: int = 0,
+    ) -> None:
+        """Swap the chunk and resume at the right index.
+
+        ``snap_i`` = 观测捕获时的消费位置（融合对齐锚点）；``consumed`` = 推理期间
+        控制线程实际消费的行数（续播索引）。锁外推理时二者必须显式传入——用当前
+        ``_i`` 会因推理期间 ``_i`` 已前移而把 ``old[当前_i]`` 与 ``new[0]`` 错位对齐；
+        用 ``latency_ms`` 估算则会在"控制线程被锁堵、机器人实际没动"时超前跳。
+        """
         full = np.asarray(full, dtype=np.float64)
         if full.ndim == 1:
             full = full.reshape(1, -1)
@@ -397,22 +423,20 @@ class ActionEngine:
             return
         rows = min(self.chunk, len(full))
         tail = full[:rows]
-        # Latency compensation only matters when we replace a chunk the robot is
-        # *still executing* (it advanced since the fresh plan's observation). If
-        # the robot is holding (first plan / refill at boundary) start at row 0.
-        was_moving = self._chunk is not None and self._i < len(self._chunk)
+        anchor = snap_i if snap_i is not None else self._i
+        was_moving = self._chunk is not None and anchor < len(self._chunk)
         if self.mode != "queue_sync" and was_moving:
-            latency_rows = int(round(latency_ms / 1000.0 * self.policy_fps))
-            i0 = int(np.clip(latency_rows, 0, max(0, rows - 1)))
+            # 续播索引 = 推理期间实际消费的行数（对齐到机器人真实位置）
+            i0 = int(np.clip(consumed, 0, max(0, rows - 1)))
         else:
             i0 = 0
         if self._ensembler is not None:
-            # ACT 时序融合：正在执行时，新 chunk 头部与旧缓冲未消费尾段加权平均，
-            # 消除切换跳变；首次/边界直接采用。
+            # ACT 时序融合：用锚点 anchor（=snap_i）对齐 old[anchor+k] ↔ new[k]，
+            # 保证时间语义；前 consumed 行是推理期间已执行的 stale 混合，由 i0 跳过。
             self._chunk = self._ensembler.update(
                 tail,
                 old=self._chunk if was_moving else None,
-                i=self._i if was_moving else 0,
+                i=anchor if was_moving else 0,
             )
         else:
             self._chunk = tail

@@ -73,6 +73,26 @@ batch 32、action_horizon 50、lr 1e-4→1e-5 cosine、clip 1.0。可 `--batch_s
 **产出**：checkpoint 在 `VLA/openpi/checkpoints/pi05_astral_lora/<exp-name>/`，推理用
 `serve.py --model pi05 --checkpoint-dir <该目录>` 部署（见 astral_policy_inference）。
 
+### 训练参数（`pi05_astral_lora` 配置，源码 config.py 为准）
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| **模型** | pi05_base 初始化 + **LoRA**（`paligemma_variant="gemma_2b_lora"` + `action_expert_variant="gemma_300m_lora"`） | 只训 LoRA 适配器；**rank 内置于这两个变体名，不是配置项** |
+| `action_horizon` | **50**（@30fps ≈ 1.67s 动作块） | 推理 chunk 长度，别改（与数据/部署对齐） |
+| `discrete_state_input` | **False** | state 走连续后缀输入（非语言 token），别改 |
+| `batch_size` | **32** | 24GB 卡默认；VRAM 紧降到 8；RAM 足可加大 |
+| `lr_schedule` | **cosine**：warmup 1000 步 → peak **1e-4** → 30000 步衰减到 **1e-5** | 可 `--lr_schedule.peak_lr=...` 覆盖 |
+| `optimizer` | **AdamW**, `clip_gradient_norm=1.0` | |
+| `ema_decay` | **None**（LoRA 关闭 EMA） | |
+| freeze | **非 LoRA 参数全冻结** | `freeze_filter` 由变体自动生成，勿手动改 |
+| `weight_loader` | pi05_base（`gs://openpi-assets/...`，已缓存则秒级） | |
+| `num_train_steps` | **30000** | 训练总步数；对应你的合并集 100 段/21321 帧、batch32 ≈ 45 epochs |
+| 数据 prompt | `prompt_from_task=True`（每段 task 文本→prompt）+ `default_prompt="perform the manipulation task"` 兜底 | |
+
+**可调项**（CLI `--xxx` 覆盖）：`batch_size`、`lr_schedule.*`、`num_train_steps`、`optimizer.*`。
+**不建议动**：`action_horizon`、`discrete_state_input`、模型变体、freeze。
+
+
 ## 4. 本机已踩的坑（目标机别重蹈）
 
 1. **`OPENPI_DATA_HOME` 别乱设**：本机曾指向 `/home/robot/openpi/ckpt` → 每次运行都重新下载 11.6GB

@@ -2,6 +2,30 @@
 
 ## 2026-09-11
 
+**融合频率参数化 `async_prefetch_ahead`**——`astral_policy_inference`。把"每多少步
+重规划并融合"从引擎硬编码默认（chunk//2=25）暴露为 yaml/launch 可配：`每
+(action_chunk − async_prefetch_ahead) 步融合一次`。默认 25（每 25 步）；yaml 当前设
+**40 = 每 10 步融合一次**（重规划 1.2→3Hz，观测更新鲜 + 重叠 40 行融合更充分，直连网线
+下无压力）。0 = 自动 (chunk//2)。仅 queue_async 生效。node/launch 透传 + 新增
+`test_async_prefetch_ahead_reaches_engine`，套件 98→**99 例**全绿。
+
+**推理移出引擎锁：消除换 chunk 指令空档 + 修正续播对齐**——`astral_policy_inference`。
+**症状**：真机推理时"固定时刻突然冲一下"（夹爪闭合上提、放完回程等，都恰逢换 chunk 重
+规划）。分析 `pi_cmds.jsonl`：6 个 >0.1 rad 的步长**每个都紧跟在 106~149ms 的指令空档
+之后**，且 plans 同时 +2——"先停着等 ~120ms、再冲过去追"。**根因**：`_run_plan` 锁跨
+`backend.infer()` 持有，慢推理（远程网络 ~120ms，`last_plan_ms` 实测 120~164ms）期间
+控制线程 `tick()` 拿不到锁 → 指令断流；且安装时 `i0=round(latency_ms×fps)` 按"机器人
+前进了 4 行"估算，但锁内推理时控制线程被堵、机器人**实际没动** → 超前跳（叠加进 lunge）。
+**做法**：① 推理移出引擎锁——锁内只快照观测 + 记 `_i_snap`，释放锁推理，再取锁安装
+（queue_sync 的 `_plan_blocking` 外层仍持锁，阻塞重填语义不变；queue_async 的
+`stop()` 本就 join planner 再关后端，无竞态）；② 续播索引用**实测 `consumed = _i −
+_i_snap`**（推理期间控制线程真实消费行数），替代 latency_ms 估算；③ 时序融合对齐锚点
+改用 `_i_snap`（`old[_i_snap+k] ↔ new[k]` 时间语义不变，前 consumed 行 stale 混合由
+i0 跳过）。**验证**：新增 3 例回归（200ms 慢推理下 tick() 不被堵 >100ms；慢推理后从
+`new[consumed]` 续播而非 new[0]/超前跳；融合+锁外推理锚点对齐不崩），套件 95→**98 例**
+全绿。效果：换 chunk 空档从 ~120ms（网络时长）→ 0（控制线程从缓冲照常发），网络延迟
+与指令流解耦。
+
 **openpi（pi0.5）训练迁移交接：本机 15GB RAM 装不下 pi05_base，部署清单 + 文档全树同步**——
 `docs/openpi-training-deploy.md`（新）× 顶层 CLAUDE.md × CHANGELOG。**背景/验证**：完整跑 openpi
 数据→训练链路——重指数据集软链（原断链到已删目录）、重算 norm stats（CPU 666 窗口）、**真实数据语义

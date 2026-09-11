@@ -41,6 +41,13 @@ astral_policy_inference:
     # >0 时引擎换 chunk 把旧尾段与新头部按 exp(-coeff*i) 权重平均，消除切换跳变
     # （缓解真机"一卡一卡"）。ACT 推荐 0.01；0 = 关闭（硬切换）。开/关可 A/B 对比。
     temporal_ensemble_coeff: 0.01
+    # 重规划/融合的重叠行数（剩余多少行时重规划，与旧尾段融合）。
+    # 每 (action_chunk − async_prefetch_ahead) 步融合一次：
+    #   = 25 → 每 50−25=25 步融合（默认，重叠 25 行）
+    #   = 40 → 每 10 步融合（当前设置：重规划更勤、观测更新鲜、重叠 40 行更平滑，
+    #          代价是推理频率 1.2Hz→3Hz，直连网线下无压力）
+    # 0 = 自动 (action_chunk//2)。仅 queue_async 生效（rtc 用 rtc_* 参数）。
+    async_prefetch_ahead: 40
     control_interp: 1         # 控制率 = dataset_fps × N（1=每策略步发一次）
     # 绝对动作语义守卫：chunk 首行在 |state|>1.0 的维上离当前 state 超过该值即拒绝
     # （检测后端把 delta 当绝对返回，如 openpi server 漏 AbsoluteActions）。<=0 关闭。

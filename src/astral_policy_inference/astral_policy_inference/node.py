@@ -212,6 +212,9 @@ class PolicyNode(Node):
             # ACT 时序融合系数（借鉴 lerobot ACTTemporalEnsembler）：>0 时换 chunk
             # 做指数加权平均消除边界跳变（ACT 推荐 0.01）；0 = 关闭。yaml 默认 0.01。
             "temporal_ensemble_coeff": 0.0,
+            # 重规划/融合的重叠行数（剩余多少行时触发重规划，与旧尾段融合）。
+            # 每 (action_chunk − async_prefetch_ahead) 步融合一次。0 = 自动 (chunk//2)。
+            "async_prefetch_ahead": 0,
             "camera_image_size": 224,
             "abs_action_min_scale": 0.5,
             "default_prompt": "",
@@ -529,6 +532,10 @@ class PolicyNode(Node):
             ),
             temporal_ensemble_coeff=float(
                 self.get_parameter("temporal_ensemble_coeff").value
+            ),
+            async_prefetch_ahead=(
+                int(self.get_parameter("async_prefetch_ahead").value)
+                or None  # 0 = 引擎默认 chunk//2
             ),
         )
 

@@ -499,6 +499,20 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertEqual(len(rec["/left_arm/joint_commands"]), 7)
         self.assertTrue(all(isinstance(v, float) for v in rec["/left_arm/joint_commands"]))
 
+    def test_async_prefetch_ahead_reaches_engine(self):
+        """async_prefetch_ahead 参数应透传到引擎（控制重规划/融合频率）。"""
+        self._stop_server()
+        self._stop_node_spin()
+        if self.node.context.ok():
+            self.node.destroy_node()
+        self.node = PolicyNode(parameter_overrides=params(async_prefetch_ahead=10))
+        feed_state(self.node)
+        self._cmd("policy")
+        self.assertEqual(self.node.controller.state, "POLICY")
+        self.assertIsNotNone(self.node._engine)
+        self.assertEqual(self.node._engine.async_prefetch_ahead, 10)
+        self._cmd("stop")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

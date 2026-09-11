@@ -112,6 +112,9 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   真机换 chunk 时把旧尾段与新头部按 `exp(-coeff·i)` 权重平均，消除切换跳变（缓解一卡一卡）。
   yaml 默认 `0.01`（ACT 推荐）；`0` = 关闭（硬切换，A/B 对比用）。A/B：
   `temporal_ensemble_coeff:=0.01` vs `:=0.0`。
+- **换 chunk 不再断流**：`_run_plan` 推理已移出引擎锁（慢推理/网络不再堵控制线程），
+  续播用实测 consumed 对齐——换块空档≈0。若真机仍觉快段"跳"，把 `control_interp` 从 1 调
+  到 2/3（节点把 30Hz 数据线性插值到 60/90Hz 下发，恢复采集时的细粒度）。
 - 序列化用包内 vendored `protocol`（`__ndarray__`），client/serve/node 三端一致。
 
 **真机指标自动记录**：launch 传 `metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点

@@ -303,5 +303,119 @@ class TestTemporalEnsembling(unittest.TestCase):
         eng.stop()
 
 
+class TestLockFreeInfer(unittest.TestCase):
+    """锁外推理回归：慢推理（模拟远程 100ms+）不得堵控制线程、不得破坏续播对齐。
+
+    修复前 _run_plan 锁跨 infer() 持有 → tick() 被堵整个推理时长（每次重规划一个
+    空档 + 滞后 i0 超前跳）；修复后推理在锁外，控制线程照常消费，续播用实测 consumed。
+    """
+
+    def test_slow_infer_does_not_block_control_tick(self):
+        """慢推理 200ms 期间，tick() 必须立刻返回，不被堵接近推理时长。"""
+        class SlowBackend(StubBackend):
+            def __init__(self, dim=DIM, delay=0.2):
+                super().__init__(action_dim=dim, camera_map={})
+                self.delay = delay
+
+            def infer(self, obs):
+                time.sleep(self.delay)
+                return np.full((10, DIM), 0.1, dtype=np.float64)
+
+        eng = ActionEngine(SlowBackend(delay=0.2), mode="queue_async", action_dim=DIM,
+                           chunk=10, autostart=False, async_prefetch_ahead=1)
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng.set_enabled(True)
+        eng.start()  # 首块阻塞 ~200ms
+        t = threading.Thread(target=eng._run_plan, daemon=True)
+        t.start()
+        time.sleep(0.05)  # 确保已进入 infer 的 sleep
+        t0 = time.perf_counter()
+        row = eng.tick()  # 不应被 200ms 推理堵住
+        waited = time.perf_counter() - t0
+        t.join(timeout=1.0)
+        self.assertIsNotNone(row)
+        self.assertLess(waited, 0.1,
+                        f"tick 被慢推理堵了 {waited*1000:.0f}ms（修复前锁跨 infer 持有会 ~200ms）")
+        eng.stop()
+
+    def test_slow_replan_resumes_at_consumed(self):
+        """慢推理期间控制线程消费 consumed 行，重规划后必须从 new[consumed] 续播
+        （_i == consumed），而不是从 new[0] 重来或按 latency_ms 估算超前跳。"""
+        class RampBackend(StubBackend):
+            def __init__(self, dim=DIM, delay=0.15):
+                super().__init__(action_dim=dim, camera_map={})
+                self.delay = delay
+                self.plans = 0
+
+            def infer(self, obs):
+                time.sleep(self.delay)
+                self.plans += 1
+                base = float(1000 * self.plans)
+                return (base + np.arange(10, dtype=np.float64))[:, None] * np.ones((1, DIM))
+
+        eng = ActionEngine(RampBackend(delay=0.15), mode="queue_async", action_dim=DIM,
+                           chunk=10, autostart=False, async_prefetch_ahead=1)
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng.set_enabled(True)
+        eng.start()  # plan1 = [1000..1009], _i=0
+        self.assertIsNotNone(eng.tick())  # 1000
+        self.assertIsNotNone(eng.tick())  # 1001 → _i=2
+        t = threading.Thread(target=eng._run_plan, daemon=True)
+        t.start()
+        time.sleep(0.05)  # infer 进行中（sleep 150ms），控制线程继续消费
+        self.assertIsNotNone(eng.tick())
+        self.assertIsNotNone(eng.tick())  # _i 2→4
+        t.join(timeout=1.0)
+        consumed = 2  # 推理期间实际消费 = 4 - 2
+        self.assertEqual(eng._i, consumed,
+                         f"重规划后应从 new[consumed={consumed}] 续播，实际 _i={eng._i}")
+        self.assertEqual(eng.remaining, eng.chunk - consumed)
+        row = eng.tick()
+        self.assertIsNotNone(row)
+        self.assertAlmostEqual(row[0], 1000 * 2 + consumed,
+                               msg="应从第 2 块 new[consumed] 续播（修复前按 latency_ms 估算会跳 5 行）")
+        eng.stop()
+
+    def test_lockfree_replan_with_ensembling_resumes_at_consumed(self):
+        """时序融合 + 锁外推理：融合用锚点 snap_i 对齐，续播仍从 new[consumed]，不崩、有限。"""
+        class RampBackend(StubBackend):
+            def __init__(self, dim=DIM, delay=0.15):
+                super().__init__(action_dim=dim, camera_map={})
+                self.delay = delay
+                self.plans = 0
+
+            def infer(self, obs):
+                time.sleep(self.delay)
+                self.plans += 1
+                base = float(1000 * self.plans)
+                return (base + np.arange(10, dtype=np.float64))[:, None] * np.ones((1, DIM))
+
+        eng = ActionEngine(RampBackend(delay=0.15), mode="queue_async", action_dim=DIM,
+                           chunk=10, autostart=False, async_prefetch_ahead=1,
+                           temporal_ensemble_coeff=0.01)
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng.set_enabled(True)
+        eng.start()
+        self.assertIsNotNone(eng.tick())
+        self.assertIsNotNone(eng.tick())  # _i=2
+        t = threading.Thread(target=eng._run_plan, daemon=True)
+        t.start()
+        time.sleep(0.05)
+        self.assertIsNotNone(eng.tick())
+        self.assertIsNotNone(eng.tick())  # _i 2→4
+        t.join(timeout=1.0)
+        consumed = 2
+        self.assertEqual(eng._i, consumed)
+        row = eng.tick()
+        self.assertIsNotNone(row)
+        self.assertTrue(np.isfinite(row).all())
+        # 融合行应介于"旧流续行 old[4]=1004"与"新 new[2]=2002"之间（权重平均），
+        # 而不是从 new[0]=2000 起跳、也不是回到旧流 1004——验证锚点对齐没被破坏
+        lo, hi = 1004.0, 2002.0
+        self.assertGreaterEqual(row[0], lo - 1)
+        self.assertLessEqual(row[0], hi + 1)
+        eng.stop()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

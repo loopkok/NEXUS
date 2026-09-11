@@ -43,6 +43,7 @@ def _node(context):
     camera_image_size = LaunchConfiguration("camera_image_size").perform(context)
     engine_mode = LaunchConfiguration("engine_mode").perform(context)
     temporal_ensemble_coeff = LaunchConfiguration("temporal_ensemble_coeff").perform(context)
+    async_prefetch_ahead = LaunchConfiguration("async_prefetch_ahead").perform(context)
     metrics_log_file = LaunchConfiguration("metrics_log_file").perform(context)
     joint_stream_log_file = LaunchConfiguration("joint_stream_log_file").perform(context)
     parameters = [params_file]
@@ -64,6 +65,8 @@ def _node(context):
         parameters.append({"engine_mode": engine_mode})
     if temporal_ensemble_coeff:
         parameters.append({"temporal_ensemble_coeff": float(temporal_ensemble_coeff)})
+    if async_prefetch_ahead:
+        parameters.append({"async_prefetch_ahead": int(async_prefetch_ahead)})
     if metrics_log_file:
         parameters.append({"metrics_log_file": metrics_log_file})
     if joint_stream_log_file:
@@ -104,6 +107,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "temporal_ensemble_coeff", default_value="",
                 description=">0 开启 ACT 时序融合（换 chunk 加权平均，消切换跳变；0=关）"),
+            DeclareLaunchArgument(
+                "async_prefetch_ahead", default_value="",
+                description="重规划/融合重叠行数（每 action_chunk−N 步融合一次；0=自动 chunk//2）"),
             DeclareLaunchArgument(
                 "metrics_log_file", default_value="",
                 description="非空则节点把 state JSON（延迟/引擎指标）追加写该文件并终端打印"),
