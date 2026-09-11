@@ -44,6 +44,11 @@ astral_policy_inference/
 └── launch/policy_inference.launch.py
 ```
 
+## 训练入口（一键脚本 `astral_ws/scripts/act_train.sh`）
+
+ACT 三种训练模式一个脚本搞定：`--mode from_scratch|resume|finetune`
+（从头训 / 同数据续步数 / 已有模型上加数据微调），参数见文件头；`--dry-run` 先看命令。
+
 ## 快速开始
 
 ### 1) 运行节点

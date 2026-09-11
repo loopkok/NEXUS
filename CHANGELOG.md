@@ -60,6 +60,24 @@ t/latency_ms/engine），套件 90→**91 例**全绿。顺带修 `run_act_corre
 
 ## 2026-09-09
 
+**ACT 三种训练模式一键脚本 `scripts/act_train.sh`**——`astral_ws/scripts`。**动机**：用户已分别做过
+从头训/接着训（resume）/已有模型加数据微调三种训练，要求统一成一个可配置参数的一键脚本。
+**做法**：`act_train.sh --mode from_scratch|resume|finetune` + 通用参数（dataset/checkpoint/
+output-dir/steps/batch/lr/chunk/n_action_steps/kl/num_workers/job/wandb）；按模式自动组装
+lerobot-train 命令——from_scratch 默认 lr 3e-5/steps 80000 且禁带 checkpoint；resume 用
+`--resume`+原 output_dir+新 steps（lr/bs 沿用 checkpoint，文档提示 batch 须与原 run 一致）；
+finetune 用 `--policy.path`+新数据集+新 output_dir（默认 lr 1e-5/steps 30000）。含参数/模式校验
+与 `--dry-run`（只打印命令不跑）。**验证**：`bash -n` 通过 + 三种模式 dry-run 组装逐条核对 +
+负例拦截（finetune 缺 checkpoint / from_scratch 带 checkpoint 均拒绝，exit=2）。默认 wandb offline。
+
+**BEST_EFFORT 话题测速 `scripts/hz_best_effort.py`**——`astral_ws/scripts`。**动机**：
+`ros2 topic hz` 在 Humble 没有 QoS 选项，默认 RELIABLE 订阅匹配不上 BEST_EFFORT 发布者
+（如 policy_node 发的 `/left_arm/joint_commands` 就是 BEST_EFFORT depth=1），永远报 0 条；
+排障卡顿要看指令流实际到达率/间隔。**做法**：新增脚本——BEST_EFFORT depth=1 订阅，滚动
+打印到达率 + 相邻消息间隔 min/mean/max/std；`--msg js|float|str` 按话题选、`--window` 滚动
+窗口。**验证**：py_compile + ROS 环境可 import。
+
+
 **推理包重构：传输/模型解耦命名 + 统一 serve.py + 自包含 client**。`backend_type` 原来用
 `"openpi"|"act"` 把传输和模型名混在一起（openpi 实为远程传输、act 实为进程内加载，且都支持
 任意模型），与后续多模型扩展冲突。**做法**：① `backend_type` 改为表达**传输**（`remote` 连
