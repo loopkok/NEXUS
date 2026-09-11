@@ -30,6 +30,7 @@ from .launch_manager import (
     PAUSED,
     RUNNING,
     STOPPED,
+    Preset,
     load_presets,
 )
 from .monitor_node import get_node, init_node, shutdown_node
@@ -38,6 +39,9 @@ from .schemas import (
     CollectControlRequest,
     CollectTaskRequest,
     CollectSessionRequest,
+    InferCmdRequest,
+    InferTaskRequest,
+    InferLaunchRequest,
     PresetInfo,
     StartRequest,
     VideoCamerasRequest,
@@ -51,6 +55,11 @@ _launch_mgr = LaunchManager()
 # 纯订阅者、不抢 joint_commands，start 时跳过孤儿检测；遥操侧孤儿检测
 # 对 astral_data_collect 命令行有对称豁免（launch_manager._find_orphan）。
 _collect_mgr = LaunchManager(lane_name="数采")
+# 推理独立泳道：配置化构建 policy_inference.launch.py 命令。推理节点设计上就与
+# 遥操共存（takeover 仲裁），启动也跳过孤儿检测——否则遥操栈运行时会挡启动。
+_policy_mgr = LaunchManager(lane_name="推理")
+# 最近一次推理启动配置（restart 复用；前端表单驱动）
+_policy_cfg: dict = {}
 _presets = load_presets()
 _web_dist = Path(os.environ.get("ASTRAL_WEB_MONITOR_DIST", ""))
 
@@ -75,12 +84,20 @@ def _build_ui_state() -> dict[str, Any]:
         "latency": ros.get("latency", {"stages": {}}),
         "video_gate": ros.get("video_gate"),
         "data_collect": ros.get("data_collect"),
+        "infer": ros.get("infer"),
         "collect_launch": {
             "state": _collect_mgr.state,
             "preset": _collect_mgr.preset,
             "uptime_s": _collect_mgr.uptime_s(),
             "pid": _collect_mgr.pid,
             "log_tail": log_tail_for_push(_collect_mgr.log_tail()),
+        },
+        "infer_launch": {
+            "state": _policy_mgr.state,
+            "preset": _policy_mgr.preset,
+            "uptime_s": _policy_mgr.uptime_s(),
+            "pid": _policy_mgr.pid,
+            "log_tail": log_tail_for_push(_policy_mgr.log_tail()),
         },
         "log_tail": log_tail_for_push(_launch_mgr.log_tail()),
     }
@@ -748,6 +765,87 @@ async def collect_launch_restart() -> ApiEnvelope:
     if not ok:
         raise HTTPException(status_code=409, detail=msg)
     return ApiEnvelope(ok=True, message=f"已重启数采节点: {preset.name}")
+
+
+# --- 推理节点泳道 + 控制面（astral_policy_inference）--------------------------
+# 控制面是纯话题（/policy_inference/cmd + /task），web 按钮与 policy_keyboard
+# 完全等价，CLI 启动的推理节点同样可控。泳道启动跳过孤儿检测：推理节点设计上
+# 与遥操栈共存（takeover 仲裁），不能被"有遥操 launch 在跑"挡掉。
+# launch 参数构建/命令白名单在 config（无 ROS 依赖，可离线单测）。
+
+
+def _policy_preset(cfg: dict) -> Preset:
+    return Preset(
+        name="Policy inference (web)",
+        package="astral_policy_inference",
+        launch="policy_inference.launch.py",
+        args=config.policy_launch_args(cfg),
+        description="推理节点（配置化 web 泳道）",
+    )
+
+
+@app.post("/api/v1/infer/launch/start")
+async def infer_launch_start(req: InferLaunchRequest) -> ApiEnvelope:
+    global _policy_cfg
+    cfg = req.model_dump()
+    _policy_cfg = cfg
+    preset = _policy_preset(cfg)
+    ok, msg = _policy_mgr.start(preset, check_orphan=False)
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message=msg)
+
+
+@app.post("/api/v1/infer/launch/stop")
+async def infer_launch_stop() -> ApiEnvelope:
+    ok, msg = _policy_mgr.stop()
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message=msg)
+
+
+@app.post("/api/v1/infer/launch/restart")
+async def infer_launch_restart() -> ApiEnvelope:
+    """重启推理节点——用最近一次 web 启动配置（改了 host/尺寸/日志后用它生效）。"""
+    if not _policy_cfg:
+        raise HTTPException(status_code=409, detail="无推理启动配置（请先经 web 启动一次）")
+    _policy_mgr.stop()
+    deadline = time.monotonic() + STOP_SIGINT_TIMEOUT_S + 5.0
+    while _policy_mgr.state != STOPPED:
+        if time.monotonic() > deadline:
+            raise HTTPException(status_code=409, detail="旧推理进程未能在超时内退出")
+        await asyncio.sleep(0.5)
+    ok, msg = _policy_mgr.start(_policy_preset(_policy_cfg), check_orphan=False)
+    if not ok:
+        raise HTTPException(status_code=409, detail=msg)
+    return ApiEnvelope(ok=True, message="已重启推理节点（沿用最近配置）")
+
+
+@app.post("/api/v1/infer/cmd")
+async def infer_cmd(req: InferCmdRequest) -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    cmd = req.cmd.strip().lower()
+    if not config.valid_infer_cmd(cmd):
+        raise HTTPException(
+            status_code=400,
+            detail=f"未知推理命令 {cmd!r}，可选 {config.PI_COMMANDS}（或 playback:<源>）",
+        )
+    node.publish_pi_cmd(cmd)
+    return ApiEnvelope(ok=True, message=f"已发送推理命令: {cmd}")
+
+
+@app.post("/api/v1/infer/task")
+async def infer_task(req: InferTaskRequest) -> ApiEnvelope:
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="任务文本不能为空")
+    node.publish_pi_task(text)
+    return ApiEnvelope(ok=True, message=f"已设置任务: {text}")
 
 
 @app.websocket("/ws/telemetry")

@@ -3,6 +3,7 @@ import type { NormalisedState } from '../lib/mapUiState'
 import { JointPanel } from './JointPanel'
 import { ChartPanel } from './ChartPanel'
 import { DataCollectCard } from './DataCollectCard'
+import { InferenceCard } from './InferenceCard'
 import { getSamples, subscribeHistory } from '../hooks/historyStore'
 
 interface Props {
@@ -37,6 +38,7 @@ export function MonitorTab({ state }: Props) {
         launch={state?.collectLaunch ?? null}
         teleopState={state?.teleopState ?? 'stopped'}
       />
+      <InferenceCard infer={state?.infer ?? null} launch={state?.inferLaunch ?? null} />
       <div style={gridStyle}>
         <JointPanel title="左臂 (7-DoF)" joint={j.left_arm} rateHz={rates.left_arm_cmd} />
         <JointPanel title="右臂 (7-DoF)" joint={j.right_arm} rateHz={rates.right_arm_cmd} />

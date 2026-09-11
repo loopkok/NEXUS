@@ -160,6 +160,12 @@ Web 的 pause/resume 与策略接管/交还互不踩踏。
 ——policy 持有指令话题时夹爪遥操停发；进入 HUMAN/IDLE 后 policy_node 发 disarm=false 放行
 真人捏合/扳机，Web 恢复（armed=true）同样放行。
 
+**Web 控制面（等价键盘，推荐）**：`astral_web_monitor` 监控 tab 数采卡片下方有**推理模块**——
+启动/重启/停止节点（配置 GPU 主机 IP/端口/图像尺寸/引擎模式/模型族/记录日志开关）+ 上表全部
+命令按钮 + 任务输入，走 `/policy_inference/cmd`+`/task` 纯话题（与 `policy_keyboard` 等价，
+CLI 启动的节点同样可控）+ `/policy_inference/state` 实时镜像。启动参数经 shell 元字符消毒
+（防注入）。详见 `astral_web_monitor/README.md`。
+
 ### 4) 回放采集数据
 
 ```bash

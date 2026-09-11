@@ -96,7 +96,9 @@ export interface UiState {
   latency?: LatencySummary
   video_gate?: VideoGateState | null
   data_collect?: DataCollectState | null
+  infer?: InferState | null
   collect_launch?: CollectLaunchInfo
+  infer_launch?: InferLaunchInfo
   log_tail: string[]
 }
 
@@ -144,4 +146,49 @@ export interface VideoStatusData {
   configured: VideoCameraInfo[]
   gate: VideoGateState | null
   online: boolean
+}
+
+// astral_policy_inference 的 /policy_inference/state latched JSON 镜像。
+// stale 由 monitor 后端加注（latched 消息在节点死后残留，靠龄期判活）。
+export interface DequeStats {
+  avg?: number
+  p50?: number
+  p95?: number
+  max?: number
+}
+
+export interface InferState {
+  state: string // IDLE | POLICY | PLAYBACK | HUMAN (+ _PAUSED)
+  activity?: string
+  paused?: boolean
+  prompt?: string
+  state_dim?: number
+  engine?: Record<string, number> // plans/pops/last_plan_ms/remaining
+  playback?: { idx: number; frames: number; remaining: number } | null
+  cam_frames?: Record<string, number>
+  latency_ms?: { loop?: DequeStats; obs_age?: DequeStats }
+  exec_events?: string[]
+  error?: string | null
+  // monitor 后端加注：/policy_inference/state 发布者数量（>1 = web/CLI 双开推理节点）
+  node_count?: number
+  stale?: boolean
+}
+
+export interface InferLaunchInfo {
+  state: TeleopState
+  preset: string
+  uptime_s: number
+  pid: number | null
+  log_tail?: string[]
+}
+
+// 推理节点泳道启动配置（→ /api/v1/infer/launch/start，后端转 launch 参数）
+export interface InferLaunchConfig {
+  backend_type: string
+  model: string
+  host: string
+  port: number
+  camera_image_size: number
+  engine_mode: string
+  log: boolean
 }

@@ -1,5 +1,5 @@
 // REST client mirroring rob_station's api/client.js convention.
-import type { ApiEnvelope, HealthData, Preset, VideoStatusData } from '../types'
+import type { ApiEnvelope, HealthData, InferLaunchConfig, Preset, VideoStatusData } from '../types'
 
 const base = import.meta.env.VITE_API_BASE ?? ''
 
@@ -68,5 +68,11 @@ export const api = {
   collectLaunchStart: () => post<unknown>('/api/v1/collect/launch/start'),
   collectLaunchStop: () => post<unknown>('/api/v1/collect/launch/stop'),
   collectLaunchRestart: () => post<unknown>('/api/v1/collect/launch/restart'),
+  // 推理节点泳道（astral_policy_inference，配置化）+ 控制面（与 policy_keyboard 等价）
+  inferLaunchStart: (cfg: InferLaunchConfig) => post<unknown>('/api/v1/infer/launch/start', cfg),
+  inferLaunchStop: () => post<unknown>('/api/v1/infer/launch/stop'),
+  inferLaunchRestart: () => post<unknown>('/api/v1/infer/launch/restart'),
+  inferCmd: (cmd: string) => post<unknown>('/api/v1/infer/cmd', { cmd }),
+  inferTask: (text: string) => post<unknown>('/api/v1/infer/task', { text }),
   logs: () => get<{ teleop: string[]; collect: string[] }>('/api/v1/logs'),
 }

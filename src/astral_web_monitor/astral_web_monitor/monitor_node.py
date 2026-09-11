@@ -56,6 +56,9 @@ from .config import (
     DC_TOPIC_TASK,
     DC_TOPIC_SESSION,
     DC_TOPIC_STATE,
+    PI_CMD_TOPIC,
+    PI_TASK_TOPIC,
+    PI_STATE_TOPIC,
 )
 from .rate_counter import RateRegistry, RateCounter
 
@@ -160,6 +163,21 @@ class MonitorNode(Node):
         self._dc_state: dict[str, Any] | None = None
         self._dc_state_ts: float = 0.0
         self.create_subscription(String, DC_TOPIC_STATE, self._on_dc_state, qos)
+
+        # astral_policy_inference bridge: cmd (String 动词，同 policy_keyboard
+        # 契约) + task (latched) publishers, 以及 state JSON 镜像 (latched)。
+        # None = 推理节点离线。web 按钮与键盘节点完全等价，CLI 启动的推理节点
+        # 同样可控。
+        pi_ctrl_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        self._pub_pi_cmd = self.create_publisher(String, PI_CMD_TOPIC, pi_ctrl_qos)
+        self._pub_pi_task = self.create_publisher(String, PI_TASK_TOPIC, qos)
+        self._pi_state: dict[str, Any] | None = None
+        self._pi_state_ts: float = 0.0
+        self.create_subscription(String, PI_STATE_TOPIC, self._on_pi_state, qos)
         # Web preview: latest JPEG bytes per camera label + dynamic subscriptions
         # (created when gate_state reports the camera list).
         self._preview_jpeg: dict[str, bytes] = {}
@@ -365,6 +383,30 @@ class MonitorNode(Node):
     def publish_dc_session(self, text: str) -> None:
         self._pub_dc_session.publish(String(data=text))
 
+    # --- astral_policy_inference bridge --------------------------------------
+
+    def _on_pi_state(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if isinstance(data, dict):
+            # 多节点检测：/policy_inference/state 发布者 >1 = web 泳道与 CLI 双开
+            # 推理节点（会双写 joint_commands，与数采双开同危害）。消息驱动。
+            try:
+                data["node_count"] = self.count_publishers(PI_STATE_TOPIC)
+            except Exception:
+                pass
+            with self._lock:
+                self._pi_state = data
+                self._pi_state_ts = time.time()
+
+    def publish_pi_cmd(self, cmd: str) -> None:
+        self._pub_pi_cmd.publish(String(data=cmd))
+
+    def publish_pi_task(self, text: str) -> None:
+        self._pub_pi_task.publish(String(data=text))
+
     # --- snapshot read (web thread) ---------------------------------------
     def snapshot(self) -> dict[str, Any]:
         now = time.time()
@@ -393,9 +435,14 @@ class MonitorNode(Node):
             video_gate = dict(self._video_gate_state) if self._video_gate_state else None
             dc_state = dict(self._dc_state) if self._dc_state else None
             dc_state_ts = self._dc_state_ts
+            pi_state = dict(self._pi_state) if self._pi_state else None
+            pi_state_ts = self._pi_state_ts
         if dc_state is not None:
             # 采集节点状态龄期：stale 说明节点可能已死（latched 消息会残留）
             dc_state["stale"] = (now - dc_state_ts) > STALE_THRESHOLD_S
+        if pi_state is not None:
+            # 推理节点状态龄期：stale 说明节点可能已死（latched 消息会残留）
+            pi_state["stale"] = (now - pi_state_ts) > STALE_THRESHOLD_S
         return {
             "joints": joints,
             "rates_hz": cmd_rates,
@@ -403,6 +450,7 @@ class MonitorNode(Node):
             "health": self._health_summary(joints, cmd_rates, state_rates, now),
             "video_gate": video_gate,
             "data_collect": dc_state,
+            "infer": pi_state,
             "latency": self._latency_summary(latency_raw, mocap_rates, now),
         }
 

@@ -50,3 +50,25 @@ class CollectTaskRequest(BaseModel):
 class CollectSessionRequest(BaseModel):
     # 录制目录（session 名，仅 IDLE 生效；latched）
     text: str
+
+
+class InferCmdRequest(BaseModel):
+    # 推理命令：policy/playback/pause/resume/takeover/release/stop
+    # （playback 可带源 "playback:<path>[:<ep>]"；白名单在后端校验）
+    cmd: str
+
+
+class InferTaskRequest(BaseModel):
+    # 任务文本（语言指令，latched）
+    text: str
+
+
+class InferLaunchRequest(BaseModel):
+    """推理节点泳道启动配置 → policy_inference.launch.py 显式参数。"""
+    backend_type: str = "remote"       # remote | inproc | stub
+    model: str = "act"                 # act | pi05 | ...
+    host: str = "127.0.0.1"            # GPU 主机 IP
+    port: int = 8001                   # serve 端口
+    camera_image_size: int = 480       # 模型输入尺寸（ACT 480，pi0.5 通常 224/480）
+    engine_mode: str = "queue_async"   # queue_async | queue_sync | rtc
+    log: bool = False                  # 开启则记录 state+joint 到 /tmp 日志文件

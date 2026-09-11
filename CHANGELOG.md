@@ -1,8 +1,49 @@
 # Changelog（astral_ws）
 
+## 2026-09-11
+
+**openpi（pi0.5）训练迁移交接：本机 15GB RAM 装不下 pi05_base，部署清单 + 文档全树同步**——
+`docs/openpi-training-deploy.md`（新）× 顶层 CLAUDE.md × CHANGELOG。**背景/验证**：完整跑 openpi
+数据→训练链路——重指数据集软链（原断链到已删目录）、重算 norm stats（CPU 666 窗口）、**真实数据语义
+金标准**（delta 掩码 [T×7,F]、截断 8 维、相机槽位 base/left_wrist 有像素 + right 零填充、action
+delta/绝对语义 k=0,1 OK、tokenized_prompt 存在）全绿、`test_adversarial_configs` **8/8** 全绿、
+JAX CUDA 重启后恢复。**关键发现（对抗性审查）**：① 训练冒烟三次**内核 OOM（SIGKILL）**——pi05_base
+权重 11.6GB 必须整体进 RAM，本机 15GB − IDE ~5GB = 10GB 可用，实测 anon-rss 9.0/10.25/10.85GB 三连
+被杀（`journalctl -k` 实锤）；降 batch/`PREALLOCATE=false`/`MEM_FRACTION` 均无效（只影响显存）。
+**结论**：openpi 训练需 **RAM≥32GB** 机器；ACT（0.2GB 模型）留本机无碍。② 连带发现
+`OPENPI_DATA_HOME=/home/robot/openpi/ckpt` 错误指向导致每次重下 11.6GB 权重（慢网络卡 1h+），正确
+权重在 `~/.cache/openpi`（12GB 完整，`maybe_download` 秒级命中）；建议 unset。③ CLI 坑：
+`--no-wandb-enabled`（非 `=false`）、checkpoint 存在需 `--overwrite`。**做法**：写交接文档
+`docs/openpi-training-deploy.md`（目标机硬性要求 / 迁移三件套+体积（代码几百MB、数据集 58MB、权重
+12GB）/ 准备步骤 / 训练命令 / 5 个坑 / 验收清单）；顶层 CLAUDE.md 训练速查改指该文档。
+**遗留**：目标机验证训练冒烟通过后，把 `docs/openpi-training-deploy.md` 的验收结果回填。
+
 Quest3 → Astral 双臂 + Wuji 双手。从 `xnero_ws-main` 迁入。各包 README 内亦有对应条目。
 
 时间均为北京时间。
+
+**web 监控 tab 新增「策略推理」模块（配置化泳道 + 按钮化键盘控制面）**——
+`astral_web_monitor` × `astral_policy_inference`。**动机**：用户要求——推理包实机测完但一直命令行
+启动（launch 参数 + 单独键盘节点），要在数采模块下方加一个推理模块：可配置 GPU 主机 IP/端口/图像
+尺寸/是否记录日志，用按钮实现键盘全部功能，UI 美观。**做法**：①`monitor_node` 加推理话题桥——
+发布 `/policy_inference/cmd`（String 动词，同 `policy_keyboard` 契约）+ `/task`（latched），订阅
+`/policy_inference/state`（latched）镜像进 ui_state `infer`（带 stale 龄期标记）；**纯话题控制面，
+CLI 启动的推理节点同样可控**（同数采卡片模式）；②`web_server` 加推理泳道 `_policy_mgr`（配置化
+构建 `policy_inference.launch.py` 命令，`start(check_orphan=False)`——推理节点设计上与遥操共存、
+takeover 仲裁，不能被"有遥操 launch 在跑"挡掉）+ 端点 `POST /api/v1/infer/launch/start|stop|
+restart`（配置经 `InferLaunchRequest`：backend_type/model/host/port/camera_image_size/engine_mode/
+log）、`POST /api/v1/infer/cmd`（白名单 policy/playback/pause/resume/takeover/release/stop 及
+`playback:<源>`）、`POST /api/v1/infer/task`；日志开关 → `metrics_log_file=/tmp/pi_metrics.jsonl`
++ `joint_stream_log_file=/tmp/pi_cmds.jsonl`；③前端新增 `InferenceCard`（数采卡片下方）——启动
+配置表单（主机/端口/尺寸/引擎模式/模型族/日志开关）+ 命令按钮（开始策略/回放[可选源]/暂停/恢复/
+接管 HUMAN/释放/停止，对应键盘全部按键）+ 任务输入 + 实时状态（模式徽标/engine 指标/延迟/
+exec_events/error/stale）。**对抗性审查修复**：推理泳道 launch 参数来自 web 输入而 `LaunchManager`
+用 `bash -c` 拼命令——**host 等含 shell 元字符 = 命令注入**；`policy_launch_args` 加白名单清洗
+（`[^A-Za-z0-9_.:\-]` 剔除，port/尺寸先 int 化），回归测试锁死。**验证**：新增 `test_infer_control.py`
+**11 例全绿**（launch 参数默认/覆盖/int 化、注入清洗无 shell 元字符残留、cmd 白名单全动词+playback
+带源+垃圾拒绝）；web_monitor 套件全绿；前端 `npm run build`（tsc+vite，50 模块）通过；后端
+py_compile 通过。**待办（机器人侧）**：同步构建 `astral_web_monitor` + 前端 dist 后实机冒烟——
+配置 host/尺寸 → 启动推理节点 → 按钮发 policy/pause/stop → state 实时刷新、日志文件落盘。
 
 ## 2026-09-10
 
@@ -1398,4 +1439,12 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 - 真机与 MuJoCo **二选一**，勿抢同一 `joint_commands`
 - `*_serial` 可空（按 `hand_side` 连）
 - USB：`0483` 需 udev `MODE="0666"`
- # 查看lerobot他这个ACT推理过程中，是怎么解决抖动问题的，借鉴他的处理方法，再借鉴他的ACTTemporalEnsembler方法，集成到我的实现中
+现在整个推理包大致实机测完了，现在一直都是命令行启动，source /opt/ros/humble/setup.bash
+source /home/robot/loopkok/sdk/astral_ws/install/setup.bash
+
+ros2 launch astral_policy_inference policy_inference.launch.py \
+  backend_type:=remote \
+  host:=<GPU主机IP> \
+  port:=8001 \
+  camera_image_size:=480 \
+  engine_mode:=queue_async，同时还要专门起一个键盘节点来进行开始等操作，现在在数采那个web的tab的下面加一个推理的模块，数采模块在上面，在推理模块部分，可以配置GPU主机IP，端口，输入的图像尺寸，是否开启记录日志（把state和joint记录到文件中），以及用按钮来实现键盘的所有功能，同时UI做好看一点，做完所有功能后进行对抗性审查，确保功能正常且无隐藏bug

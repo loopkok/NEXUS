@@ -7,6 +7,7 @@ testing without touching code.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 
 
@@ -178,6 +179,57 @@ DC_TOPIC_SESSION = "/data_collect/session"
 DC_TOPIC_STATE = "/data_collect/state"
 # 允许的录制命令（web 端按钮白名单，防注入任意字符串）
 DC_COMMANDS = ("start", "stop", "discard", "next", "pause", "resume")
+
+# --- astral_policy_inference（策略推理）--------------------------------------
+# 控制面是纯话题：cmd（String 动词，同 policy_keyboard 契约）+ task（latched）+
+# state 镜像（latched JSON）。web 按钮与键盘节点完全等价；CLI 启动的推理节点
+# 同样可控。
+PI_CMD_TOPIC = "/policy_inference/cmd"
+PI_TASK_TOPIC = "/policy_inference/task"
+PI_STATE_TOPIC = "/policy_inference/state"
+# 允许的推理命令（对应 keyboard 全部功能：s/y/space/n/h/g/x）
+PI_COMMANDS = ("policy", "playback", "pause", "resume", "takeover", "release", "stop")
+# 记录日志开关 → 默认落盘路径（metrics=state 指标 JSON 行；joint=关节指令流 JSON 行）
+PI_METRICS_LOG_DEFAULT = "/tmp/pi_metrics.jsonl"
+PI_JOINT_LOG_DEFAULT = "/tmp/pi_cmds.jsonl"
+
+
+def policy_launch_args(cfg: dict) -> dict[str, str]:
+    """web 推理配置 → policy_inference.launch.py 显式参数（k:=v，str→str）。
+
+    日志开关为 True 时把 state 指标（metrics_log_file）与关节指令流
+    （joint_stream_log_file）落到 /tmp 默认路径。
+
+    **消毒（对抗性审查）**：推理泳道的 launch 参数来自 web 用户输入，而
+    LaunchManager 用 ``bash -c "exec ros2 launch ... k:=v"`` 拼装命令——host/
+    backend_type/model/engine_mode 若含 shell 元字符（``;`` ``$`` ``()`` …）就是
+    命令注入。这些值本应只含字母数字/_/./:/−（IPv4/IPv6/主机名），白名单清洗，
+    非法字符直接剔除。port/camera_image_size 先 int 化再 str（天然安全），
+    日志路径是包内常量。
+    """
+    _SAFE = re.compile(r"[^A-Za-z0-9_.:\-]")
+    safe = lambda v: _SAFE.sub("", str(v))  # noqa: E731
+
+    args: dict[str, str] = {
+        "backend_type": safe(cfg.get("backend_type", "remote")),
+        "model": safe(cfg.get("model", "act")),
+        "host": safe(cfg.get("host", "127.0.0.1")),
+        "port": str(int(cfg.get("port", 8001))),
+        "camera_image_size": str(int(cfg.get("camera_image_size", 480))),
+        "engine_mode": safe(cfg.get("engine_mode", "queue_async")),
+        "keyboard": "false",  # web 按钮取代键盘节点
+    }
+    if cfg.get("log"):
+        args["metrics_log_file"] = PI_METRICS_LOG_DEFAULT
+        args["joint_stream_log_file"] = PI_JOINT_LOG_DEFAULT
+    return args
+
+
+def valid_infer_cmd(cmd: str) -> bool:
+    """推理命令白名单：精确动词，或 playback 带源（"playback:<path>[:<ep>]"）。"""
+    if cmd in PI_COMMANDS:
+        return True
+    return cmd.startswith("playback:")
 
 # --- Orphan process detection ----------------------------------------------
 # Regex fragment matched against the full command line of running processes
