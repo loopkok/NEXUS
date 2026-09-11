@@ -339,3 +339,84 @@ def test_set_session_rejected_when_busy_or_bad_name(tmp_path, ros_context):
         assert node._session == "run_b"
     finally:
         node.destroy_node()
+
+
+def test_state_realtime_collect_fields(tmp_path, ros_context):
+    """实时采集量字段（web「本次采集数据」下拉）：录制中发布 folder /
+    episode_counts / camera_counts / episode_bytes / session_bytes；
+    IDLE 时空计数。"""
+    import json as _json
+
+    import numpy as np
+    from std_msgs.msg import String as _String
+
+    node = _make(tmp_path)
+    received = []
+    probe = rclpy.create_node("probe")
+    probe.create_subscription(
+        _String, "/data_collect/state", lambda m: received.append(m.data), 10
+    )
+    try:
+        # IDLE：空计数、folder 仍在
+        node._publish_state()
+        deadline = time.time() + 3.0
+        idle_payload = None
+        while time.time() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.05)
+            rclpy.spin_once(probe, timeout_sec=0.05)
+            if received:
+                idle_payload = _json.loads(received[-1])
+                break
+        assert idle_payload is not None
+        assert idle_payload["folder"] == str(tmp_path / "s")
+        assert idle_payload["episode_counts"] == {}
+        assert idle_payload["camera_counts"] == {}
+        assert idle_payload["episode_bytes"] == 0
+
+        # 录制中：写入样本 + 图像后发布
+        node._apply("start")
+        node._robot_writer.write(
+            "left_arm_state", np.zeros(7, dtype=np.float32), time.time()
+        )
+        node._robot_writer.write(
+            "left_arm_state", np.ones(7, dtype=np.float32), time.time()
+        )
+        node._camera_writer.write_image("cam_a", b"\xff\xd8\xff\xe0", time.time())
+        node._publish_state()
+        deadline = time.time() + 3.0
+        rec_payload = None
+        while time.time() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.05)
+            rclpy.spin_once(probe, timeout_sec=0.05)
+            if received:
+                rec_payload = _json.loads(received[-1])
+                if rec_payload.get("episode_counts"):
+                    break
+        assert rec_payload is not None
+        assert rec_payload["folder"] == str(tmp_path / "s")
+        # 当前段精确样本数 / 帧数（来自写盘器 counts）
+        assert rec_payload["episode_counts"].get("left_arm_state") == 2
+        assert rec_payload["camera_counts"].get("cam_a") == 1
+        # 磁盘占用 > 0（写盘后 HDF5 文件在，含 chunk 预分配）
+        assert rec_payload["episode_bytes"] > 0
+        # session 累计 = 当前段（录制中段未结束，无历史累加）
+        assert rec_payload["session_bytes"] == rec_payload["episode_bytes"]
+        # 换 session 后累计归零
+        node._apply("stop")
+        node._on_session(_String(data="run_b"))
+        node._publish_state()
+        deadline = time.time() + 3.0
+        switched = None
+        while time.time() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.05)
+            rclpy.spin_once(probe, timeout_sec=0.05)
+            if received:
+                switched = _json.loads(received[-1])
+                if switched["session"] == "run_b":
+                    break
+        assert switched is not None
+        assert switched["folder"] == str(tmp_path / "run_b")
+        assert switched["session_bytes"] == 0  # 换 session 累计归零
+    finally:
+        probe.destroy_node()
+        node.destroy_node()

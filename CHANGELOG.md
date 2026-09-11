@@ -368,6 +368,21 @@ vr_collect_logic/controller_start_gate/workpos_gate 一致）；无代码改动�
 前端 tsc+vite build 通过；`colcon build astral_teleop astral_arm_teleop` 后冒烟。**待办（机器人
 侧）**：同步构建三包后实机冒烟——X 直达回位、工作位途经点回位、录制中按 X 忽略。
 
+**数采卡片「本次采集数据」实时下拉窗口（实时看采了多少、在哪个文件夹）**——
+`astral_data_collect` × `astral_web_monitor`。**动机**：用户要求——设定目录/任务旁加一个可实时
+查看本次采集数据量的下拉窗口，实时看"采了多少数据、在哪个文件夹采的"。**做法**：①采集节点
+`/data_collect/state`（1Hz 定时器 + 控制事件即时补发）新增 5 字段——`folder`（完整目录路径
+`save_root/session`）、`episode_counts`/`camera_counts`（**当前段已写精确样本数/每相机帧数**，
+来自写盘器 `counts()`，不受 HDF5 chunk 预分配取整影响）、`episode_bytes`/`session_bytes`
+（**磁盘占用**，含预分配——语义为"占了多少磁盘"；session 累计**增量累加**，段结束 close 时加、
+切 session 归零，避免 1Hz 全目录重扫）；②前端 `types.ts` 加字段、`DataCollectCard` 设定目录/任务
+下方加可折叠「本次采集数据」面板（点标题展开收起，折叠态也带 session 总 MB 实时徽标；展开显示
+文件夹路径 / session 累计 / 当前段时长·样本·帧·磁盘 / 每流每相机明细）。**验证**：
+`test_node_guards.py` 29→**30 例全绿**（新用例覆盖：IDLE 空计数、录制中精确样本/帧数、磁盘占用
+>0、session 累计=当前段、切 session 后 folder 变 + 累计归零）；data_collect 节点套件 30/30；
+前端 `npm run build`（tsc+vite）通过；py_compile 通过。**待办（机器人侧）**：同步构建
+`astral_data_collect` + 前端 dist 后实机冒烟——录制中下拉实时增长、文件夹路径正确。
+
 ## 2026-09-04
 
 **AV1 并行度可配：`ASTRAL_AV1_LP` 环境变量（默认 2 保内存红线，20 核机可放开）**——

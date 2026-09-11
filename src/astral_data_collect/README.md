@@ -81,7 +81,8 @@ ros2 run astral_data_collect keyboard_controller
 **web 端操作（推荐）**：「监控」tab 顶部数据采集卡片右上角**启动/重启/停止节点**
 （独立泳道，与遥操预设解耦可并存；CLI 启动的节点同样受控），卡片本体提供
 开始/停止保存/下一段/暂停继续/丢弃 + 下一段任务文本 + 录制目录（session）切换
-+ 实时状态徽标与流率。
++ 实时状态徽标与流率 + **「本次采集数据」实时下拉**（完整文件夹路径、当前段
+精确样本数/每相机帧数、session 累计磁盘占用——采集节点 1Hz 发布，见下）。
 四种控制面（web 卡片 / 键盘 / VR 手柄 / 话题）完全等价，可混用。卡片带
 **动态状态提示行**（当前状态能做什么、保存中按键会被忽略并计入「忽略指令」）
 与**操作键位/门控小抄**（VR/键盘键位、各自合法状态、非法按键被静默忽略）。
@@ -115,7 +116,9 @@ ros2 run astral_data_collect keyboard_controller
 ros2 topic pub --once /data_collect/control std_msgs/msg/String "{data: 'start'}"
 ros2 topic pub --once /data_collect/task std_msgs/msg/String "{data: '把方块放进盒子'}"
 ros2 topic pub --once /data_collect/session std_msgs/msg/String "{data: 'pick_place'}"   # 切换录制目录（仅 IDLE 生效）
-ros2 topic echo /data_collect/state   # latched JSON：状态/段号/各流频率/丢弃计数
+ros2 topic echo /data_collect/state   # latched JSON：状态/段号/各流频率/丢弃计数/
+                                       #   本次采集量（folder/episode_counts/camera_counts/
+                                       #   episode_bytes/session_bytes，1Hz 刷新）
 ```
 
 ## 4. 离线流水线

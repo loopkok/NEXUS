@@ -23,6 +23,8 @@ const STATE_META: Record<string, { label: string; color: string }> = {
 export function DataCollectCard({ dc, launch, teleopState }: Props) {
   const [task, setTask] = useState('')
   const [sessionDir, setSessionDir] = useState('')
+  // 「本次采集数据」实时下拉面板的展开态（数据随 WS 帧 1Hz 刷新）
+  const [showData, setShowData] = useState(false)
   const online = dc != null && !dc.stale
   const st = dc?.state ?? 'IDLE'
   const meta = STATE_META[st] ?? STATE_META.IDLE
@@ -80,6 +82,14 @@ export function DataCollectCard({ dc, launch, teleopState }: Props) {
     if (!confirm('确认段间回位？双臂将直接从当前位姿回到 init_pose 工作位（不经途径点，期间会 disarm 停止跟随 VR，需重新「开始遥操」再操作）。')) return
     void launchOp(api.teleopWorkposDirect)
   }
+
+  // 「本次采集数据」下拉：字节格式化 + 当前段样本/帧汇总
+  function fmtMB(b: number | undefined): string {
+    if (b == null || b <= 0) return '0 MB'
+    return `${(b / (1024 * 1024)).toFixed(1)} MB`
+  }
+  const epSamples = Object.values(dc?.episode_counts ?? {}).reduce((a, v) => a + v, 0)
+  const epFrames = Object.values(dc?.camera_counts ?? {}).reduce((a, v) => a + v, 0)
 
   return (
     <div style={cardStyle}>
@@ -244,6 +254,52 @@ export function DataCollectCard({ dc, launch, teleopState }: Props) {
         </div>
       </div>
 
+      {/* 本次采集数据：实时下拉窗口（数据随 WS 帧刷新，实际内容 1Hz 由采集节点发布） */}
+      <div style={rowStyle}>
+        <button
+          style={dataToggleStyle}
+          onClick={() => setShowData((v) => !v)}
+          title="实时查看本次采集的数据量 / 所在文件夹（录制中每秒刷新）"
+        >
+          {showData ? '▾' : '▸'} 本次采集数据
+          {dc && (dc.session_bytes ?? 0) > 0 && (
+            <span style={dataBadgeStyle}>{fmtMB(dc.session_bytes)}</span>
+          )}
+        </button>
+      </div>
+      {showData && (
+        <div style={dataPanelStyle}>
+          <div style={dimStyle}>
+            文件夹：<code style={codeStyle}>{dc?.folder ?? '—'}</code>
+          </div>
+          <div style={dimStyle}>
+            本次 session：磁盘 {fmtMB(dc?.session_bytes)}（累计
+            {dc?.episode_index != null && dc.episode_index >= 0 ? ` · 已到段 #${String(dc.episode_index).padStart(6, '0')}` : ''}）
+          </div>
+          <div style={dimStyle}>
+            当前段：{st === 'RECORDING' || st === 'PAUSED' ? (
+              <>#{String(dc?.episode_index ?? 0).padStart(6, '0')} · 时长 {dc?.elapsed_s.toFixed(1)}s ·
+                样本 {epSamples} · 帧 {epFrames} · 磁盘 {fmtMB(dc?.episode_bytes)}</>
+            ) : (
+              '未录制'
+            )}
+          </div>
+          {Object.entries(dc?.episode_counts ?? {}).length > 0 && (
+            <div style={statsStyle}>
+              每流样本：{Object.entries(dc!.episode_counts!).map(([k, v]) => `${k}: ${v}`).join('  ')}
+            </div>
+          )}
+          {Object.entries(dc?.camera_counts ?? {}).length > 0 && (
+            <div style={statsStyle}>
+              每相机帧：{Object.entries(dc!.camera_counts!).map(([k, v]) => `${k}: ${v}`).join('  ')}
+            </div>
+          )}
+          <div style={dimStyle}>
+            样本/帧数为精确数据量；磁盘占用含 HDF5 预分配（"占了多少磁盘"口径）。
+          </div>
+        </div>
+      )}
+
       {online && (
         <div
           style={{
@@ -384,6 +440,36 @@ const codeStyle: React.CSSProperties = {
   fontSize: '12px',
 }
 const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }
+const dataToggleStyle: React.CSSProperties = {
+  background: 'transparent',
+  color: '#14b8a6',
+  border: '1px solid #14b8a655',
+  borderRadius: '6px',
+  padding: '5px 12px',
+  fontSize: '12px',
+  fontWeight: 600,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+}
+const dataBadgeStyle: React.CSSProperties = {
+  background: '#14b8a633',
+  color: '#5eead4',
+  borderRadius: '9999px',
+  padding: '1px 8px',
+  fontSize: '11px',
+}
+const dataPanelStyle: React.CSSProperties = {
+  background: '#111827',
+  borderRadius: '6px',
+  padding: '8px 10px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
+  fontSize: '12px',
+  lineHeight: 1.7,
+}
 const taskWrap: React.CSSProperties = { display: 'flex', gap: '8px', flex: 1, minWidth: '260px' }
 const inputStyle: React.CSSProperties = {
   flex: 1,

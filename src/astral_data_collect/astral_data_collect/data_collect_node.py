@@ -195,6 +195,8 @@ class DataCollectNode(Node):
         self._stream_counts: dict[str, int] = {}
         self._cam_counts: dict[str, int] = {}
         self._drop_counts: dict[str, int] = {}
+        # 本次 session 累计磁盘占用（段结束 close 时增量累加，避免 1Hz 全目录重扫）
+        self._session_bytes_accum = 0
 
         # 采集缓冲：回调 append，写盘线程 drain
         self._buf_lock = threading.Lock()
@@ -392,6 +394,7 @@ class DataCollectNode(Node):
                 self._ignored_cmds["set_session"] = self._ignored_cmds.get("set_session", 0) + 1
                 return
         self._session = name
+        self._session_bytes_accum = 0  # 换 session：累计磁盘占用重新计
         self.get_logger().info(f"session -> {name!r}（下一段写入 {self._session_dir}）")
         self._publish_state()
 
@@ -457,6 +460,34 @@ class DataCollectNode(Node):
     @property
     def _session_dir(self) -> str:
         return os.path.join(self._save_root, self._session)
+
+    @staticmethod
+    def _dir_bytes(path: str) -> int:
+        """目录磁盘占用（文件 size 求和，浅递归一层 episode 子目录）。
+
+        注：录制中 HDF5 是 chunk 预分配（数值流 1000 行/块），故返回的磁盘占用
+        含预分配、会按块粒度取整——语义是"占了多少磁盘"，不是"数据字节数"
+        （数据字节请用 _robot_writer.counts() / _camera_writer.counts()）。
+        """
+        total = 0
+        try:
+            with os.scandir(path) as it:
+                for e in it:
+                    try:
+                        if e.is_file(follow_symlinks=False):
+                            total += e.stat().st_size
+                        elif e.is_dir(follow_symlinks=False):
+                            with os.scandir(e.path) as sub:
+                                total += sum(
+                                    f.stat().st_size
+                                    for f in sub
+                                    if f.is_file(follow_symlinks=False)
+                                )
+                    except OSError:
+                        continue
+        except OSError:
+            pass
+        return total
 
     def _next_episode_index(self) -> int:
         d = self._session_dir
@@ -531,6 +562,7 @@ class DataCollectNode(Node):
         self._camera_writer = None
 
         if save and ep_dir is not None:
+            self._session_bytes_accum += self._dir_bytes(ep_dir)
             self._events.append({"t": time.time(), "name": "episode_end", "data": True})
             meta = {
                 "package": "astral_data_collect",
@@ -660,6 +692,17 @@ class DataCollectNode(Node):
                 )
             if self._empty_warning:
                 self.get_logger().warning(f"EMPTY-REC: {self._empty_warning}")
+        # 实时采集量（web「本次采集数据」下拉）：写盘器存在（录制中）才有当前段
+        # 计数；磁盘占用含 HDF5 chunk 预分配（"占了多少磁盘"口径）。
+        rw = self._robot_writer
+        cw = self._camera_writer
+        recording = rw is not None
+        ep_dir = self._episode_dir
+        ep_bytes = (
+            self._dir_bytes(ep_dir)
+            if recording and ep_dir and os.path.isdir(ep_dir)
+            else 0
+        )
         payload = {
             "state": st,
             "session": self._session,
@@ -672,6 +715,11 @@ class DataCollectNode(Node):
             "low_fps_warning": low_fps,
             "empty_warning": self._empty_warning,
             "ignored": dict(self._ignored_cmds),
+            "folder": self._session_dir,
+            "episode_counts": rw.counts() if recording else {},
+            "camera_counts": cw.counts() if cw is not None else {},
+            "episode_bytes": ep_bytes,
+            "session_bytes": self._session_bytes_accum + ep_bytes,
         }
         if low_fps:
             self.get_logger().warning(

@@ -69,6 +69,14 @@ export interface DataCollectState {
   // monitor 后端加注：/data_collect/state 发布者数量（>1 = 有残留/双开节点）
   node_count?: number
   schema?: Record<string, unknown>
+  // 本次采集数据（实时下拉窗口）——由采集节点 1Hz 发布：
+  // folder=完整目录路径；episode_counts/camera_counts=当前段已写样本/帧数（精确）；
+  // episode_bytes/session_bytes=磁盘占用（含 HDF5 chunk 预分配）
+  folder?: string
+  episode_counts?: Record<string, number>
+  camera_counts?: Record<string, number>
+  episode_bytes?: number
+  session_bytes?: number
   stale?: boolean
 }
 
