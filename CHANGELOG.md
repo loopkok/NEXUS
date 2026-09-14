@@ -2,6 +2,26 @@
 
 ## 2026-09-14
 
+**遥操诊断 JSONL 日志 + web 记录开关**——`astral_arm_teleop` × `astral_web_monitor`。
+**动机**：慢速平移"停一下走一下"卡顿排查需要遥操链路逐级数据（VR 原始 / 滤波 / 命令 /
+实测关节 / 人肘 psi / IK 计数），此前只能靠 tune 话题实时看或 `ros2 topic echo`。照
+`astral_policy_inference` 的 `metrics_log_file`/`joint_stream_log_file` 模式：遥操节点新参数
+`teleop_log_file`（空=关，零开销），非空则行缓冲追加写 JSONL，`kind` 区分五类记录——
+`loop`（每 armed 控制拍：vr/filt/cmd TCP 位、q/q_state、psi_ref、vr_age/ik/loop_ms、
+ik_fail/ik_sat/hard_fallback/ws_clip/reach_clip）、`wrist`（每腕位事件，upstream 阶梯证据）、
+`state`（每实测关节事件）、`body`（每 body_joints 人肘方向 raw+EMA）、`metrics`（~2s
+LatencyMeter 窗口 ms 统计+计数）。写失败绝不抛（不打断控制流）；`destroy_node` 关闭句柄。
+launch 透传：`full_teleop.launch.py` → `astral_dual_arm_teleop.launch.py` 新增
+`teleop_log_file` 参数，共享基路径按侧拆 `_left/_right`（`teleop_log.py:side_log_path`）。
+web：预设启动请求 `StartRequest` 加 `log` 字段，System tab 启动按钮旁加「记录遥操日志」
+勾选框（仅 astral_teleop/astral_arm_teleop 预设生效，注入
+`teleop_log_file:=/tmp/teleop_teleop.jsonl`）。**验证**：新 `test_teleop_log.py` 4 例全绿
+（side_log_path 拆路径、JSONL 写入/空路径禁用、写失败安全、LatencyMeter.snapshot 非破坏）；
+web_monitor test 11 例全绿；`npm run build` tsc+vite 通过；节点 dry_run 冒烟：喂 30 步 1mm
+慢速平移，日志文件产出 wrist/loop/state 记录，loop 记录含 vr/filt/cmd/q/psi_ref/timing/
+ik_fail=0。**用法**：web 勾选记录启动遥操 → `/tmp/teleop_teleop_{left,right}.jsonl`；CLI 直接
+`ros2 launch astral_teleop full_teleop.launch.py ... teleop_log_file:=/tmp/x.jsonl`。
+
 **对齐数据完整修复 `scripts/repair_aligned.py`——弧长匀速化重采样（插补）替代删帧**——
 `astral_ws/scripts`。**动机**：compress_pauses.py（raw 层删帧）会让相邻帧位移变大、动作变
 "跳"，且删帧后时间戳出现 gap（validate W2×100）；用户要求对**对齐后**数据做完整修复，优先
@@ -23,6 +43,17 @@ W3 仅 1、0 fail（W5 armed coverage 为原数据警告与修复无关）；速
 max 5.7°（≤~半帧，插补固有代价）；② `speed_ref` 默认从"每 episode 独立 p90"改 **session 全局
 p90**（预扫描所有 episode 合并，实测独立 p90 跨段差 1.3x 尺度不统一）。修复后 repaired 数据
 重跑（-50.9%）并重转 v3。
+
+**repair_aligned v2 重构：插值→选帧，两个模式严格零错位 + 对抗验证**——`astral_ws/scripts`。
+**动机**：插值（关节弧长插值 + 图像最近帧）无论 argmin 多准都有 ≤半帧弧长的固有 state-图像
+错位（实测 max 5.7°），对精确定位任务（插试管）是训练信号污染。**做法**：resample 改为
+**弧长均匀选帧**——每个重采样点取"弧长最近原始帧"，state/action 与图像**严格同源同一原始帧**
+（零错位）；静止段弧长≈0 被压缩、帧间位移≈speed_ref（速度近似均匀）。代价：相邻新帧可能重复
+（静止段）或快慢不均（原始帧离散），但绝无错位。drop 本就走选帧（同零错位）。新增
+`scripts/verify_aligned.py` 对抗验证工具：断言输出 state 每行精确等于原始某帧（非插值）、图像
+bytes ∈ 原始帧集合（同源）、时间戳严格单调、action=next-state。**验证**：resample(选帧)
+-50.9%、drop -8.4%；**对抗验证 ALL PASS**（repaired 1714 帧 + dropped 2967 帧四断言全过）。
+两模式 v3 重转中。
 
 **训练数据停顿压缩 `scripts/compress_pauses.py`——删掉录制中的长时间停顿/慢速段，让 ACT 学到更流畅的轨迹**——
 `astral_ws/scripts`。**动机**：真机推理的固定卡点（到试管前/夹取后/放置前/释放后）＝ 训练数据里操作员

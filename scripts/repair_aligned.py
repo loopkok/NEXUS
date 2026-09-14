@@ -57,37 +57,33 @@ def _camera_groups(f) -> list[str]:
 def resample_frames(state: np.ndarray, quality: np.ndarray,
                     cam_images: dict, cam_offsets: dict, cam_ts: dict,
                     speed_ref: float, fps: int, state_ts0: float = 0.0):
-    """弧长匀速化重采样：返回 (新 state, 新 action, 新 quality, 时间戳, 相机映射)。
+    """弧长均匀重采样（**选帧**，零错位）：按累计运动量均匀取**原始帧**。
 
-    speed_ref=0 → 取原始速度 p90。返回的新序列每帧弧长 ≈ speed_ref（匀速）。
+    不用关节插值——插值必然造成"关节 vs 图像"错位（关节值在弧长空间插值、图像只能
+    取离散原始帧，两者最多差半帧弧长）。这里每个重采样点取"弧长最近的原始帧"，
+    state/action 与图像**严格同源**（同一原始帧），零错位；同时静止段弧长≈0 被压缩、
+    帧间位移≈speed_ref（速度近似均匀）。代价：相邻新帧可能重复（静止段）或快慢不均
+    （原始帧离散），但绝无 state-图像错位。
+
+    speed_ref=0 → 用调用方算好的全局 p90。返回帧序列 = 原始帧下标 idx 的子集。
     """
-    # 逐帧位移（8 维绝对位移和；含夹爪，夹爪动作也计弧长）
     d = np.abs(np.diff(state, axis=0)).sum(axis=1)          # (N-1,)
     S = np.concatenate([[0.0], np.cumsum(d)])               # (N,) 累计弧长
     S_total = S[-1]
-    if speed_ref <= 0:
-        speed_ref = float(np.percentile(d, 90)) if len(d) else 1.0
     if speed_ref <= 0 or S_total <= 0:
-        speed_ref = 1.0
+        return None
     N_new = max(2, int(round(S_total / speed_ref)))
     s_grid = np.linspace(0.0, S_total, N_new)
-
-    # 关节插值（每维线性）
-    N, D = state.shape
-    state_new = np.empty((N_new, D), dtype=np.float64)
-    for j in range(D):
-        state_new[:, j] = np.interp(s_grid, S, state[:, j])
-
-    # 相机/quality 最近帧：argmin 精确最近（searchsorted 取上界在静止段/边界会
-    # 选到更远的帧，造成图像-关节弧长偏差 max 12.7° > 半帧）。argmin 压回 ≤半帧弧长。
+    # 弧长最近原始帧（argmin；精确对齐到原始帧，零错位）
     idx = np.array([int(np.argmin(np.abs(S - g))) for g in s_grid])
+
+    state_new = state[idx]                                  # 原始帧值（非插值）
     quality_new = quality[idx]
     cam_new = {c: cam_images[c][idx] for c in cam_images}
     off_new = {c: cam_offsets[c][idx] for c in cam_offsets}
     ts_cam_new = {c: cam_ts[c][idx] for c in cam_ts}
 
-    # 匀速时间戳（严格单调，无 gap）：帧间隔 = 1/fps 秒（匀速运动 → 时间均匀），
-    # 起点对齐原首帧。注意不是 s_grid/speed_ref（那是弧长单位，会得到帧索引）。
+    # 匀速时间戳（帧间隔 = 1/fps 秒；严格单调）
     timestamps_new = float(state_ts0) + np.arange(N_new) / fps
     # next-state action
     action_new = np.vstack([state_new[1:], state_new[-1]])
@@ -148,6 +144,14 @@ def repair_episode(ep_dir: str, out_ep_dir: str, method: str,
     if method == "resample":
         r = resample_frames(state, quality, cam_images, cam_offsets, cam_ts,
                             speed_ref, fps, state_ts0)
+        if r is None:  # 纯静止/退化 episode：无法重采样，原样复制
+            if not dry_run:
+                for fname in ("aligned_data.h5", "robot_data.h5", "camera_data.h5", "meta.json"):
+                    p = os.path.join(ep_dir, fname)
+                    if os.path.exists(p):
+                        shutil.copy2(p, os.path.join(out_ep_dir, fname))
+            return {"episode": os.path.basename(ep_dir), "frames": len(state),
+                    "kept": len(state), "pct": 0.0}
         state_new, action_new, quality_new, ts_new, idx, cam_new, off_new, ts_cam_new = r
     else:
         r = drop_frames(state, quality, cam_images, cam_offsets, cam_ts,
