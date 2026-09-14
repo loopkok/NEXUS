@@ -126,9 +126,12 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 
 ```bash
 /usr/bin/python3 astral_ws/scripts/plot_inference_curves.py \
-    --log /tmp/pi_cmds.jsonl --out /tmp/pi_curves.png
-# 输出：7 臂关节 state vs command 曲线 + 动作步长 + 夹爪 PNG；
-# 终端：state↔command 错位时间（互相关）、动作步长分布与 >0.1rad 尖峰
+    --log /tmp/pi_cmds.jsonl --out /tmp/pi_curves.png \
+    --metrics /tmp/pi_metrics.jsonl   # 可选：engine.plans 递增处 = 换 chunk 边界
+# 输出：7 臂关节 state vs command 曲线 + 动作步长 + 夹爪 PNG（步长面板红点=尖峰、
+#   绿虚线=换 chunk）；终端：state↔command 错位时间（互相关）、动作步长分布与
+#   >阈值尖峰，每个尖峰标「距最近重规划」（判换 chunk）+ 类型（收敛拉回 = command
+#   一步追向 state；模型突变 = 主动跳离）。--self-test 合成数据自测分类逻辑。
 ```
 另可用（传感器话题**必须**加 QoS flag，否则收 0 条）：
 

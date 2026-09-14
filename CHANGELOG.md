@@ -2,6 +2,21 @@
 
 ## 2026-09-14
 
+**`plot_inference_curves.py` 升级：尖峰换 chunk 关联 + 收敛拉回/模型突变分类**——
+`astral_ws/scripts`。**动机**：真机诊断（temporal_ensemble + async_prefetch_ahead=25 +
+control_interp=1，801 行 / 26.8s 实测）发现 7 个 >0.1 rad 尖峰**全部落在换 chunk 边界**
+（行号 %25≈3，metrics `engine.plans` 递增处 ±0.5s 内 7/7），且多数是**收敛拉回**——command
+长期偏离 state（开环 chunk 预测漂移），重规划时新预测一步猛追回真实位置。**做法**：脚本
+新增 `--metrics`（读 `engine.plans` 递增处 = 换 chunk 时刻）→ 每个尖峰标「距最近重规划」
+（判是否换 chunk）；按「跳变后 command 距 state」分类——`< 0.6×步长` = 收敛拉回、否则
+模型突变；步长面板红点标尖峰（橙=收敛/红=模型突变）+ 绿虚线标换 chunk；`--self-test`
+合成数据自测分类逻辑（行20 收敛拉回+换chunk、行50 模型突变+非换chunk 全 PASS）。
+**验证**：真实 pi_cmds.jsonl + pi_metrics.jsonl——7/7 换chunk、**6/7 收敛拉回**（cmd-state
+0.003~0.055）、1/7 模型突变（行578 cmd-state≈步长，主动跳离），与人工逐条核对一致。
+**诊断结论**：残留尖峰 = 换 chunk 时收敛拉回，temporal_ensemble 边界融合只把新旧 chunk
+差异减半未消除；对症 `control_interp=2/3`（插值细粒度，追 state 逐步逼近）+ 
+`async_prefetch_ahead=40`（每 10 步更勤重规划，预测漂移积累更少）。
+
 **推理时间曲线诊断：joint_stream_log 同轴记录 state + `plot_inference_curves.py`**——
 `astral_policy_inference`。**需求**：真机推理时查看 state/action 时间曲线、state↔action
 错位时间、输出动作平滑度。**做法**：① 节点 `joint_stream_log_file` 每行指令值之外**同轴
