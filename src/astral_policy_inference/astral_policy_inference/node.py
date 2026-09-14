@@ -212,6 +212,11 @@ class PolicyNode(Node):
             # ACT 时序融合系数（借鉴 lerobot ACTTemporalEnsembler）：>0 时换 chunk
             # 做指数加权平均消除边界跳变（ACT 推荐 0.01）；0 = 关闭。yaml 默认 0.01。
             "temporal_ensemble_coeff": 0.0,
+            # 换 chunk 切换平滑：安装时续播起点偏离"正在执行的旧 command" >tol rad →
+            # 前 blend 行从旧值平滑过渡到新轨迹（消除收敛拉回/模型突变的切换尖峰）。
+            # 0 = 关闭。yaml 默认 0.05（开启）。
+            "chunk_anchor_tol": 0.0,
+            "chunk_anchor_blend": 4,
             # 重规划/融合的重叠行数（剩余多少行时触发重规划，与旧尾段融合）。
             # 每 (action_chunk − async_prefetch_ahead) 步融合一次。0 = 自动 (chunk//2)。
             "async_prefetch_ahead": 0,
@@ -532,6 +537,12 @@ class PolicyNode(Node):
             ),
             temporal_ensemble_coeff=float(
                 self.get_parameter("temporal_ensemble_coeff").value
+            ),
+            chunk_anchor_tol=float(
+                self.get_parameter("chunk_anchor_tol").value
+            ),
+            chunk_anchor_blend=int(
+                self.get_parameter("chunk_anchor_blend").value
             ),
             async_prefetch_ahead=(
                 int(self.get_parameter("async_prefetch_ahead").value)

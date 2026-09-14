@@ -417,5 +417,54 @@ class TestLockFreeInfer(unittest.TestCase):
         eng.stop()
 
 
+class TestChunkAnchor(unittest.TestCase):
+    """换 chunk 切换平滑（chunk_anchor_tol>0）：续播起点偏离"正在执行的旧 command"
+    >tol 时，前 blend 行从旧值平滑过渡到新轨迹——消除收敛拉回/模型突变两类切换尖峰。
+    起点必须是旧 command 当前行（不是实测 state）：收敛拉回型跳后新 chunk[i0]≈state、
+    dev<tol 不触发，真正跳的是旧 command 漂移量。"""
+
+    def _engine(self, tol=0.05, blend=4):
+        eng, _ = make_engine(mode="queue_async", chunk=50,
+                             chunk_anchor_tol=tol, chunk_anchor_blend=blend)
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng._install(np.zeros((50, DIM)), 0, snap_i=0, consumed=0)  # 首次 chunk（全零）
+        eng._i = 20                                                 # 已消费 20 行
+        return eng
+
+    def test_blends_from_old_command_when_switch_jumps(self):
+        """旧 command 漂移 0.5 vs 新 chunk[i0]=0.8（切换差 0.3）：首拍≈旧值平滑过渡，
+        不产生一步跳；blend 之外恢复新 chunk 原值。"""
+        eng = self._engine()
+        eng._chunk[20, 0] = 0.5            # 旧 command 当前行 joint0 已漂移到 0.5
+        new = np.zeros((50, DIM)); new[:, 0] = 0.8
+        eng._install(new, 0.1, snap_i=20, consumed=3)   # i0=3 → chunk[3,0]=0.8
+        # 首拍 blend：w=1/(4+1)=0.2 → chunk[3] = 0.5 + 0.2×0.3 = 0.56（几乎旧值，不跳）
+        self.assertAlmostEqual(eng._chunk[3, 0], 0.56, places=6)
+        # 第 4 行收尾：w=4/5 → 0.74
+        self.assertAlmostEqual(eng._chunk[6, 0], 0.74, places=6)
+        # blend 之外恢复新 chunk 原值
+        self.assertAlmostEqual(eng._chunk[7, 0], 0.8, places=9)
+        self.assertEqual(eng._i, 3)
+        eng.stop()
+
+    def test_noop_within_tol(self):
+        """切换差 0.02 < tol 0.05：正常跟随差不触发，新 chunk 原样安装。"""
+        eng = self._engine()
+        eng._chunk[20, 0] = 0.78
+        new = np.zeros((50, DIM)); new[:, 0] = 0.8
+        eng._install(new, 0.1, snap_i=20, consumed=3)
+        self.assertAlmostEqual(eng._chunk[3, 0], 0.8, places=9)  # 未 blend
+        eng.stop()
+
+    def test_disabled_when_tol_nonpositive(self):
+        """tol<=0 关闭：即使切换差大也不 blend（硬切换，行为不变）。"""
+        eng = self._engine(tol=0.0)
+        eng._chunk[20, 0] = 0.5
+        new = np.zeros((50, DIM)); new[:, 0] = 0.8
+        eng._install(new, 0.1, snap_i=20, consumed=3)
+        self.assertAlmostEqual(eng._chunk[3, 0], 0.8, places=9)
+        eng.stop()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

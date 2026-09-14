@@ -58,6 +58,7 @@
 | ACT 后端一次 infer 只回 1 行，引擎分块/预取/网络全浪费 | `InprocBackend.infer` 走 `select_action`（内部 50 行队列逐行吐），引擎拿不到完整 chunk | **方案 A**：改 `predict_action_chunk` 一次返回完整 chunk（`temporal_ensemble_coeff` 非 None 回退 select_action）；图像上传从每行一次变每 chunk 一次（-96%），queue_async 达 30Hz，loop 7.9→1.26ms |
 | 后端把 delta 当绝对返回（openpi server 漏 AbsoluteActions/错 checkpoint），Jetson 静默跳到错误目标 | 节点信任 backend「返回绝对」契约，无语义断言；安全层 `joint_limits` 也未填充（只有 slew 限速） | **绝对语义守卫** `abs_action_min_scale`：机器人离开零位（|state|>1 臂维）时 chunk 首行量级不得塌缩（arm_scale≥0.5），否则 PolicyError→安全 stop；3 例单测 |
 | 真机换 chunk 时"冲一下"（固定时刻 hold→lunge，pi_cmds 实测 106~149ms 空档后接 0.1~0.15 rad 步） | `_run_plan` 锁跨 `backend.infer()` 持有，慢推理（远程网络 ~120ms）堵住控制线程 `tick()` → 指令断流；且 `i0=round(latency_ms×fps)` 按"机器人前进了"估算，但锁内推理时机器人实际没动 → 超前跳 | **推理移出引擎锁**（锁内快照 obs + `_i_snap` 锚点 → 锁外 infer → 锁内安装）；续播索引用**实测 `consumed = _i − _i_snap`**；时序融合锚点用 `_i_snap`。queue_sync 的 `_plan_blocking` 外层仍持锁（阻塞语义不变）。3 例回归：慢推理不堵 tick、从 new[consumed] 续播、融合锚点对齐 |
+| 换 chunk 后 2-3 行仍出现 0.1-0.2 rad 尖峰（temporal_ensemble 已开，pi_cmds 实测 7 个全在换 chunk 边界） | 时序融合只平滑"新旧预测"，不平滑"预测 vs 执行"——旧 command 开环 chunk 内漂移（观测过时 + 预测漂移），重规划时新预测一步追向实测（收敛拉回，跳后新 chunk[i0]≈state、cmd-state 0.003~0.055）；起点用"实测"的 blend 对收敛拉回无效（dev<tol） | **`chunk_anchor_tol` 切换平滑**（默认 0.05，yaml 开）：安装时续播起点偏离**正在执行的旧 command** >tol → 前 `chunk_anchor_blend`(4) 行从旧值线性过渡到新轨迹。真实数据离线模拟：7 尖峰 0.1-0.2 → ≤0.04 rad。3 例单测（旧值起步 blend / tol 内不触发 / 关闭） |
 
 ## 代码路径速查
 
@@ -68,6 +69,8 @@ node.py      policy_node：参数/schema → 布局/后端 → 引擎 → 100Hz 
 engine.py    queue_sync 阻塞重填；queue_async 后台预取；rtc 后台滚切尾段（min_tail）
              TemporalEnsembler：ACT 时序融合（借鉴 lerobot ACTTemporalEnsembler），
              参数 temporal_ensemble_coeff>0 时换 chunk 加权平均消切换跳变；0=关
+             chunk_anchor_tol：切换平滑（续播起点偏离旧 command>tol 时前 blend 行
+             从旧值过渡到新轨迹，消收敛拉回/模型突变尖峰）；0=关
 backend.py   make_backend(backend_type=remote|inproc|stub, model=act|pi05|...)；
              RemoteBackend(远程 client) / InprocBackend(本地进程内) / StubBackend
 client.py    自包含 websocket client + vendored __ndarray__ 序列化（无 openpi_client 依赖）

@@ -113,6 +113,8 @@ class ActionEngine:
         autostart: bool = True,
         abs_action_min_scale: float = 0.5,
         temporal_ensemble_coeff: float = 0.0,
+        chunk_anchor_tol: float = 0.0,
+        chunk_anchor_blend: int = 4,
     ):
         if mode not in ("queue_sync", "queue_async", "rtc"):
             raise ValueError(f"mode={mode!r} not in queue_sync|queue_async|rtc")
@@ -132,6 +134,12 @@ class ActionEngine:
             if self.temporal_ensemble_coeff > 0
             else None
         )
+        # 换 chunk 切换平滑：安装时若续播起点（融合后 chunk[i0]）偏离正在执行的旧
+        # command >chunk_anchor_tol rad，把前 chunk_anchor_blend 行从旧值平滑过渡到
+        # 新轨迹——消除"观测过时/预测漂移 → 换 chunk 一步追向实测"的收敛跳变。
+        # <=0 关闭（硬切换）；blend=过渡行数（@30Hz 每行 33ms）。
+        self.chunk_anchor_tol = float(chunk_anchor_tol)
+        self.chunk_anchor_blend = int(max(1, chunk_anchor_blend))
         self.async_prefetch_ahead = (
             int(async_prefetch_ahead)
             if async_prefetch_ahead is not None
@@ -425,6 +433,14 @@ class ActionEngine:
         tail = full[:rows]
         anchor = snap_i if snap_i is not None else self._i
         was_moving = self._chunk is not None and anchor < len(self._chunk)
+        # 安装前"正在执行的旧 command 当前行"——blend 起点。切换尖峰的本质是
+        # 旧 command（开环 chunk 内漂移/过时）→ 新 chunk[i0] 的瞬间差；从旧值起步
+        # 过渡到新轨迹，把切换差摊到 nblend 行，直接消除指令流不连续。
+        old_row = (
+            self._chunk[self._i].copy()
+            if self._chunk is not None and self._i < len(self._chunk)
+            else None
+        )
         if self.mode != "queue_sync" and was_moving:
             # 续播索引 = 推理期间实际消费的行数（对齐到机器人真实位置）
             i0 = int(np.clip(consumed, 0, max(0, rows - 1)))
@@ -440,6 +456,25 @@ class ActionEngine:
             )
         else:
             self._chunk = tail
+        # 换 chunk 实测对齐（切换平滑）：续播起点 chunk[i0] 偏离"正在执行的旧 command"
+        # >tol 时，前 blend 行从旧值平滑过渡到新轨迹——首拍≈旧值、逐步追 chunk，
+        # 消除收敛拉回/模型突变两类切换尖峰（旧的"从实测 state 起步"对收敛拉回无效——
+        # 该类跳后新 chunk[i0]≈state、dev<tol 不触发；真正跳的是旧 command 漂移量）。
+        if (
+            self.chunk_anchor_tol > 0
+            and was_moving
+            and old_row is not None
+            and self._chunk.shape[0] > i0
+            and self._chunk.shape[1] == old_row.shape[0]
+        ):
+            dev = float(np.abs(self._chunk[i0] - old_row).max())
+            if dev > self.chunk_anchor_tol:
+                nblend = int(min(self.chunk_anchor_blend, self._chunk.shape[0] - i0))
+                for k in range(1, nblend + 1):
+                    w = k / (nblend + 1)
+                    self._chunk[i0 + k - 1] = (
+                        old_row + w * (self._chunk[i0 + k - 1] - old_row)
+                    )
         self._i = i0
         self._pops_since_install = 0
         self._plans += 1

@@ -43,6 +43,7 @@ def _node(context):
     camera_image_size = LaunchConfiguration("camera_image_size").perform(context)
     engine_mode = LaunchConfiguration("engine_mode").perform(context)
     temporal_ensemble_coeff = LaunchConfiguration("temporal_ensemble_coeff").perform(context)
+    chunk_anchor_tol = LaunchConfiguration("chunk_anchor_tol").perform(context)
     async_prefetch_ahead = LaunchConfiguration("async_prefetch_ahead").perform(context)
     metrics_log_file = LaunchConfiguration("metrics_log_file").perform(context)
     joint_stream_log_file = LaunchConfiguration("joint_stream_log_file").perform(context)
@@ -65,6 +66,8 @@ def _node(context):
         parameters.append({"engine_mode": engine_mode})
     if temporal_ensemble_coeff:
         parameters.append({"temporal_ensemble_coeff": float(temporal_ensemble_coeff)})
+    if chunk_anchor_tol:
+        parameters.append({"chunk_anchor_tol": float(chunk_anchor_tol)})
     if async_prefetch_ahead:
         parameters.append({"async_prefetch_ahead": int(async_prefetch_ahead)})
     if metrics_log_file:
@@ -107,6 +110,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "temporal_ensemble_coeff", default_value="",
                 description=">0 开启 ACT 时序融合（换 chunk 加权平均，消切换跳变；0=关）"),
+            DeclareLaunchArgument(
+                "chunk_anchor_tol", default_value="",
+                description=">0 换 chunk 切换平滑（续播起点偏离旧 command >tol 时前 blend 行过渡；0=关）"),
             DeclareLaunchArgument(
                 "async_prefetch_ahead", default_value="",
                 description="重规划/融合重叠行数（每 action_chunk−N 步融合一次；0=自动 chunk//2）"),

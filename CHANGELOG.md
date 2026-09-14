@@ -2,6 +2,19 @@
 
 ## 2026-09-14
 
+**换 chunk 切换平滑 `chunk_anchor_tol`——消除收敛拉回/模型突变切换尖峰**——
+`astral_policy_inference`。**症状**：temporal_ensemble 已开仍残留换 chunk 尖峰（真实
+pi_cmds 7 个 >0.1 rad 全在换 chunk 边界，多收敛拉回）。**根因**：时序融合只平滑"新旧
+预测"，不平滑"预测 vs 执行"——旧 command 开环 chunk 内漂移（重规划观测过时 ~130-160ms +
+预测漂移累积），重规划时新预测一步追向实测（收敛拉回，跳后新 chunk[i0]≈state）；初版"从
+实测 state blend"对收敛拉回无效（跳后 dev<tol 不触发），真正跳的是**旧 command 漂移量**。
+**做法**：`_install` 加 `chunk_anchor_tol`（yaml 默认 0.05，>0 开）——续播起点偏离
+**正在执行的旧 command** >tol 时，前 `chunk_anchor_blend`（默认 4）行从旧值线性过渡到
+新轨迹，切换差摊到 nblend 行；node/yaml/launch 全链路透传。**验证**：3 例单测（旧值起步
+blend=0.56/0.74/0.8、tol 内不触发、关闭硬切换）；**真实数据离线模拟**（对 pi_cmds 7 个尖峰
+应用 blend=4/tol=0.05）——0.1-0.2 rad → **全部 ≤0.04 rad**（<0.1 阈值）；全套件 99→**102
+例**全绿。README/CLAUDE.md 同步。
+
 **`plot_inference_curves.py` 升级：尖峰换 chunk 关联 + 收敛拉回/模型突变分类**——
 `astral_ws/scripts`。**动机**：真机诊断（temporal_ensemble + async_prefetch_ahead=25 +
 control_interp=1，801 行 / 26.8s 实测）发现 7 个 >0.1 rad 尖峰**全部落在换 chunk 边界**
