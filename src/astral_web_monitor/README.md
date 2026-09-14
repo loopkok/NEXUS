@@ -98,7 +98,7 @@
 | GET | `/api/v1/presets` | 启动预设列表 |
 | GET | `/api/v1/state` | 当前快照（同步，含 health + state_rates_hz） |
 | GET | `/api/v1/logs` | Launch 环形缓冲全量（默认 8000 行；WS `log_tail` 只推尾 800） |
-| POST | `/api/v1/start` | `{preset: "..."}` 启动指定预设（只把遥操栈拉起来；使能交给 driver auto_ready/一键就绪——曾自动等 `~/enable` 导致启动即 503，已回退） |
+| POST | `/api/v1/start` | `{preset: "...", log?: bool}` 启动指定预设（只把遥操栈拉起来；使能交给 driver auto_ready/一键就绪——曾自动等 `~/enable` 导致启动即 503，已回退）。`log:true` 且预设属 astral_teleop/astral_arm_teleop 时注入 `teleop_log_file=/tmp/teleop_teleop.jsonl`（双臂按侧拆 `_left/_right`） |
 | POST | `/api/v1/stop` | SIGINT 停止 launch（30s 超时 SIGKILL） |
 | POST | `/api/v1/pause` | 发 `/teleop/disarm`（软暂停，节点保持运行） |
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
@@ -183,7 +183,7 @@ stopped ──start──► starting ──2s暖机──► running
 |-----|------|
 | 监控 | **数据采集卡片**（录制控制 + 任务文本 + 实时状态，见下）+ 4 个关节面板（左/右臂、左夹爪、右灵巧手）+ 指令频率 chips + 实时折线图（指令 Hz、臂关节0 角度） |
 | 健康 | 总体徽标 + 每实体卡片（状态流 Hz / 指令流 Hz / 期望 / 数据龄期 / ok·slow·stale） |
-| 系统 | 预设管理（启动/停止/重启/**HOME**）+ **机器人模式**（一键就绪/归零/位置保持/阻尼释放/急停断电）+ **管线延迟**（mocap stamp / IK 求解 / VR→指令端到端，左右臂）+ **视频回传**（总开关/路数下拉/逐路勾选/设备在线点/**实时画面预览**）+ Launch 日志控制台（70vh，复制/下载全量缓冲） |
+| 系统 | 预设管理（启动/停止/重启/**HOME** + **「记录遥操日志」勾选框**→ 启动遥操预设时落 `/tmp/teleop_teleop_{left,right}.jsonl` 诊断 JSONL）+ **机器人模式**（一键就绪/归零/位置保持/阻尼释放/急停断电）+ **管线延迟**（mocap stamp / IK 求解 / VR→指令端到端，左右臂）+ **视频回传**（总开关/路数下拉/逐路勾选/设备在线点/**实时画面预览**）+ Launch 日志控制台（70vh，复制/下载全量缓冲） |
 
 - **视频回传卡片**：调 `quest3_video_streamer` 的运行时门控（`~/set_push_enabled` + latched `~/active_cameras`）。总开关关掉后所有轨发 2fps 黑帧（几乎不占带宽，Quest 面板变黑）；逐路勾选决定哪些相机推流；「路数」下拉是快捷选择（选 n = 勾前 n 路，逐路勾选后显示"自定义"）。**相机列表不写死**：streamer 默认 `auto_scan` 自动扫描主机采集设备（label = `videoN`），卡片在线时显示其扫描结果（含 `/dev/videoN` 与 sysfs 设备名，未接置灰）；**离线时卡片自行扫描主机设备，可预选**——latched 话题会在 streamer 启动后生效（总开关服务需在线）。在线判定看 `~/gate_state` 是否还有活发布者，streamer 死掉会正确显示"离线"。启动后才插入的相机需重启栈进入 track 集合。**实时画面**：勾选「实时画面」后，在线且勾选的每路相机显示 MJPEG 实时预览（streamer 抽帧 10fps/640宽/q65 JPEG，独立线程编码经 `~/preview/{label}` 转发，延迟约 0.2~0.4s，仅供监控；取消勾选的路预览同步停止，不勾不耗资源）
 

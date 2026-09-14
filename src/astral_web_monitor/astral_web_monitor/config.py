@@ -193,6 +193,12 @@ PI_COMMANDS = ("policy", "playback", "pause", "resume", "takeover", "release", "
 PI_METRICS_LOG_DEFAULT = "/tmp/pi_metrics.jsonl"
 PI_JOINT_LOG_DEFAULT = "/tmp/pi_cmds.jsonl"
 
+# --- astral_arm_teleop（遥操诊断日志）-----------------------------------------
+# 预设启动勾选「记录遥操日志」时注入的共享基路径；双臂 launch 按侧拆 _left/_right。
+# 节点记录 kind=loop/wrist/state/body/metrics 的 JSON 行（见 teleop_log.py）。
+# 只对声明了 teleop_log_file 参数的 launch 预设注入（launch_manager.preset_with_teleop_log）。
+TELEOP_LOG_DEFAULT = "/tmp/teleop_teleop.jsonl"
+
 
 def policy_launch_args(cfg: dict) -> dict[str, str]:
     """web 推理配置 → policy_inference.launch.py 显式参数（k:=v，str→str）。

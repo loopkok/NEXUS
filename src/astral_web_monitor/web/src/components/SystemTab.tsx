@@ -15,6 +15,9 @@ interface Props {
 
 export function SystemTab({ state, presets, onAction }: Props) {
   const [selected, setSelected] = useState('')
+  // 记录遥操诊断日志（VR/滤波/命令/计数 → /tmp/teleop_teleop_{left,right}.jsonl）。
+  // 仅对 astral_teleop / astral_arm_teleop 预设生效（其余预设后端不注入）。
+  const [log, setLog] = useState(false)
   // 数采预设走独立泳道（监控 tab 卡片上的节点启停），不占遥操主泳道。
   const teleopPresets = presets.filter((p) => p.package !== 'astral_data_collect')
   const eff = selected || teleopPresets[0]?.name || ''
@@ -54,7 +57,11 @@ export function SystemTab({ state, presets, onAction }: Props) {
               <option key={p.name} value={p.name}>{p.name}</option>
             ))}
           </select>
-          <button style={btn('#22c55e')} disabled={!canStart || !eff} onClick={() => run(() => api.start(eff), `启动 ${eff}`)}>
+          <label style={logStyle} title="启动遥操时把诊断数据（VR/滤波/命令/计数）写到 /tmp/teleop_teleop_{left,right}.jsonl（仅遥操预设）">
+            <input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} />
+            <span>记录遥操日志</span>
+          </label>
+          <button style={btn('#22c55e')} disabled={!canStart || !eff} onClick={() => run(() => api.start(eff, log), `启动 ${eff}`)}>
             启动
           </button>
           <button style={btn('#ef4444')} disabled={!canStop} onClick={stop}>
@@ -148,6 +155,14 @@ const selectStyle: React.CSSProperties = {
   padding: '6px 10px',
   fontSize: '13px',
   minWidth: '180px',
+}
+const logStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '5px',
+  color: '#9ca3af',
+  fontSize: '12px',
+  cursor: 'pointer',
 }
 const btn = (color: string): React.CSSProperties => ({
   background: color,

@@ -2,6 +2,12 @@
 
 ## 2026-09-14
 
+**真机推理调参：`async_prefetch_ahead` 25→5、`control_interp` 2→3**——`astral_policy_inference`。
+yaml 生效参数调整（配合时序融合/切换平滑实测）：prefetch=5（每 45 步重规划，重规划 ~0.7Hz——
+更少推理、网络压力更小；观测新鲜度略降但融合/锚点已兜住）；control_interp=3（90Hz 插值下发，
+30Hz 大步再拆细）。serve_policy.env checkpoint 指回 pickup_act_480/080000（部署目标模型）。
+数值为真机 A/B 可调项，改 launch 参数或 yaml 生效。
+
 **遥操诊断 JSONL 日志 + web 记录开关**——`astral_arm_teleop` × `astral_web_monitor`。
 **动机**：慢速平移"停一下走一下"卡顿排查需要遥操链路逐级数据（VR 原始 / 滤波 / 命令 /
 实测关节 / 人肘 psi / IK 计数），此前只能靠 tune 话题实时看或 `ros2 topic echo`。照
@@ -17,9 +23,12 @@ web：预设启动请求 `StartRequest` 加 `log` 字段，System tab 启动按�
 勾选框（仅 astral_teleop/astral_arm_teleop 预设生效，注入
 `teleop_log_file:=/tmp/teleop_teleop.jsonl`）。**验证**：新 `test_teleop_log.py` 4 例全绿
 （side_log_path 拆路径、JSONL 写入/空路径禁用、写失败安全、LatencyMeter.snapshot 非破坏）；
-web_monitor test 11 例全绿；`npm run build` tsc+vite 通过；节点 dry_run 冒烟：喂 30 步 1mm
-慢速平移，日志文件产出 wrist/loop/state 记录，loop 记录含 vr/filt/cmd/q/psi_ref/timing/
-ik_fail=0。**用法**：web 勾选记录启动遥操 → `/tmp/teleop_teleop_{left,right}.jsonl`；CLI 直接
+web_monitor test 11→**15 例**全绿（新 `test_teleop_log_preset.py` 覆盖白名单注入/非白名单跳过/
+空路径跳过/源预设不被改）；`npm run build` tsc+vite 通过。**诚实备注**：本开发机 ROS 是
+py3.13 构建（`_rclpy_pybind11.cpython-313`），`/usr/bin/python3`(3.10) 导不进 rclpy，节点级
+dry_run 冒烟**未能在本机跑**——须在真机/Jetson 上验证：起节点 + `teleop_log_file:=/tmp/x.jsonl`
+后喂腕位，`kind=loop/wrist/state` 记录应落盘、`ik_fail=0`。**用法**：web 勾选记录启动遥操 →
+`/tmp/teleop_teleop_{left,right}.jsonl`；CLI 直接
 `ros2 launch astral_teleop full_teleop.launch.py ... teleop_log_file:=/tmp/x.jsonl`。
 
 **对齐数据完整修复 `scripts/repair_aligned.py`——弧长匀速化重采样（插补）替代删帧**——

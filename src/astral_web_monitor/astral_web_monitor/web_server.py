@@ -32,6 +32,7 @@ from .launch_manager import (
     STOPPED,
     Preset,
     load_presets,
+    preset_with_teleop_log,
 )
 from .monitor_node import get_node, init_node, shutdown_node
 from .schemas import (
@@ -216,6 +217,10 @@ async def start(req: StartRequest) -> ApiEnvelope:
     preset = _presets.get(req.preset)
     if preset is None:
         raise HTTPException(status_code=404, detail=f"未知预设: {req.preset}")
+    if req.log:
+        # 遥操日志开关：给白名单预设注入 teleop_log_file（副本，不改 presets.yaml 源）。
+        # 双臂 launch 会把共享基路径按侧拆成 _left/_right。
+        preset = preset_with_teleop_log(preset, config.TELEOP_LOG_DEFAULT)
     ok, msg = _launch_mgr.start(preset)
     if not ok:
         raise HTTPException(status_code=409, detail=msg)

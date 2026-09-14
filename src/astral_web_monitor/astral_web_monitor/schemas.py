@@ -18,6 +18,9 @@ class ApiEnvelope(BaseModel):
 
 class StartRequest(BaseModel):
     preset: str
+    # 勾选则给遥操预设注入 teleop_log_file（仅 astral_teleop/astral_arm_teleop 预设，
+    # 落 /tmp/teleop_teleop_{left,right}.jsonl；见 config.TELEOP_LOG_*）
+    log: bool = False
 
 
 class PresetInfo(BaseModel):

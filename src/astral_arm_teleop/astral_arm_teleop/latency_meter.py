@@ -34,6 +34,24 @@ class LatencyMeter:
     def has_samples(self) -> bool:
         return bool(self._ms) or bool(self._counts)
 
+    def snapshot(self) -> dict:
+        """Non-destructive window summary (ms stats + counts) for jsonl metrics."""
+        ms = {}
+        for name in self._ms:
+            xs = self._ms[name]
+            if not xs:
+                continue
+            n = len(xs)
+            mean = sum(xs) / n
+            xs_sorted = sorted(xs)
+            ms[name] = {
+                "mean": round(mean, 2),
+                "p95": round(xs_sorted[min(n - 1, int(n * 0.95))], 2),
+                "max": round(xs_sorted[-1], 2),
+                "n": n,
+            }
+        return {"ms": ms, "counts": dict(self._counts)}
+
     def format_and_reset(self) -> str:
         parts: List[str] = []
         for name in self._ms:

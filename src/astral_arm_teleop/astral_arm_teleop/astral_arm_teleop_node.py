@@ -38,6 +38,7 @@ from astral_arm_teleop.ik.factory import make_single_arm_ik
 from astral_arm_teleop.latency_meter import LatencyMeter, stamp_age_ms
 from astral_arm_teleop.pose_processor import PoseProcessor
 from astral_arm_teleop.safety_filter import SafetyFilter
+from astral_arm_teleop.teleop_log import TeleopJsonlLog
 
 _LEFT_NAMES = [
     "left_shoulder_pitch",
@@ -181,6 +182,9 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("init_timeout", 15.0)
         self.declare_parameter("print_latency", True)
         self.declare_parameter("latency_print_interval", 2.0)
+        # 遥操诊断 JSONL 日志（kind=loop/wrist/state/body/metrics 记录）。
+        # 空串 = 关闭（零开销）；非空 = 行缓冲追加写，写失败不影响控制流。
+        self.declare_parameter("teleop_log_file", "")
         self.declare_parameter("publish_tune", True)
         # Human arm-angle prior from Quest body tracking (geometric solver
         # only): body_joints {side}-arm-upper/-lower give the human upper-arm
@@ -436,6 +440,13 @@ class AstralTeleopArmNode(Node):
         self._lat = LatencyMeter(
             float(self.get_parameter("latency_print_interval").value)
         )
+        self._tlog = TeleopJsonlLog(
+            str(self.get_parameter("teleop_log_file").value or "")
+        )
+        if self._tlog.enabled:
+            self.get_logger().info(
+                f"[{self.side}] teleop jsonl log -> {self._tlog.path}"
+            )
         self.create_timer(self.dt, self._loop)
         solver_name = getattr(self.ik, "method_name", type(self.ik).__name__)
         n_via = max(0, len(self._homing_path) - 1)
@@ -552,6 +563,7 @@ class AstralTeleopArmNode(Node):
                     "control_rate",
                     "move_to_init_pose",
                     "init_speed_percent",
+                    "teleop_log_file",
                 ):
                     result.successful = False
                     result.reason = f"{name} cannot be changed at runtime"
@@ -953,6 +965,16 @@ class AstralTeleopArmNode(Node):
             self.state_q = np.asarray(msg.position[:7], dtype=float)
             self._got_state = True
             self._state_t = time.monotonic()
+            if self._tlog.enabled:
+                # 实测关节事件：命令→实体执行链分析（到达率 + 每帧实测 q）。
+                self._tlog.write(
+                    {
+                        "kind": "state",
+                        "t": time.time(),
+                        "side": self.side,
+                        "q": [float(v) for v in msg.position[:7]],
+                    }
+                )
 
     def _reanchor_srv(
         self, _req: Trigger.Request, resp: Trigger.Response
@@ -1022,6 +1044,19 @@ class AstralTeleopArmNode(Node):
             age = stamp_age_ms(msg.header.stamp)
             if 0.0 <= age < 5000.0:
                 self._lat.add("vr_rx", age)
+        if self._tlog.enabled:
+            # 原始 VR 腕位事件：分析上游阶梯/停帧/到达率用（与 loop 记录对齐 wall 时钟）。
+            self._tlog.write(
+                {
+                    "kind": "wrist",
+                    "t": time.time(),
+                    "side": self.side,
+                    "pos": pos.tolist(),
+                    "quat": [float(v) for v in q],
+                    "age_ms": round(stamp_age_ms(msg.header.stamp), 2),
+                    "frame": msg.header.frame_id,
+                }
+            )
 
     # ---- Human elbow prior (Quest body tracking -> geometric arm angle) ----
 
@@ -1104,6 +1139,21 @@ class AstralTeleopArmNode(Node):
             if nv > 1e-6:  # keep last good dir if EMA degenerates
                 self._elbow_dir_vr = v / nv
         self._elbow_dir_t = now
+        if self._tlog.enabled:
+            # 人肘方向事件：臂角 psi 源（到达率 + 原始/EMA 方向，供 psi 台阶分析）。
+            self._tlog.write(
+                {
+                    "kind": "body",
+                    "t": time.time(),
+                    "side": self.side,
+                    "elbow_dir": [float(v) for v in d],
+                    "elbow_dir_ema": (
+                        [float(v) for v in self._elbow_dir_vr]
+                        if self._elbow_dir_vr is not None
+                        else None
+                    ),
+                }
+            )
 
     def _human_psi_ref(self, T_flange: np.ndarray) -> Optional[float]:
         """Arm-angle prior (rad) from the latest human elbow direction."""
@@ -1155,6 +1205,7 @@ class AstralTeleopArmNode(Node):
         t_loop = time.perf_counter()
         if self._print_latency and self._last_vr_t > 0:
             self._lat.add("vr_age", (now - self._last_vr_t) * 1000.0)
+        vr_age_ms = (now - self._last_vr_t) * 1000.0 if self._last_vr_t > 0 else None
 
         dp, dr = self.pose.process(dt)
         T_tcp = self.pose.compute_target_pose(
@@ -1166,10 +1217,12 @@ class AstralTeleopArmNode(Node):
         r_req = float(np.linalg.norm(p_req))
         if self._print_latency:
             self._lat.add("ee_r", r_req * 1000.0, unit="mm")
+        clip = {"ws_clip": 0, "reach_clip": 0}
         p_ws = self.safety.check_workspace(p_req)
         if not np.allclose(p_ws, p_req, atol=1e-9):
             T_flange[:3, 3] = p_ws
             T_tcp = T_flange @ self._T_flange_to_tcp
+            clip["ws_clip"] = 1
             if self._print_latency:
                 self._lat.count("ws_clip")
         # Soft wall at full elbow extension: clamp the wrist target to the
@@ -1183,6 +1236,7 @@ class AstralTeleopArmNode(Node):
                 T_flange[:3, 3] = p_clamped
                 T_tcp = T_flange @ self._T_flange_to_tcp
                 p_req = p_clamped
+                clip["reach_clip"] = 1
                 if self._print_latency:
                     self._lat.count("reach_clip")
         # Warm-start from last *commanded* q (after vel limit), not raw IK jump.
@@ -1192,6 +1246,7 @@ class AstralTeleopArmNode(Node):
             self.ik.sync_state(self._flip_q(self.q_cmd))
         t_ik = time.perf_counter()
         psi_ref = self._human_psi_ref(T_flange) if self._use_human_elbow else None
+        hard_fb = 0
         sol = None
         if (
             psi_ref is not None
@@ -1205,6 +1260,8 @@ class AstralTeleopArmNode(Node):
             sol = self.ik.solve_hard(T_flange, psi_ref)
             if self._print_latency:
                 self._lat.count("hard_follow" if sol is not None else "hard_fallback")
+            if sol is None:
+                hard_fb = 1
         if sol is None:
             if psi_ref is None:
                 sol = self.ik.solve(T_flange)
@@ -1212,6 +1269,7 @@ class AstralTeleopArmNode(Node):
                 sol = self.ik.solve(T_flange, psi_ref=psi_ref)
         if self._print_latency:
             self._lat.add("ik", (time.perf_counter() - t_ik) * 1000.0)
+        ik_ms = (time.perf_counter() - t_ik) * 1000.0
         # Arm-angle escape: the local psi window went empty for
         # ik_escape_after_frames (wrist-limit boundary during a big roll) and
         # the solver jumped to a globally feasible psi — the visible shoulder
@@ -1231,22 +1289,57 @@ class AstralTeleopArmNode(Node):
                 )
         else:
             self._esc_prev_active = False
+        # jsonl 诊断记录（kind=loop）：VR 原始 / 滤波目标 / 命令 FK / q / 计数。
+        # 仅在 teleop_log_file 开启时构建与写盘（零开销路径不碰这里）。
+        rec = None
+        if self._tlog.enabled:
+            rec = {
+                "kind": "loop",
+                "t": time.time(),
+                "side": self.side,
+                "armed": True,
+                # raw VR 目标（TCP 位，与 /teleop/{side}/tune/ee_vr 同源）
+                "vr": (self.robot_init_pos + self.pose.last_raw_delta_pos).tolist(),
+                "filt": T_tcp[:3, 3].tolist(),
+                "q_state": self.state_q.tolist() if self._got_state else None,
+                "psi_ref": psi_ref,
+                "vr_age_ms": None if vr_age_ms is None else round(vr_age_ms, 2),
+                "ik_ms": round(ik_ms, 2),
+                "loop_ms": round((time.perf_counter() - t_loop) * 1000.0, 2),
+                "hard_fallback": hard_fb,
+                **clip,
+            }
         if sol is None:
             if self._print_latency:
                 self._lat.count("ik_fail")
+            if rec is not None:
+                rec["cmd"] = None
+                rec["q"] = None
+                rec["ik_fail"] = 1
+                rec["ik_sat"] = 0
+                self._tlog.write(rec)
             self._publish_tune_poses(T_tcp)
             self._maybe_log_latency()
             return
-        if self._print_latency:
+        ik_sat = 0
+        if rec is not None or self._print_latency:
             Terr = self.ik.fk(sol)
             sat = float(np.linalg.norm(Terr[:3, 3] - T_flange[:3, 3]))
-            if sat > 0.008:
+            ik_sat = 1 if sat > 0.008 else 0
+            if self._print_latency and sat > 0.008:
                 self._lat.count("ik_sat")
         safe, _info = self.safety.filter(sol, dt)
         # IK/safety work in the flipped convention; convert back to hardware.
         self.q_cmd = self._flip_q(safe)
         if self._print_latency:
             self._lat.add("loop", (time.perf_counter() - t_loop) * 1000.0)
+        if rec is not None:
+            T_cmd = self.ik.fk(self._flip_q(self.q_cmd)) @ self._T_flange_to_tcp
+            rec["cmd"] = T_cmd[:3, 3].tolist()
+            rec["q"] = self.q_cmd.tolist()
+            rec["ik_fail"] = 0
+            rec["ik_sat"] = ik_sat
+            self._tlog.write(rec)
         self._publish_tune_poses(T_tcp)
         if self.dry_run:
             self._maybe_log_latency()
@@ -1568,9 +1661,27 @@ class AstralTeleopArmNode(Node):
             return
         if not self._lat.should_print():
             return
+        if self._tlog.enabled:
+            # kind=metrics：LatencyMeter 窗口汇总（ms 统计 + 计数），随 [Latency]
+            # 周期 ~2s 落一条；非破坏性 snapshot，format_and_reset 照常清窗。
+            self._tlog.write(
+                {
+                    "kind": "metrics",
+                    "t": time.time(),
+                    "side": self.side,
+                    "armed": self._armed,
+                    "homing": self._homing,
+                    **self._lat.snapshot(),
+                }
+            )
         self.get_logger().info(
             f"[Latency][{self.side}] {self._lat.format_and_reset()}"
         )
+
+    def destroy_node(self) -> bool:
+        if getattr(self, "_tlog", None) is not None:
+            self._tlog.close()
+        return super().destroy_node()
 
 
 def main(args=None) -> None:

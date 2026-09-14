@@ -18,7 +18,7 @@ import subprocess
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 import yaml
@@ -71,6 +71,22 @@ def load_presets() -> dict[str, Preset]:
         )
         out[p.name] = p
     return out
+
+
+# 遥操诊断日志注入白名单：只有这些包的 launch 声明了 `teleop_log_file` 参数。
+# 其余预设（如 MuJoCo sim）不注入——未声明参数传给 `ros2 launch` 会启动报错。
+_TELEOP_LOG_PACKAGES = ("astral_teleop", "astral_arm_teleop")
+
+
+def preset_with_teleop_log(preset: Preset, log_path: str) -> Preset:
+    """Return a copy of ``preset`` with ``teleop_log_file`` injected (whitelisted only).
+
+    非白名单预设原样返回；白名单预设用 ``dataclasses.replace`` 生成副本，不改
+    presets.yaml 源。log_path 空串也原样返回（等价于不记录）。
+    """
+    if not log_path or preset.package not in _TELEOP_LOG_PACKAGES:
+        return preset
+    return replace(preset, args={**preset.args, "teleop_log_file": log_path})
 
 
 class LaunchManager:

@@ -25,6 +25,8 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+from astral_arm_teleop.teleop_log import side_log_path
+
 
 def _opt(context, name: str) -> str:
     return LaunchConfiguration(name).perform(context).strip()
@@ -58,6 +60,9 @@ def _launch_setup(context, *args, **kwargs):
     want_l = arm_side in ("left", "both")
     want_r = arm_side in ("right", "both")
 
+    # 遥操诊断 JSONL 日志（可选）：给共享基路径按侧拆 _left/_right（见 teleop_log.py）。
+    tlog = _opt(context, "teleop_log_file")
+
     mocap_extra = {"arm_side": arm_side}
     protocol = _opt(context, "protocol")
     if protocol:
@@ -80,6 +85,9 @@ def _launch_setup(context, *args, **kwargs):
         )
 
     if want_l:
+        left_extra = dict(teleop_extra)
+        if tlog:
+            left_extra["teleop_log_file"] = side_log_path(tlog, "left")
         actions.extend(
             [
                 Node(
@@ -94,11 +102,14 @@ def _launch_setup(context, *args, **kwargs):
                     executable="astral_arm_teleop_node",
                     name="astral_arm_teleop_left",
                     output="screen",
-                    parameters=[cfg_l, teleop_extra],
+                    parameters=[cfg_l, left_extra],
                 ),
             ]
         )
     if want_r:
+        right_extra = dict(teleop_extra)
+        if tlog:
+            right_extra["teleop_log_file"] = side_log_path(tlog, "right")
         actions.extend(
             [
                 Node(
@@ -113,7 +124,7 @@ def _launch_setup(context, *args, **kwargs):
                     executable="astral_arm_teleop_node",
                     name="astral_arm_teleop_right",
                     output="screen",
-                    parameters=[cfg_r, teleop_extra],
+                    parameters=[cfg_r, right_extra],
                 ),
             ]
         )
@@ -180,6 +191,15 @@ def generate_launch_description() -> LaunchDescription:
                     "empty → yaml. true → do not auto-capture vr_init/arm on first "
                     "VR pose; wait for /teleop/start (or ~/start) to capture the zero "
                     "from the current pose and arm."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "teleop_log_file",
+                default_value="",
+                description=(
+                    "empty → off. Non-empty shared base path → per-side JSONL "
+                    "diagnostics log (loop/wrist/state/body/metrics records), "
+                    "e.g. /tmp/teleop_teleop.jsonl → ..._left/_right.jsonl."
                 ),
             ),
             OpaqueFunction(function=_launch_setup),

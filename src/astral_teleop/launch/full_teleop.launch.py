@@ -192,6 +192,7 @@ def _setup(context, *args, **kwargs):
             "convert_to_robot": convert,
             "require_start_signal": _opt(context, "require_start_signal"),
             "arm_side": _opt(context, "arm_side") or "both",
+            "teleop_log_file": _opt(context, "teleop_log_file"),
         }.items(),
     )
 
@@ -391,6 +392,15 @@ def generate_launch_description() -> LaunchDescription:
                 description=(
                     "comma-separated camera labels to stream (empty → "
                     "quest3_video_streamer/config/params.yaml default list)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "teleop_log_file",
+                default_value="",
+                description=(
+                    "empty → off. Non-empty shared base path → per-side JSONL "
+                    "diagnostics log (loop/wrist/state/body/metrics records), "
+                    "e.g. /tmp/teleop_teleop.jsonl → ..._left/_right.jsonl."
                 ),
             ),
             OpaqueFunction(function=_setup),

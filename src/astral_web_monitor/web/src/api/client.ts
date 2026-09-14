@@ -33,7 +33,7 @@ export const api = {
   health: () => get<HealthData>('/api/v1/health'),
   presets: () => get<Preset[]>('/api/v1/presets'),
   state: () => get<unknown>('/api/v1/state'),
-  start: (preset: string) => post<unknown>('/api/v1/start', { preset }),
+  start: (preset: string, log = false) => post<unknown>('/api/v1/start', { preset, log }),
   stop: () => post<unknown>('/api/v1/stop'),
   pause: () => post<unknown>('/api/v1/pause'),
   resume: () => post<unknown>('/api/v1/resume'),

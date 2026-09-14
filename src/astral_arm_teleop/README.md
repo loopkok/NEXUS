@@ -259,6 +259,31 @@ Quest3 有线：`adb reverse tcp:8000 tcp:8000`。
 
 左手夹爪（独立包 `astral_gripper_teleop`）：`hand_landmarks/left` 拇指–食指距离 → `/left_gripper/command`（0 开 1 合）。真机由驱动 `set_gripper_angle` 下发。本包不再 include 夹爪；整机编排见 `astral_teleop`，单独跑夹爪用 `ros2 launch astral_gripper_teleop gripper_teleop.launch.py`。
 
+## 遥操诊断 JSONL 日志（`teleop_log_file`）
+
+排查卡顿（如慢速平移"停一下走一下"）时把链路逐级数据落盘，照 `astral_policy_inference` 的
+`metrics_log_file`/`joint_stream_log_file` 模式。参数 `teleop_log_file`（空=关，零开销）非空则
+行缓冲追加写，写失败不打断控制流。同一文件 `kind` 区分五类记录：
+
+| kind | 触发 | 关键字段 |
+|------|------|---------|
+| `loop` | 每 armed 控制拍 | `vr`/`filt`/`cmd` TCP 位、`q`/`q_state`、`psi_ref`、`vr_age_ms`/`ik_ms`/`loop_ms`、`ik_fail`/`ik_sat`/`hard_fallback`/`ws_clip`/`reach_clip` |
+| `wrist` | 每腕位事件 | `pos`/`quat`/`age_ms`/`frame`（upstream 阶梯/到达率证据） |
+| `state` | 每实测关节事件 | `q`（命令→实体执行链） |
+| `body` | 每 body_joints | `elbow_dir`/`elbow_dir_ema`（臂角 psi 源） |
+| `metrics` | ~2s | LatencyMeter 窗口 `ms` 统计 + `counts`（含 `hard_fallback`/`ik_fail`/`psi_escape`…） |
+
+```bash
+# CLI：launch 透传（共享基路径，双臂自动拆 _left/_right）
+ros2 launch astral_teleop full_teleop.launch.py \
+  with_arm_driver:=true right_hand_source:=none with_gripper:=true arm_side:=left \
+  teleop_log_file:=/tmp/teleop_teleop.jsonl
+# web：System tab 预设启动旁勾选「记录遥操日志」→ 落 /tmp/teleop_teleop_{left,right}.jsonl
+```
+
+分析：按 `kind` 过滤 + `t` 对齐；`vr`→`filt`→`cmd` 逐级求速度可定位阶梯产生/抹平在哪一级，
+`wrist` 的 `age_ms`/事件间隔看上游是否停帧，`counts.ik_fail`/`hard_fallback` 看 IK 是否偶发失败。
+
 ## 外部启动闸门（`require_start_signal`）
 
 **问题**：Quest3 端点 "start stream" 时手得抬起来点按钮，推流一来第一帧腕姿就在按钮位置，旧逻辑把第一帧当 `vr_init`（零点），于是零点错位、机器人一上手就偏。
