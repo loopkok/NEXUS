@@ -25,7 +25,21 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-from astral_arm_teleop.teleop_log import side_log_path
+# 按侧拆分共享日志基路径（生产路径用包内已单测的 side_log_path）。
+# 裸路径直接 `ros2 launch <launch 文件路径>` 时包不在 sys.path、导入会失败——
+# 内联同逻辑兜底，避免 launch 解析期报 ModuleNotFoundError。
+try:
+    from astral_arm_teleop.teleop_log import side_log_path
+except ImportError:  # pragma: no cover - 生产安装路径走上面的 import
+    def side_log_path(base, side):
+        b = (base or "").strip()
+        if not b:
+            return ""
+        if b.endswith("_left.jsonl") or b.endswith("_right.jsonl"):
+            return b
+        if b.endswith(".jsonl"):
+            return f"{b[:-6]}_{side}.jsonl"
+        return f"{b}_{side}.jsonl"
 
 
 def _opt(context, name: str) -> str:

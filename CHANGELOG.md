@@ -24,11 +24,18 @@ web：预设启动请求 `StartRequest` 加 `log` 字段，System tab 启动按�
 `teleop_log_file:=/tmp/teleop_teleop.jsonl`）。**验证**：新 `test_teleop_log.py` 4 例全绿
 （side_log_path 拆路径、JSONL 写入/空路径禁用、写失败安全、LatencyMeter.snapshot 非破坏）；
 web_monitor test 11→**15 例**全绿（新 `test_teleop_log_preset.py` 覆盖白名单注入/非白名单跳过/
-空路径跳过/源预设不被改）；`npm run build` tsc+vite 通过。**诚实备注**：本开发机 ROS 是
-py3.13 构建（`_rclpy_pybind11.cpython-313`），`/usr/bin/python3`(3.10) 导不进 rclpy，节点级
-dry_run 冒烟**未能在本机跑**——须在真机/Jetson 上验证：起节点 + `teleop_log_file:=/tmp/x.jsonl`
-后喂腕位，`kind=loop/wrist/state` 记录应落盘、`ik_fail=0`。**用法**：web 勾选记录启动遥操 →
-`/tmp/teleop_teleop_{left,right}.jsonl`；CLI 直接
+空路径跳过/源预设不被改）；`npm run build` tsc+vite 通过。**节点/launch 级验证**（正确解释器
+= 系统 ROS `/usr/bin/python3.10`，`PYTHONPATH` 在 source ROS 后**追加**而非覆盖）：
+① 节点 dry_run 冒烟——喂 30 拍 1mm 慢速平移 + 1 帧 joint_states + body_joints，日志产出
+`wrist×30 / loop×30 / state×1 / body×1`，loop 记录 18 字段齐全、vr/filt/cmd 数值正确
+（30mm×scale→19.5mm、EMA 收敛后 filt≈cmd）、`ik_fail=0`；`metrics` 记录经强制窗口触发验证
+（ms 统计 ee_r/ik/loop/vr_age + counts）。② `--show-args` 确认两个 launch 都声明
+`teleop_log_file`。③ 端到端 `ros2 launch ... arm_side:=left teleop_log_file:=/tmp/teleop_e2e.jsonl`
+（symlink-install 重建后），节点日志 `teleop jsonl log -> /tmp/teleop_e2e_left.jsonl`、文件已建——
+**launch 参数全程透传 + 按侧拆路径实锤**。**坑**：dual_arm launch 裸路径直接跑时 `from
+astral_arm_teleop.teleop_log import side_log_path` 解析期 ModuleNotFoundError（包不在
+sys.path）→ 加 try/except 内联兜底（生产安装路径仍走单测过的包内函数）。**用法**：web 勾选
+记录启动遥操 → `/tmp/teleop_teleop_{left,right}.jsonl`；CLI 直接
 `ros2 launch astral_teleop full_teleop.launch.py ... teleop_log_file:=/tmp/x.jsonl`。
 
 **对齐数据完整修复 `scripts/repair_aligned.py`——弧长匀速化重采样（插补）替代删帧**——
