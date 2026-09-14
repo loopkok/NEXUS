@@ -78,8 +78,9 @@ def resample_frames(state: np.ndarray, quality: np.ndarray,
     for j in range(D):
         state_new[:, j] = np.interp(s_grid, S, state[:, j])
 
-    # 相机/quality 最近帧
-    idx = np.clip(np.searchsorted(S, s_grid), 0, N - 1)
+    # 相机/quality 最近帧：argmin 精确最近（searchsorted 取上界在静止段/边界会
+    # 选到更远的帧，造成图像-关节弧长偏差 max 12.7° > 半帧）。argmin 压回 ≤半帧弧长。
+    idx = np.array([int(np.argmin(np.abs(S - g))) for g in s_grid])
     quality_new = quality[idx]
     cam_new = {c: cam_images[c][idx] for c in cam_images}
     off_new = {c: cam_offsets[c][idx] for c in cam_offsets}
@@ -194,12 +195,39 @@ def repair_episode(ep_dir: str, out_ep_dir: str, method: str,
     }
 
 
+def session_speed_ref(session: str, eps: list, thresh: float) -> float:
+    """session 全局 speed_ref：所有 episode 逐帧位移合并后的 p90。
+
+    比每 episode 独立 p90 更稳——各段统一速度尺度（实测独立 p90 跨段差 1.3x，
+    模型学到不一致的节奏）。thresh 用于跳过超静止（避免 p90 被退化段拉低）。
+    """
+    ds = []
+    for ep in eps:
+        p = os.path.join(session, ep, "aligned_data.h5")
+        if not os.path.exists(p):
+            continue
+        try:
+            with h5py.File(p, "r") as f:
+                st = np.asarray(f["observation/state"], dtype=np.float64)
+            if len(st) < 3:
+                continue
+            d = np.abs(np.diff(st, axis=0)).sum(axis=1)
+            ds.append(d)
+        except Exception:  # noqa: BLE001
+            continue
+    if not ds:
+        return 0.0
+    all_d = np.concatenate(ds)
+    return float(np.percentile(all_d, 90))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--session", required=True, help="含 episode*/aligned_data.h5 的 session")
     ap.add_argument("--out-session", required=True)
     ap.add_argument("--method", choices=["resample", "drop"], default="resample")
-    ap.add_argument("--speed-ref", type=float, default=0.0, help="目标每帧弧长 rad/帧（0=自动取 p90）")
+    ap.add_argument("--speed-ref", type=float, default=0.0,
+                    help="目标每帧弧长 rad/帧（0=自动取整个 session 的 p90，统一各段速度尺度）")
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--min-speed", type=float, default=0.008, help="drop 模式停顿阈值")
     ap.add_argument("--min-keep", type=int, default=4, help="drop 模式每段保留帧数")
@@ -214,11 +242,14 @@ def main() -> int:
     if not eps:
         print("无 episode", file=sys.stderr)
         return 1
+    # 全局 speed_ref（若未显式指定）：所有 episode 合并的 p90，统一速度尺度
+    if args.speed_ref <= 0:
+        args.speed_ref = session_speed_ref(args.session, eps, args.min_speed)
     out_root = args.session if args.dry_run else args.out_session
     if not args.dry_run:
         os.makedirs(out_root, exist_ok=True)
 
-    print(f"修复: 方法={args.method} speed_ref={'自动(p90)' if args.speed_ref<=0 else args.speed_ref} "
+    print(f"修复: 方法={args.method} speed_ref={'自动(全局p90=%.4f)' % args.speed_ref if args.speed_ref>0 else args.speed_ref} "
           f"{'[DRY-RUN]' if args.dry_run else ''}")
     tot0 = tot1 = 0
     for ep in eps:

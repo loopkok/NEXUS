@@ -17,6 +17,13 @@ W3 仅 1、0 fail（W5 armed coverage 为原数据警告与修复无关）；速
 `vla_process_act.sh`（align 检测 aligned 存在即跳过）→ 训练；`--speed-ref` 调帧数（更小=更
 温和更多帧），`--fps` 调输出帧率。
 
+**repair_aligned 对抗修复 2 处（图像-关节错位）**——`astral_ws/scripts`。① 相机帧选择
+`searchsorted`（取上界）在静止段/边界选到更远帧，关节(弧长插值) vs 图像(离散最近帧)弧长偏差
+实测 p50 2.2°/p90 6°/max **12.7°**（>半帧）——改 `argmin` 精确最近，压回 p50 0.9°/p90 2.7°/
+max 5.7°（≤~半帧，插补固有代价）；② `speed_ref` 默认从"每 episode 独立 p90"改 **session 全局
+p90**（预扫描所有 episode 合并，实测独立 p90 跨段差 1.3x 尺度不统一）。修复后 repaired 数据
+重跑（-50.9%）并重转 v3。
+
 **训练数据停顿压缩 `scripts/compress_pauses.py`——删掉录制中的长时间停顿/慢速段，让 ACT 学到更流畅的轨迹**——
 `astral_ws/scripts`。**动机**：真机推理的固定卡点（到试管前/夹取后/放置前/释放后）＝ 训练数据里操作员
 在任务阶段转换处的停顿/减速被模型忠实复现（实测训练集 20.6% 帧速度 <0.008 rad/帧、208 个慢速段；
