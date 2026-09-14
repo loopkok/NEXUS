@@ -2,6 +2,22 @@
 
 ## 2026-09-14
 
+**训练数据停顿压缩 `scripts/compress_pauses.py`——删掉录制中的长时间停顿/慢速段，让 ACT 学到更流畅的轨迹**——
+`astral_ws/scripts`。**动机**：真机推理的固定卡点（到试管前/夹取后/放置前/释放后）＝ 训练数据里操作员
+在任务阶段转换处的停顿/减速被模型忠实复现（实测训练集 20.6% 帧速度 <0.008 rad/帧、208 个慢速段；
+真机 test5 慢速段与训练数据阶段一一对应）。引擎参数只能平滑换 chunk 跳变、改不了模型在特定状态预测
+低速的行为——治本须改数据。**做法**：新脚本在 **raw 层删帧**（robot_data.h5 / camera_data.h5），
+输出新 session；后续 `vla_process_*.sh` 基于删帧后 raw 重新对齐/转换（next-state 语义在 align 阶段
+重建；相机 JPEG 字节原样保留、**零重编码**）。判定用 `left_arm_state` 流相邻帧 max|Δ|，`--speed-thresh`
+（默认 0.008=只压完全停顿；0.02=连减速也压，实测删 80% 过度）、`--min-pause`（默认 3 帧）、
+`--min-keep`（默认 4 帧/段，保留短暂过渡感）、`--dry-run`。**验证**：单 episode 结构校验（各流/相机
+同步删帧、JPEG 保留）；全量 pick_place_merged 100 episode **54721→35614 帧（-34.9%，2168 停顿段，
+14s 完成）**；align 100/100、validate 0 fail/100 warn（W2 时间戳 gap/W3 帧跳变是删帧预期后果，
+v2.1 按帧序重建无碍）。**用法**：压缩 → `vla_process_act.sh raw/pick_place_merged_smooth ...` →
+`act_train.sh` 重新训练；A/B 用原始 vs smooth 数据集对比真机卡点。**坑**：robot_data.h5 是
+`streams/<流>/values+timestamps` 两层结构（曾误把子 group 当 dataset → U10 字符串）；camera 的 vlen
+JPEG 数组须复用源 dtype 写入。
+
 **修复：yaml 顶层命名空间 ≠ 节点名 → 整份参数被 rclpy 静默丢弃，推理长期按代码默认值跑**——
 `astral_policy_inference`。**症状**：真机连续 4 次测试（test1-4）"改了 yaml 参数（coeff/
 tol/interp/jpeg）运动却不见对应变化"；本次 test4 实测指令流仍 30Hz（`control_interp: 2`
