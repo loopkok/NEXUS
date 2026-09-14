@@ -1,5 +1,18 @@
 # Changelog（astral_ws）
 
+## 2026-09-14
+
+**推理时间曲线诊断：joint_stream_log 同轴记录 state + `plot_inference_curves.py`**——
+`astral_policy_inference`。**需求**：真机推理时查看 state/action 时间曲线、state↔action
+错位时间、输出动作平滑度。**做法**：① 节点 `joint_stream_log_file` 每行指令值之外**同轴
+加记观测 state**（`_state_ok()` 只读取，layout 顺序），旧日志无 state 自动降级；
+② 新 `scripts/plot_inference_curves.py`：读 jsonl 画 7 臂关节 state(蓝)vs command(红)
+时间曲线 + 动作步长(平滑度)+夹爪 PNG，并算 **state↔command 错位**（逐关节互相关最佳
+滞后，+ = state 领先）、**动作平滑度**（每行最大步长分布 + >阈值尖峰及时刻/角速度）。
+**验证**：合成数据（command 领先 state 15 行）实测报 -15 行/499ms 且 corr=1.0（先发现
+符号反了已修）；真实 pi_cmds.jsonl 报 12 个 >0.1 rad 尖峰（2.6~6.4 rad/s，即"冲一下"点）；
+套件 99 例全绿。**坑**：matplotlib DejaVu 无 CJK 字形，图内文本用 ASCII（终端输出可中文）。
+
 ## 2026-09-11
 
 **融合频率参数化 `async_prefetch_ahead`**——`astral_policy_inference`。把"每多少步

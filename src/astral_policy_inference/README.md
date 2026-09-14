@@ -121,7 +121,15 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 每次发布 state（1Hz + 状态变化）把带时间戳的 JSON（含 `latency_ms.loop/obs_age`、engine
 `pops/plans/last_plan_ms/remaining`、`exec_events`）追加写该文件，并在终端打印一行 `[MET]` 摘要。
 排障卡顿再加 `joint_stream_log_file:=/tmp/pi_cmds.jsonl`——节点把**每次实际下发（30Hz）的
-关节指令值**（各话题 JSON 行）也追加写文件，可直接分析指令步长/节奏。
+关节指令值 + 同轴观测 state**（各话题 JSON 行）也追加写文件。跑完用绘图脚本直接看曲线、
+错位时间与平滑度：
+
+```bash
+/usr/bin/python3 astral_ws/scripts/plot_inference_curves.py \
+    --log /tmp/pi_cmds.jsonl --out /tmp/pi_curves.png
+# 输出：7 臂关节 state vs command 曲线 + 动作步长 + 夹爪 PNG；
+# 终端：state↔command 错位时间（互相关）、动作步长分布与 >0.1rad 尖峰
+```
 另可用（传感器话题**必须**加 QoS flag，否则收 0 条）：
 
 ```bash

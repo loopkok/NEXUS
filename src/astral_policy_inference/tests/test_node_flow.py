@@ -498,6 +498,8 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertIn("/left_arm/joint_commands", rec, "应记录臂指令话题")
         self.assertEqual(len(rec["/left_arm/joint_commands"]), 7)
         self.assertTrue(all(isinstance(v, float) for v in rec["/left_arm/joint_commands"]))
+        self.assertIn("state", rec, "应同时记录观测 state（供绘图对比）")
+        self.assertEqual(len(rec["state"]), 8)
 
     def test_async_prefetch_ahead_reaches_engine(self):
         """async_prefetch_ahead 参数应透传到引擎（控制重规划/融合频率）。"""

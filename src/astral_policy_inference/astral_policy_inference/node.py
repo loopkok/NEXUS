@@ -1007,10 +1007,18 @@ class PolicyNode(Node):
             self._log_joint_stream(safe)
 
     def _log_joint_stream(self, targets: list) -> None:
-        """joint_stream_log_file 开启时：每次实际下发（30Hz）记录各话题指令值。"""
+        """joint_stream_log_file 开启时：每次实际下发（30Hz）记录各话题指令值 +
+        同一时刻的观测 state（同时间轴，供绘图对比 state↔action 与错位时间）。"""
         rec: dict = {"t": round(time.time(), 4)}
         for tg in targets:
             rec[tg.topic] = [float(v) for v in tg.values]
+        # 观测 state（layout 顺序：本机 [left_arm(7), left_ee(1)]）。只读、无副作用。
+        try:
+            state, _ = self._state_ok()
+            if state is not None:
+                rec["state"] = [float(v) for v in state]
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self._js_fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
         except Exception:  # noqa: BLE001  写失败不干扰控制流
