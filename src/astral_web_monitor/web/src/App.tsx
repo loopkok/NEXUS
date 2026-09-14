@@ -7,6 +7,7 @@ import { MonitorTab } from './components/MonitorTab'
 import { HealthPanel } from './components/HealthPanel'
 import { SystemTab } from './components/SystemTab'
 import { ToastHost } from './components/ToastHost'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { api } from './api/client'
 import { pushSample } from './hooks/historyStore'
 
@@ -35,10 +36,11 @@ export default function App() {
   }, [state])
 
   return (
-    <div style={appStyle}>
-      <ToastHost />
+    <ErrorBoundary>
+      <div style={appStyle}>
+        <ToastHost />
 
-      <header style={headerStyle}>
+        <header style={headerStyle}>
         <h1 style={titleStyle}>Astral Web Monitor</h1>
         <span style={subStyle}>非侵入式遥操作监控</span>
         <div style={spacer} />
@@ -62,7 +64,8 @@ export default function App() {
         {active === 'health' && <HealthPanel state={state} />}
         {active === 'system' && <SystemTab state={state} presets={presets} onAction={() => void api.health()} />}
       </main>
-    </div>
+      </div>
+    </ErrorBoundary>
   )
 }
 

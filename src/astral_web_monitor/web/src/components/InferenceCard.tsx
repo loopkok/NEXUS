@@ -26,6 +26,21 @@ function modeMeta(state: string | undefined) {
   return { ...m, label: paused ? `${m.label}（暂停）` : m.label, paused }
 }
 
+// 引擎统计值的安全渲染：嵌套对象（如 engine.server_timing: {prep_ms, pre_ms,
+// infer_ms, ...}）不能直接当 React child（React 会抛 "Objects are not valid as
+// a React child" → 整棵树卸载白屏）——对象压平为标量摘要，标量原样。
+function fmtStat(v: unknown): string {
+  if (typeof v === 'number') return String(Number.isFinite(v) ? Number(v.toFixed(2)) : v)
+  if (typeof v === 'string' || typeof v === 'boolean') return String(v)
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    const inner = Object.entries(v as Record<string, unknown>)
+      .filter(([, x]) => typeof x === 'number' || typeof x === 'string' || typeof x === 'boolean')
+      .map(([k, x]) => `${k}:${fmtStat(x)}`)
+    return inner.length ? `{${inner.join(' ')}}` : JSON.stringify(v)
+  }
+  return String(v)
+}
+
 export function InferenceCard({ infer, launch }: Props) {
   const [cfg, setCfg] = useState<InferLaunchConfig>({
     backend_type: 'remote',
@@ -233,7 +248,7 @@ export function InferenceCard({ infer, launch }: Props) {
         <div style={statsStyle}>
           <span style={chipStyle}>模式: <b>{meta.label}</b></span>
           {Object.entries(engine).map(([k, v]) => (
-            <span key={k} style={chipStyle}>{k}: <b>{v}</b></span>
+            <span key={k} style={chipStyle}>{k}: <b>{fmtStat(v)}</b></span>
           ))}
           {loop != null && <span style={chipStyle}>loop: <b>{loop}ms</b></span>}
           {obsAge != null && <span style={chipStyle}>obs_age: <b>{obsAge}ms</b></span>}
@@ -241,7 +256,7 @@ export function InferenceCard({ infer, launch }: Props) {
             <span style={chipStyle}>回放: <b>{infer.playback.idx}/{infer.playback.frames}</b></span>
           )}
           {infer?.cam_frames && Object.entries(infer.cam_frames).map(([k, v]) => (
-            <span key={k} style={chipStyle}>{k}: <b>{v}</b>帧</span>
+            <span key={k} style={chipStyle}>{k}: <b>{fmtStat(v)}</b>帧</span>
           ))}
         </div>
       )}

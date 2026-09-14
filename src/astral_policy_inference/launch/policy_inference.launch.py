@@ -43,6 +43,7 @@ def _node(context):
     cmd_topic = LaunchConfiguration("cmd_topic").perform(context)
     camera_image_size = LaunchConfiguration("camera_image_size").perform(context)
     engine_mode = LaunchConfiguration("engine_mode").perform(context)
+    control_interp = LaunchConfiguration("control_interp").perform(context)
     temporal_ensemble_coeff = LaunchConfiguration("temporal_ensemble_coeff").perform(context)
     chunk_anchor_tol = LaunchConfiguration("chunk_anchor_tol").perform(context)
     chunk_anchor_blend = LaunchConfiguration("chunk_anchor_blend").perform(context)
@@ -51,15 +52,19 @@ def _node(context):
     joint_stream_log_file = LaunchConfiguration("joint_stream_log_file").perform(context)
     parameters = [params_file]
     if backend_type:
-        parameters.append(
-            {
-                "backend_type": backend_type,
-                "host": host,
-                "port": int(port),
-                "checkpoint_dir": checkpoint_dir,
-                "cmd_topic": cmd_topic,
-            }
-        )
+        params_bt = {"backend_type": backend_type}
+        # 只 append 显式传入的键（host/port/checkpoint_dir 默认空串）——否则 launch
+        # 默认值会静默覆盖 yaml（data_collect 不变量 1 的反模式；曾导致改了 yaml 的
+        # host/port 却连到 127.0.0.1:8000）。cmd_topic 保留默认（keyboard 依赖且与 yaml 一致）。
+        if host:
+            params_bt["host"] = host
+        if port:
+            params_bt["port"] = int(port)
+        if checkpoint_dir:
+            params_bt["checkpoint_dir"] = checkpoint_dir
+        if cmd_topic:
+            params_bt["cmd_topic"] = cmd_topic
+        parameters.append(params_bt)
     if model:
         parameters.append({"model": model})
     if jpeg_transport:
@@ -68,6 +73,8 @@ def _node(context):
         parameters.append({"camera_image_size": int(camera_image_size)})
     if engine_mode:
         parameters.append({"engine_mode": engine_mode})
+    if control_interp:
+        parameters.append({"control_interp": int(control_interp)})
     if temporal_ensemble_coeff:
         parameters.append({"temporal_ensemble_coeff": float(temporal_ensemble_coeff)})
     if chunk_anchor_tol:
@@ -111,11 +118,16 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "jpeg_transport", default_value="",
                 description="true 上行 camera 槽位发 JPEG（载荷 ~7x 小）；false 发 RGB"),
-            DeclareLaunchArgument("host", default_value="127.0.0.1"),
-            DeclareLaunchArgument("port", default_value="8000"),
+            DeclareLaunchArgument("host", default_value="",
+                                  description="远程 serve 主机 IP（默认空=用 yaml）"),
+            DeclareLaunchArgument("port", default_value="",
+                                  description="远程 serve 端口（默认空=用 yaml）"),
             DeclareLaunchArgument("checkpoint_dir", default_value=""),
             DeclareLaunchArgument("camera_image_size", default_value=""),
             DeclareLaunchArgument("engine_mode", default_value=""),
+            DeclareLaunchArgument(
+                "control_interp", default_value="",
+                description="控制率 = dataset_fps×N（2=60Hz 插值下发，拆小 30Hz 大步）"),
             DeclareLaunchArgument(
                 "temporal_ensemble_coeff", default_value="",
                 description=">0 开启 ACT 时序融合（换 chunk 加权平均，消切换跳变；0=关）"),

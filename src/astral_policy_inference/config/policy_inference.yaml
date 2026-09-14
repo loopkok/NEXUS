@@ -59,7 +59,8 @@ astral_policy_inference:
     #          代价是推理频率 1.2Hz→3Hz，直连网线下无压力）
     # 0 = 自动 (action_chunk//2)。仅 queue_async 生效（rtc 用 rtc_* 参数）。
     async_prefetch_ahead: 40
-    control_interp: 1         # 控制率 = dataset_fps × N（1=每策略步发一次）
+    control_interp: 2         # 控制率 = dataset_fps × N（2=60Hz 插值下发，把 30Hz 大步拆半；
+                              #   1=每策略步发一次）。真机快动作"卡一下"用 2 拆小。
     # 绝对动作语义守卫：chunk 首行在 |state|>1.0 的维上离当前 state 超过该值即拒绝
     # （检测后端把 delta 当绝对返回，如 openpi server 漏 AbsoluteActions）。<=0 关闭。
     abs_action_min_scale: 0.5

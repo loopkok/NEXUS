@@ -70,6 +70,31 @@ control_interp=1，801 行 / 26.8s 实测）发现 7 个 >0.1 rad 尖峰**全部
 符号反了已修）；真实 pi_cmds.jsonl 报 12 个 >0.1 rad 尖峰（2.6~6.4 rad/s，即"冲一下"点）；
 套件 99 例全绿。**坑**：matplotlib DejaVu 无 CJK 字形，图内文本用 ASCII（终端输出可中文）。
 
+**web 推理模块白屏修复：engine.server_timing 嵌套对象进 React child + 顶层 ErrorBoundary**——
+`astral_web_monitor`（前端）。**症状**：web 启动推理节点 → 开始策略后界面白屏，刷新仍白屏。
+**根因**：推理节点一跑，WS 遥测里 `engine` 出现嵌套对象 `server_timing:{prep_ms,pre_ms,infer_ms,...}`，
+`InferenceCard` 引擎参数渲染 `<b>{v}</b>` 把对象直接当 React child——React 抛
+"Objects are not valid as a React child" → 整棵树卸载白屏；节点持续推遥测，每次加载都崩。
+**做法**：①`InferenceCard` 新增 `fmtStat` 安全格式化（标量原样、对象压平为
+`{k1:v1 k2:v2}` 摘要），engine 参数与 cam_frames 两处渲染都用它；②新增顶层
+`ErrorBoundary` 包住 App——任何组件渲染异常不再整树白屏，显示错误卡 +「重试渲染」按钮
+（WS 数据流模块层继续跑），console 记 componentStack 便于定位。**验证**：Node SSR
+（react-dom/server + esbuild）喂入**确切崩溃数据**（engine.server_timing 嵌套对象）渲染
+InferenceCard + 整棵 MonitorTab——修复前抛错、修复后正常且 server_timing 压平渲染、无
+[object Object] 泄漏；前端 `npm run build`（tsc+vite）通过；web_monitor pytest 11 例全绿。
+**部署**：机器人侧重建前端 dist（`cd web && npm run build`）后刷新页面即可，后端无改动。
+
+**launch 默认值反模式修复 + `control_interp` 透传（yaml 默认 1→2）**——`astral_policy_inference`。
+① **launch host/port 默认值静默覆盖 yaml（bug）**：`host`/`port` 的 launch 默认值此前是
+`127.0.0.1`/`8000`，而 launch 无条件把整包参数 append——`ros2 launch` 部署时即使用户在 yaml
+改了 host/port，也会被 launch 默认值覆盖、连到 127.0.0.1:8000（data_collect 不变量 1 的反
+模式：launch 默认值不该盖 yaml）。**修法**：默认值改空串、只 append 显式传入的键（host/port/
+checkpoint_dir），cmd_topic 保留默认（keyboard 依赖且与 yaml 一致）。② **control_interp 透传**：
+launch 补 `control_interp`（此前只能在 yaml 改），yaml 默认 **1→2**——2 = 60Hz 线性插值下发，
+把 30Hz 的大步拆半（真机快动作"卡一下"对症，配合 chunk_anchor_tol/时序融合）。**验证**：
+py_compile；launch 语义回归——不传 host/port 时回落 yaml（无 127.0.0.1:8000 覆盖）、显式传才
+覆盖；policy_inference 全套件 108 例全绿（engine 行为不变）。
+
 ## 2026-09-11
 
 **融合频率参数化 `async_prefetch_ahead`**——`astral_policy_inference`。把"每多少步
