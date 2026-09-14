@@ -433,9 +433,10 @@ class TestChunkAnchor(unittest.TestCase):
 
     def test_blends_from_old_command_when_switch_jumps(self):
         """旧 command 漂移 0.5 vs 新 chunk[i0]=0.8（切换差 0.3）：首拍≈旧值平滑过渡，
-        不产生一步跳；blend 之外恢复新 chunk 原值。"""
+        不产生一步跳；blend 之外恢复新 chunk 原值。锚 = 最后**已发出**的行
+        _chunk[_i-1]=_chunk[19]（机器人正在执行它），不是 _chunk[20]（还没发）。"""
         eng = self._engine()
-        eng._chunk[20, 0] = 0.5            # 旧 command 当前行 joint0 已漂移到 0.5
+        eng._chunk[19, 0] = 0.5            # 旧 command 最后已发行为 0.5（_i=20 → 19）
         new = np.zeros((50, DIM)); new[:, 0] = 0.8
         eng._install(new, 0.1, snap_i=20, consumed=3)   # i0=3 → chunk[3,0]=0.8
         # 首拍 blend：w=1/(4+1)=0.2 → chunk[3] = 0.5 + 0.2×0.3 = 0.56（几乎旧值，不跳）
@@ -450,7 +451,7 @@ class TestChunkAnchor(unittest.TestCase):
     def test_noop_within_tol(self):
         """切换差 0.02 < tol 0.05：正常跟随差不触发，新 chunk 原样安装。"""
         eng = self._engine()
-        eng._chunk[20, 0] = 0.78
+        eng._chunk[19, 0] = 0.78
         new = np.zeros((50, DIM)); new[:, 0] = 0.8
         eng._install(new, 0.1, snap_i=20, consumed=3)
         self.assertAlmostEqual(eng._chunk[3, 0], 0.8, places=9)  # 未 blend
@@ -459,7 +460,7 @@ class TestChunkAnchor(unittest.TestCase):
     def test_disabled_when_tol_nonpositive(self):
         """tol<=0 关闭：即使切换差大也不 blend（硬切换，行为不变）。"""
         eng = self._engine(tol=0.0)
-        eng._chunk[20, 0] = 0.5
+        eng._chunk[19, 0] = 0.5
         new = np.zeros((50, DIM)); new[:, 0] = 0.8
         eng._install(new, 0.1, snap_i=20, consumed=3)
         self.assertAlmostEqual(eng._chunk[3, 0], 0.8, places=9)

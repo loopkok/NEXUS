@@ -32,6 +32,11 @@ astral_policy_inference:
     #    node 与模型同解释器（如 ROS 2 Jazzy py3.12、或非 ROS 直连）的环境。
     backend_type: "remote"    # remote | inproc | stub
     model: "act"              # act | pi05 | ...（模型族）
+    # 上行 JPEG 传输：true 时 camera 槽位编码成 JPEG 字节（载荷 1.38MB→~0.2MB，
+    # WiFi 上行 ~106ms→~15ms），serve 端 image_codec 解码还原；像素 = 节点 letterbox
+    # 后 RGB 再编码（有损，quality 92，训练数据本身是 JPEG-90 解码，模型鲁棒）。
+    # false = 现状发原始 RGB（兼容直连 openpi 官方 serve 的退路）。A/B 可切。
+    jpeg_transport: true
     checkpoint_dir: ""        # inproc：InprocBackend 加载目录
     host: "127.0.0.1"         # remote：serve.py 主机
     port: 8000                # remote：serve.py 端口

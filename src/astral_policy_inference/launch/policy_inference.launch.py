@@ -36,6 +36,7 @@ def _node(context):
     params_file = LaunchConfiguration("params_file").perform(context)
     backend_type = LaunchConfiguration("backend_type").perform(context)
     model = LaunchConfiguration("model").perform(context)
+    jpeg_transport = LaunchConfiguration("jpeg_transport").perform(context)
     host = LaunchConfiguration("host").perform(context)
     port = LaunchConfiguration("port").perform(context)
     checkpoint_dir = LaunchConfiguration("checkpoint_dir").perform(context)
@@ -44,6 +45,7 @@ def _node(context):
     engine_mode = LaunchConfiguration("engine_mode").perform(context)
     temporal_ensemble_coeff = LaunchConfiguration("temporal_ensemble_coeff").perform(context)
     chunk_anchor_tol = LaunchConfiguration("chunk_anchor_tol").perform(context)
+    chunk_anchor_blend = LaunchConfiguration("chunk_anchor_blend").perform(context)
     async_prefetch_ahead = LaunchConfiguration("async_prefetch_ahead").perform(context)
     metrics_log_file = LaunchConfiguration("metrics_log_file").perform(context)
     joint_stream_log_file = LaunchConfiguration("joint_stream_log_file").perform(context)
@@ -60,6 +62,8 @@ def _node(context):
         )
     if model:
         parameters.append({"model": model})
+    if jpeg_transport:
+        parameters.append({"jpeg_transport": jpeg_transport.lower() in ("1", "true")})
     if camera_image_size:
         parameters.append({"camera_image_size": int(camera_image_size)})
     if engine_mode:
@@ -68,6 +72,8 @@ def _node(context):
         parameters.append({"temporal_ensemble_coeff": float(temporal_ensemble_coeff)})
     if chunk_anchor_tol:
         parameters.append({"chunk_anchor_tol": float(chunk_anchor_tol)})
+    if chunk_anchor_blend:
+        parameters.append({"chunk_anchor_blend": int(chunk_anchor_blend)})
     if async_prefetch_ahead:
         parameters.append({"async_prefetch_ahead": int(async_prefetch_ahead)})
     if metrics_log_file:
@@ -102,6 +108,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("params_file", default_value=_default_params()),
             DeclareLaunchArgument("backend_type", default_value=""),
             DeclareLaunchArgument("model", default_value=""),
+            DeclareLaunchArgument(
+                "jpeg_transport", default_value="",
+                description="true 上行 camera 槽位发 JPEG（载荷 ~7x 小）；false 发 RGB"),
             DeclareLaunchArgument("host", default_value="127.0.0.1"),
             DeclareLaunchArgument("port", default_value="8000"),
             DeclareLaunchArgument("checkpoint_dir", default_value=""),
@@ -113,6 +122,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "chunk_anchor_tol", default_value="",
                 description=">0 换 chunk 切换平滑（续播起点偏离旧 command >tol 时前 blend 行过渡；0=关）"),
+            DeclareLaunchArgument(
+                "chunk_anchor_blend", default_value="",
+                description="切换平滑过渡行数（配合 chunk_anchor_tol；@30Hz 每行 33ms）"),
             DeclareLaunchArgument(
                 "async_prefetch_ahead", default_value="",
                 description="重规划/融合重叠行数（每 action_chunk−N 步融合一次；0=自动 chunk//2）"),

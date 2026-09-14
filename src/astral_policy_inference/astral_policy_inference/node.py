@@ -203,6 +203,9 @@ class PolicyNode(Node):
             # backend / engine
             "backend_type": "remote",  # remote | inproc | stub（传输方式）
             "model": "act",            # act | pi05 | ...（模型族）
+            # 上行 JPEG：true 时 camera 槽位编码成 JPEG 字节（1.38MB→~0.2MB），
+            # serve 端解码还原（image_codec）。false = 现状发原始 RGB。yaml 默认 true。
+            "jpeg_transport": False,
             "checkpoint_dir": "",
             "host": "127.0.0.1",
             "port": 8000,
@@ -292,6 +295,7 @@ class PolicyNode(Node):
             "default_prompt": str(self.get_parameter("default_prompt").value),
             "action_dim": schema.state_dim,
             "camera_map": self._camera_map,
+            "jpeg_transport": bool(self.get_parameter("jpeg_transport").value),
         }
 
     @staticmethod

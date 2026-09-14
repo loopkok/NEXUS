@@ -43,6 +43,8 @@ def main() -> int:
     ap.add_argument("--camera-size", type=int, default=480)
     ap.add_argument("--n-action-steps", type=int, default=50,
                     help="ACT chunk 长度：每次 infer 产出的动作行数")
+    ap.add_argument("--jpeg", action="store_true",
+                    help="上行 camera 槽位编码成 JPEG（对比 RGB 的带宽/延迟收益）")
     args = ap.parse_args()
 
     sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_policy_inference")
@@ -58,13 +60,35 @@ def main() -> int:
                 "video0": rng.integers(0, 256, (cam, cam, 3), np.uint8)},
         prompt="benchmark",
     )
-    nbytes = obs.state.nbytes + sum(v.nbytes for v in obs.images.values())
-    print(f"payload: {nbytes/1e6:.2f} MB/request")
+    if args.jpeg:
+        from astral_policy_inference.image_codec import encode_jpeg
+
+        payload = {
+            "observation/state": obs.state.astype(np.float32),
+            "observation/camera/base_0_rgb": encode_jpeg(obs.images["video8"]),
+            "observation/camera/left_wrist_0_rgb": encode_jpeg(obs.images["video0"]),
+            "prompt": obs.prompt,
+            "image_format": "jpeg",
+        }
+    else:
+        payload = {
+            "observation/state": obs.state.astype(np.float32),
+            "observation/camera/base_0_rgb": obs.images["video8"],
+            "observation/camera/left_wrist_0_rgb": obs.images["video0"],
+            "prompt": obs.prompt,
+        }
+    nbytes = sum(
+        len(v) if isinstance(v, (bytes, bytearray))
+        else (v.nbytes if isinstance(v, np.ndarray) else 0)
+        for v in payload.values()
+    )
+    print(f"payload: {nbytes/1e6:.2f} MB/request ({'JPEG' if args.jpeg else 'RGB'})")
 
     # ---- 握手耗时 ----
     bk = RemoteBackend(
         host=args.host, port=args.port, action_dim=8,
         slot_keys={"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"},
+        jpeg_transport=args.jpeg,
     )
     t_h = time.perf_counter()
     bk.open()
@@ -72,12 +96,6 @@ def main() -> int:
     print(f"connected (handshake {handshake_ms:.1f}ms)")
 
     # ---- 本地序列化探测（包内 vendored msgpack pack/unpack 载荷）----
-    payload = {
-        "observation/state": obs.state.astype(np.float32),
-        "observation/camera/base_0_rgb": obs.images["video8"],
-        "observation/camera/left_wrist_0_rgb": obs.images["video0"],
-        "prompt": obs.prompt,
-    }
     _pk = _proto.Packer()
     t0 = time.perf_counter()
     for _ in range(10):

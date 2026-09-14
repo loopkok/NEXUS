@@ -229,5 +229,80 @@ class TestProtocol(unittest.TestCase):
         self.assertIn(b"__ndarray__", blob, "wire format must use __ndarray__")
 
 
+class TestJpegTransport(unittest.TestCase):
+    """上行 JPEG 传输：RemoteBackend 编码 / serve 解码 / 保真。"""
+
+    def _jpeg_backend(self, client, on: bool):
+        return RemoteBackend(
+            host="h", port=8000, action_dim=ACT_DIM,
+            slot_keys=CAM_MAP, client_factory=lambda *a, **k: client,
+            jpeg_transport=on,
+        )
+
+    def test_jpeg_on_sends_encoded_bytes_and_flag(self):
+        from astral_policy_inference.image_codec import decode_jpeg, JPEG_MAGIC
+
+        client = FakeClient("h", 8000)
+        bk = self._jpeg_backend(client, on=True)
+        bk.open()
+        rng = np.random.default_rng(0)
+        img = rng.integers(0, 256, (64, 64, 3), np.uint8)
+        bk.infer(ObsBatch(state=np.zeros(ACT_DIM), images={"video8": img}, prompt=""))
+        payload = client.payloads[0]
+        self.assertEqual(payload["image_format"], "jpeg")
+        v = payload["observation/camera/base_0_rgb"]
+        self.assertIsInstance(v, bytes, "jpeg 传输下 camera 槽位应为字节")
+        self.assertTrue(v.startswith(JPEG_MAGIC), "应为 JPEG magic 0xFFD8")
+        back = decode_jpeg(v)
+        self.assertEqual(back.shape, (64, 64, 3))
+        bk.close()
+
+    def test_jpeg_off_keeps_rgb_arrays_no_flag(self):
+        client = FakeClient("h", 8000)
+        bk = self._jpeg_backend(client, on=False)
+        bk.open()
+        img = np.zeros((8, 8, 3), np.uint8)
+        bk.infer(ObsBatch(state=np.zeros(ACT_DIM), images={"video8": img}, prompt=""))
+        payload = client.payloads[0]
+        self.assertNotIn("image_format", payload)
+        v = payload["observation/camera/base_0_rgb"]
+        self.assertIsInstance(v, np.ndarray)
+        self.assertEqual(v.shape, (8, 8, 3))
+        bk.close()
+
+    def test_jpeg_roundtrip_shape_and_fidelity(self):
+        from astral_policy_inference.image_codec import decode_jpeg, encode_jpeg
+
+        y, x = np.mgrid[0:64, 0:64]
+        img = np.stack([(x / 64 * 255).astype(np.uint8),
+                        (y / 64 * 255).astype(np.uint8),
+                        np.full((64, 64), 128, np.uint8)], axis=-1)
+        back = decode_jpeg(encode_jpeg(img, quality=92))
+        self.assertEqual(back.shape, (64, 64, 3))
+        self.assertEqual(back.dtype, np.uint8)
+        self.assertLess(np.abs(back.astype(int) - img.astype(int)).max(), 25,
+                        "quality=92 平滑图 round-trip 最大偏差应 <25/255")
+
+    def test_normalize_request_images_decodes_and_removes_flag(self):
+        from astral_policy_inference.image_codec import (
+            decode_jpeg, encode_jpeg, normalize_request_images,
+        )
+
+        img = np.zeros((16, 16, 3), np.uint8)
+        img[..., 0] = 255
+        blob = encode_jpeg(img, quality=92)
+        req = {"observation/state": np.zeros(ACT_DIM),
+               "observation/camera/cam0": blob, "image_format": "jpeg"}
+        out = normalize_request_images(req)
+        self.assertNotIn("image_format", out, "标志必须移除（避免污染 openpi AstralInputs）")
+        v = out["observation/camera/cam0"]
+        self.assertIsInstance(v, np.ndarray)
+        self.assertEqual(v.shape, (16, 16, 3))
+        # 非 jpeg 载荷原样透传（引用不变）
+        req2 = {"observation/camera/cam0": np.zeros((16, 16, 3), np.uint8)}
+        self.assertIs(normalize_request_images(req2)["observation/camera/cam0"],
+                      req2["observation/camera/cam0"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -108,6 +108,10 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 - `camera_image_size` 必须与模型 preprocessor 输入一致（本机 pickup_act_480=480；默认 224 崩）；
 - 后端一次返回**完整 chunk**（方案 A），引擎按 50 行分块/预取，默认 `queue_async` 即 30Hz、
   图像上传每 chunk 一次（网络 -96%）、节点 loop ~1.3ms；
+- **`jpeg_transport`（上行 JPEG，yaml 默认 true）**：camera 槽位在节点 letterbox 后编码成
+  JPEG 字节（载荷 1.38MB→~0.2MB，WiFi 上行 ~106ms→~15ms），serve 端 `image_codec` 解码
+  还原——像素 = 节点 RGB 再编码（二次 JPEG 有损，训练数据本身是 JPEG-90 解码，模型鲁棒）。
+  `false` = 现状发 RGB（兼容直连 openpi 官方 serve 的退路）。benchmark/e2e 加 `--jpeg` 测真实路径。
 - **`temporal_ensemble_coeff`（引擎级 ACT 时序融合，借鉴 lerobot ACTTemporalEnsembler）**：
   真机换 chunk 时把旧尾段与新头部按 `exp(-coeff·i)` 权重平均，消除切换跳变（缓解一卡一卡）。
   yaml 默认 `0.01`（ACT 推荐）；`0` = 关闭（硬切换，A/B 对比用）。A/B：

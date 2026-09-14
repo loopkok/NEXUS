@@ -65,7 +65,7 @@ def make_jpeg(size: int = 480) -> bytes:
         return b.getvalue()
 
 
-def check_server(host: str, port: int) -> None:
+def check_server(host: str, port: int, jpeg: bool = False) -> None:
     """用真实 RemoteBackend 直连 serve.py 做一次推理往返。"""
     import sys
     sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_policy_inference")
@@ -76,6 +76,7 @@ def check_server(host: str, port: int) -> None:
     bk = RemoteBackend(
         host=host, port=port, action_dim=8,
         slot_keys={"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"},
+        jpeg_transport=jpeg,
     )
     bk.open()
     obs = ObsBatch(
@@ -176,13 +177,15 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8001)
+    ap.add_argument("--jpeg", action="store_true",
+                    help="上行 camera 槽位走 JPEG（匹配 yaml jpeg_transport:true 的真实部署路径）")
     ap.add_argument("--check-server", action="store_true",
                     help="先直连 serve.py 做一次推理往返，快速定位 server 是否正常")
     args = ap.parse_args()
 
     if args.check_server:
         try:
-            check_server(args.host, args.port)
+            check_server(args.host, args.port, jpeg=args.jpeg)
             if fails:
                 print("preflight 失败，中止节点流程")
                 return 1

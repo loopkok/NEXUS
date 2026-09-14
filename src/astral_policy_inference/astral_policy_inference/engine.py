@@ -443,9 +443,11 @@ class ActionEngine:
         # 安装前"正在执行的旧 command 当前行"——blend 起点。切换尖峰的本质是
         # 旧 command（开环 chunk 内漂移/过时）→ 新 chunk[i0] 的瞬间差；从旧值起步
         # 过渡到新轨迹，把切换差摊到 nblend 行，直接消除指令流不连续。
+        # 锚 = 最后**已发出**的行 _chunk[_i-1]（机器人正在执行它）；_chunk[_i] 是
+        # 下一行、还没发给机器人，用它起步会超前一行。
         old_row = (
-            self._chunk[self._i].copy()
-            if self._chunk is not None and self._i < len(self._chunk)
+            self._chunk[self._i - 1].copy()
+            if self._chunk is not None and 1 <= self._i <= len(self._chunk)
             else None
         )
         if self.mode != "queue_sync" and was_moving:

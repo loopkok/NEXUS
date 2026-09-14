@@ -43,6 +43,7 @@ sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_policy_inferenc
 sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_data_collect")
 
 from astral_policy_inference import protocol as _proto
+from astral_policy_inference.image_codec import normalize_request_images
 
 _CONNECTIONS = 0  # 连接计数：观测断线/重连频率
 
@@ -139,6 +140,9 @@ async def _handle(websocket, infer_fn, reset_fn, packer, model: str) -> None:
                 continue
             request = _proto.unpackb(data)
             try:
+                # 节点 jpeg_transport 时 camera 槽位是 JPEG 字节 → 归一化为 RGB 数组，
+                # 并移除 image_format 标志（ACT/pi05 两分支都消费 RGB，无需各自处理）。
+                request = normalize_request_images(request)
                 response = infer_fn(request)
             except Exception as exc:  # noqa: BLE001
                 await websocket.send(f"infer failed: {exc}")

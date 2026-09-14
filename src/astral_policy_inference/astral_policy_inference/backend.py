@@ -103,6 +103,8 @@ class RemoteBackend(PolicyBackend):
         image_prefix: str = "observation/camera",
         default_prompt: str = "",
         client_factory: Callable | None = None,  # test seam
+        jpeg_transport: bool = False,
+        jpeg_quality: int = 92,
     ):
         self.host = host
         self.port = int(port)
@@ -115,6 +117,10 @@ class RemoteBackend(PolicyBackend):
         self._client = None
         self.last_infer_s = 0.0
         self.last_server_timing: dict | None = None
+        # 上行 JPEG：True 时 camera 槽位编码成 JPEG 字节（1.38MB→~0.2MB），
+        # serve 端 decode_jpeg 还原。像素 = 节点 letterbox 后 RGB 再编码（有损）。
+        self.jpeg_transport = bool(jpeg_transport)
+        self.jpeg_quality = int(jpeg_quality)
 
     def open(self) -> None:
         if self._client is not None:
@@ -151,9 +157,18 @@ class RemoteBackend(PolicyBackend):
             if img is None:
                 # AstralInputs zero-pads missing slots; server keeps image_mask.
                 continue
-            payload[f"{self.image_prefix}/{slot}"] = np.asarray(
-                img, dtype=np.uint8
-            )
+            if self.jpeg_transport:
+                from astral_policy_inference.image_codec import encode_jpeg
+
+                payload[f"{self.image_prefix}/{slot}"] = encode_jpeg(
+                    img, quality=self.jpeg_quality
+                )
+            else:
+                payload[f"{self.image_prefix}/{slot}"] = np.asarray(
+                    img, dtype=np.uint8
+                )
+        if self.jpeg_transport:
+            payload["image_format"] = "jpeg"
         payload["prompt"] = obs.prompt or self.default_prompt
         t0 = time.perf_counter()
         try:
@@ -368,6 +383,8 @@ def make_backend(
     port: int = 8000,
     default_prompt: str = "",
     device: str | None = None,
+    jpeg_transport: bool = False,
+    jpeg_quality: int = 92,
 ) -> PolicyBackend:
     """Backend factory. ``backend_type`` = transport: remote | inproc | stub.
 
@@ -383,6 +400,8 @@ def make_backend(
             action_dim=action_dim,
             slot_keys=camera_map,
             default_prompt=default_prompt,
+            jpeg_transport=jpeg_transport,
+            jpeg_quality=jpeg_quality,
         )
     if bt == "inproc":
         if not checkpoint_dir:

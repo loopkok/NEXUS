@@ -2,6 +2,22 @@
 
 ## 2026-09-14
 
+**上行 JPEG 传输优化 `jpeg_transport`**——`astral_policy_inference`。**动机**：远程推理
+RTT 主项是上行带宽×载荷（1.38MB 原始 RGB，WiFi ~106ms/直连 ~14ms），GPU 推理仅 ~8ms。
+**做法**：节点保持"解码→letterbox→RGB"不变（像素无改），`RemoteBackend` 在发送前把每个
+camera 槽位 `encode_jpeg`（quality 92）成字节 + 载荷加 `image_format="jpeg"`（新
+`image_codec.py`：encode/decode/normalize，cv2 优先 PIL 回退）；serve `_handle` 收到后
+`normalize_request_images` 解码回 RGB 并 pop 标志（ACT/pi05 两分支照旧消费 RGB，不污染
+openpi AstralInputs）。载荷 1.38MB→0.45MB（benchmark 随机噪声最差情形；真实相机图
+~0.1-0.2MB，~7×）。**开关**：node/yaml/launch `jpeg_transport`（yaml 默认 true；false =
+现状 RGB，兼容直连 openpi 官方 serve 的退路）。**像素**：节点 letterbox 后 RGB 再编码，
+二次 JPEG 有损（训练数据本身是 collect tap 的 JPEG-90 解码，模型对其鲁棒）。**验证**：
+4 例单测（jpeg on 发字节+标志、off 保持 RGB、round-trip 保真、normalize 解码+移除标志）、
+协议 bytes 往返（msgpack bin）、全套件 104→**108 例**全绿；**端到端**：benchmark `--jpeg`
+ALL PASS + e2e `--check-server --jpeg` preflight PASS。benchmark/e2e 加 `--jpeg` 以测真实
+部署路径。**对抗性审查修 2 处**：serve `normalize` 移入 try（JPEG 解码失败优雅回错误串）；
+e2e 补 `--jpeg`（此前 --check-server 不测 JPEG 路径）。
+
 **服务端推理分项进节点指标：engine `server_timing` 透传 + `[MET]` 行 `srv=`**——
 `astral_policy_inference`。**动机**：真机排障要拆"端到端 RTT（发送观测→收到 action）vs
 服务端推理"——此前 `last_plan_ms`（端到端，remote 实测 avg ~140ms）在 state/metrics 有记录，
@@ -23,7 +39,10 @@ pi_cmds 7 个 >0.1 rad 全在换 chunk 边界，多收敛拉回）。**根因**�
 新轨迹，切换差摊到 nblend 行；node/yaml/launch 全链路透传。**验证**：3 例单测（旧值起步
 blend=0.56/0.74/0.8、tol 内不触发、关闭硬切换）；**真实数据离线模拟**（对 pi_cmds 7 个尖峰
 应用 blend=4/tol=0.05）——0.1-0.2 rad → **全部 ≤0.04 rad**（<0.1 阈值）；全套件 99→**102
-例**全绿。README/CLAUDE.md 同步。
+例**全绿。README/CLAUDE.md 同步。**对抗性审查修复 2 处**：① `old_row` 原取 `_chunk[_i]`
+（下一行、还没发给机器人），blend 起点超前一行——改为 `_chunk[_i-1]`（最后**已发出**的行，
+机器人正在执行它），测试锚点同步（_chunk[19]），期望值不变；② `chunk_anchor_blend` 补
+launch 透传（此前只在 yaml）。
 
 **`plot_inference_curves.py` 升级：尖峰换 chunk 关联 + 收敛拉回/模型突变分类**——
 `astral_ws/scripts`。**动机**：真机诊断（temporal_ensemble + async_prefetch_ahead=25 +
