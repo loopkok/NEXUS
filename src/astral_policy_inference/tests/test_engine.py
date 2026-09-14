@@ -466,5 +466,39 @@ class TestChunkAnchor(unittest.TestCase):
         eng.stop()
 
 
+class ServerTimingBackend(StubBackend):
+    """带 last_server_timing 的 remote 风格 backend（serve.py 随响应返回分项）。"""
+
+    def infer(self, obs):
+        self.last_server_timing = {
+            "prep_ms": 1.0, "pre_ms": 0.2, "infer_ms": 3.0,
+            "post_ms": 0.1, "total_ms": 4.3,
+        }
+        return super().infer(obs)
+
+
+class TestServerTiming(unittest.TestCase):
+    def test_propagates_to_stats(self):
+        """服务端分项 server_timing 应透传到 engine.stats（进 state/metrics），
+        从而可拆"网络+序列化 vs 服务端推理"（RTT−server_total）。"""
+        backend = ServerTimingBackend(action_dim=DIM, camera_map={})
+        eng = ActionEngine(backend, mode="queue_sync", action_dim=DIM, chunk=10,
+                           autostart=False)
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng._run_plan()
+        st = eng.stats
+        self.assertEqual(st["server_timing"]["total_ms"], 4.3)
+        self.assertIn("prep_ms", st["server_timing"])
+        eng.stop()
+
+    def test_none_when_backend_has_no_timing(self):
+        """无 server_timing 的 backend（Stub/Inproc）→ None，不崩。"""
+        eng, _ = make_engine(mode="queue_sync")
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng._run_plan()
+        self.assertIsNone(eng.stats["server_timing"])
+        eng.stop()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

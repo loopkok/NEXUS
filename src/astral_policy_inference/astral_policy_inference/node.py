@@ -1131,12 +1131,13 @@ class PolicyNode(Node):
         loop = lat.get("loop") or {}
         obs = lat.get("obs_age") or {}
         exec_ev = ",".join(payload.get("exec_events") or [])
+        srv = (eng.get("server_timing") or {}).get("total_ms")
         print(
             f"[MET] {time.strftime('%H:%M:%S')} state={payload.get('state')} "
             f"loop_avg={loop.get('avg')}ms obs_avg={obs.get('avg')}ms "
             f"pops={eng.get('pops')} plans={eng.get('plans')} "
-            f"plan_ms={eng.get('last_plan_ms')} rem={eng.get('remaining')} "
-            f"exec=[{exec_ev}]",
+            f"plan_ms={eng.get('last_plan_ms')} srv={srv}ms "
+            f"rem={eng.get('remaining')} exec=[{exec_ev}]",
             flush=True,
         )
 

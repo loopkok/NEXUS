@@ -163,6 +163,7 @@ class ActionEngine:
         self._obs: Optional[ObsBatch] = None
         self._planning = False
         self._last_plan_ms = 0.0
+        self._last_server_timing: Optional[dict] = None
         self._last_accept_t = 0.0
         self._plans = 0
         self._pops = 0
@@ -303,6 +304,7 @@ class ActionEngine:
                 "plans": self._plans,
                 "pops": self._pops,
                 "last_plan_ms": self._last_plan_ms,
+                "server_timing": self._last_server_timing,
                 "remaining": self.remaining,
                 "error": self._last_error,
             }
@@ -367,6 +369,11 @@ class ActionEngine:
             return False
         ms = (time.perf_counter() - t0) * 1000.0
         with self._lock:
+            # 服务端分项（serve.py 返回 prep/pre/infer/post/total）——从 backend 带回，
+            # 进 state/metrics 后能直接拆"网络+序列化 vs 服务端推理"（RTT−total）。
+            self._last_server_timing = getattr(
+                self.backend, "last_server_timing", None
+            )
             # 推理期间控制线程继续消费，机器人确实前进了 consumed 行 → 从这里续播
             consumed = max(0, self._i - snap_i)
             try:

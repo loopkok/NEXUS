@@ -2,6 +2,16 @@
 
 ## 2026-09-14
 
+**服务端推理分项进节点指标：engine `server_timing` 透传 + `[MET]` 行 `srv=`**——
+`astral_policy_inference`。**动机**：真机排障要拆"端到端 RTT（发送观测→收到 action）vs
+服务端推理"——此前 `last_plan_ms`（端到端，remote 实测 avg ~140ms）在 state/metrics 有记录，
+但服务端分项只存在 backend 内部、要单独跑 benchmark 才看得到。**做法**：引擎 `_run_plan`
+infer 后把 `backend.last_server_timing` 透传到 `engine.stats.server_timing`（serve.py 返回的
+prep/pre/infer/post/total_ms）→ 进 `/policy_inference/state` + `metrics_log_file`；`[MET]`
+终端行加 `srv=<total>ms`。无该属性的 backend（Stub/Inproc）→ None 不崩。**验证**：新增 2 例
+（带 server_timing 的 backend 透传到 stats、无则 None），全套件 102→**104 例**全绿。
+README 指标口径（last_plan_ms=端到端、RTT−total=网络+序列化 ~130ms）与 CLAUDE.md 指标表同步。
+
 **换 chunk 切换平滑 `chunk_anchor_tol`——消除收敛拉回/模型突变切换尖峰**——
 `astral_policy_inference`。**症状**：temporal_ensemble 已开仍残留换 chunk 尖峰（真实
 pi_cmds 7 个 >0.1 rad 全在换 chunk 边界，多收敛拉回）。**根因**：时序融合只平滑"新旧

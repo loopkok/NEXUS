@@ -172,6 +172,7 @@ source /opt/ros/humble/setup.bash
 | 服务端 | server_timing prep/pre/infer/post | serve.py 响应 `server_timing` | 1.68/0.22/1.16/0.07ms |
 | 服务端 | GPU util / mem | nvidia-smi（benchmark 采样） | ~6-10% / ~1GiB |
 | 节点 | engine plans/pops/last_plan_ms/remaining | `/policy_inference/state` | 30Hz 时 4-7ms |
+| 节点 | engine `server_timing`（serve 分项，随 state 透传） | 同 | total ~3-10ms；RTT−total = 网络+序列化 |
 | 节点 | 控制率 pops/s | 同（增量） | queue_async 30Hz |
 | 节点 | `latency_ms.loop` 新观测→指令处理耗时 | 同 | avg 1.3ms |
 | 节点 | `latency_ms.obs_age` 真实关节反馈龄期 | 同 | avg ~16ms |
@@ -180,7 +181,9 @@ source /opt/ros/humble/setup.bash
 | 稳定性 | serve.py 连接计数/断线 | serve.py 日志 `connection #N` | 按会话数 |
 
 埋点位置：backend `last_timing`（InprocBackend）/ `last_server_timing`（RemoteBackend）、
-node `latency_ms`（`_policy_tick` 测，排除夹爪自回显）、serve.py `server_timing`+连接计数。
+engine stats `last_plan_ms`（端到端 RTT）+ `server_timing`（服务端分项，state/metrics 均带，
+可拆"网络+序列化 vs 服务端推理"）、node `latency_ms`（`_policy_tick` 测，排除夹爪自回显）、
+serve.py `server_timing`+连接计数。
 
 ## 修改约定
 

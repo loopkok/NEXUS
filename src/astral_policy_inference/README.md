@@ -126,7 +126,12 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 
 **真机指标自动记录**：launch 传 `metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点
 每次发布 state（1Hz + 状态变化）把带时间戳的 JSON（含 `latency_ms.loop/obs_age`、engine
-`pops/plans/last_plan_ms/remaining`、`exec_events`）追加写该文件，并在终端打印一行 `[MET]` 摘要。
+`pops/plans/last_plan_ms/server_timing/remaining`、`exec_events`）追加写该文件，并在终端打印
+一行 `[MET]` 摘要（含 `plan_ms` 与 `srv`=服务端推理 total）。
+**时间口径**：`engine.last_plan_ms` = 节点发起 infer（发送观测）→ 收到 action 的**端到端
+往返**（remote 含网络上行+序列化+服务端推理+下行，本机实测 avg ~140ms）；`engine.server_timing`
+= 服务端分项（prep/pre/infer/post/total），`last_plan_ms − server_timing.total_ms` = 网络+序列化
+开销（实测 ~130ms）。
 排障卡顿再加 `joint_stream_log_file:=/tmp/pi_cmds.jsonl`——节点把**每次实际下发（30Hz）的
 关节指令值 + 同轴观测 state**（各话题 JSON 行）也追加写文件。跑完用绘图脚本直接看曲线、
 错位时间与平滑度：
