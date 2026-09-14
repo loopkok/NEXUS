@@ -2,6 +2,21 @@
 
 ## 2026-09-14
 
+**对齐数据完整修复 `scripts/repair_aligned.py`——弧长匀速化重采样（插补）替代删帧**——
+`astral_ws/scripts`。**动机**：compress_pauses.py（raw 层删帧）会让相邻帧位移变大、动作变
+"跳"，且删帧后时间戳出现 gap（validate W2×100）；用户要求对**对齐后**数据做完整修复，优先
+插补而非删除。**做法**：新脚本处理 `episode*/aligned_data.h5`，主方法 **resample**——把
+「快-停-快」轨迹按累计运动量（弧长 = 8 维位移和，夹爪动作也计、不被压缩）重新映射成**匀速**：
+目标每帧弧长 = `--speed-ref`（默认 0=自动取原数据 p90 速度），帧数 = 总弧长/speed-ref；关节
+数值线性插值（平滑），相机帧取最近原始帧（JPEG 无法插值）、`src_offsets/src_timestamps/
+quality` 同步取最近；时间戳均匀 `1/fps`（W2 gap 消失）；next-state action 重建。
+`--method drop` 保留删帧法（静止段删中间帧，每段 `--min-keep`）。**验证**：全量 pick_place_merged
+**21321→10489 帧（-50.8%，20s）**；时间戳间隔 33.3ms/std 0/严格单调；validate **W2 gap 100→0**、
+W3 仅 1、0 fail（W5 armed coverage 为原数据警告与修复无关）；速度分布更均匀（std 改善）。
+**坑**：resample 时间戳初版误用弧长单位（间隔 1000ms）→ 修正为 1/fps 秒。**用法**：修复后
+`vla_process_act.sh`（align 检测 aligned 存在即跳过）→ 训练；`--speed-ref` 调帧数（更小=更
+温和更多帧），`--fps` 调输出帧率。
+
 **训练数据停顿压缩 `scripts/compress_pauses.py`——删掉录制中的长时间停顿/慢速段，让 ACT 学到更流畅的轨迹**——
 `astral_ws/scripts`。**动机**：真机推理的固定卡点（到试管前/夹取后/放置前/释放后）＝ 训练数据里操作员
 在任务阶段转换处的停顿/减速被模型忠实复现（实测训练集 20.6% 帧速度 <0.008 rad/帧、208 个慢速段；
