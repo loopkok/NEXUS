@@ -2,6 +2,24 @@
 
 ## 2026-09-14
 
+**修复：yaml 顶层命名空间 ≠ 节点名 → 整份参数被 rclpy 静默丢弃，推理长期按代码默认值跑**——
+`astral_policy_inference`。**症状**：真机连续 4 次测试（test1-4）"改了 yaml 参数（coeff/
+tol/interp/jpeg）运动却不见对应变化"；本次 test4 实测指令流仍 30Hz（`control_interp: 2`
+未生效）、尖峰仍在。**根因**：yaml 顶层键是 `astral_policy_inference:`，而 launch 节点名是
+`policy_node`——rclpy 按节点名匹配 `--params-file` 的段，键不匹配**整份参数被静默丢弃**
+（Humble 无单键回退），节点回落到 `_declare_params` 代码默认值：`control_interp=1`、
+`temporal_ensemble_coeff=0.0`、`chunk_anchor_tol=0.0`、`jpeg_transport=false`。即**此前所有
+真机测试的时序融合 / 切换平滑 / 60Hz 插值 / JPEG 全都没生效**（host/port、camera_image_size、
+metrics/joint_stream 日志因 launch 显式传参而侥幸正确）。对照 data_collect：其 yaml 顶层键
+= `data_collect` = 节点名，正确。**做法**：yaml 顶层键 `astral_policy_inference:` →
+`policy_node:`（+ 注释警示）；node 启动行扩展为**生效参数自报**（ctrl/coeff/anchor_tol/
+anchor_blend/prefetch/jpeg/backend/host:port），未来任何 launch 一眼可见实际参数、防复发。
+**验证**：launch 默认（不传 interp）→ `ctrl=60.0Hz coeff=0.01 anchor_tol=0.05 anchor_blend=4
+prefetch=40 jpeg=True`（此前 interp=1/coeff=0/tol=0/jpeg=false）；launch 传 `control_interp:=2`
+仍 60Hz（显式覆盖照常生效）；全套件 108 例全绿。**注意**：修复后 yaml 值（coeff 0.01、
+prefetch 40、interp 2、jpeg true）将**首次真正生效**——test4 声称的 coeff 0.05 / prefetch 25
+从未跑过，要测哪组用 launch 参数或改 yaml。
+
 **上行 JPEG 传输优化 `jpeg_transport`**——`astral_policy_inference`。**动机**：远程推理
 RTT 主项是上行带宽×载荷（1.38MB 原始 RGB，WiFi ~106ms/直连 ~14ms），GPU 推理仅 ~8ms。
 **做法**：节点保持"解码→letterbox→RGB"不变（像素无改），`RemoteBackend` 在发送前把每个

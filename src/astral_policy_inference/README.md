@@ -62,6 +62,14 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 
 不带 `keyboard:=true` 时，可用以下任意途径发命令：
 
+> ⚠️ **yaml 参数加载**：`config/policy_inference.yaml` 顶层键必须是 `policy_node`（= launch
+> 节点名）。rclpy 按节点名匹配 `--params-file` 的段，键不匹配**整份参数被静默丢弃**（节点
+> 落回代码默认值，无任何报错）。曾因此 `control_interp: 2`/`temporal_ensemble_coeff`/
+> `chunk_anchor_tol`/`jpeg_transport` 全部没生效、真机一直跑 30Hz 裸引擎。确认方法：节点
+> 启动行现在会自报生效参数（`ctrl=60.0Hz coeff=0.01 anchor_tol=0.05 ... jpeg=True`），
+> 看到 `ctrl=30.0Hz`/`coeff=0.0` 即 yaml 没加载。要临时覆盖 yaml 用 launch 参数（如
+> `control_interp:=2`）。
+
 ```bash
 ros2 topic pub /policy_inference/cmd std_msgs/msg/String "data: 'policy'" -1
 ros2 topic pub /policy_inference/cmd std_msgs/msg/String "data: 'playback'" -1

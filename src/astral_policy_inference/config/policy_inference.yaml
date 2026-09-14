@@ -8,7 +8,9 @@
 #   backend_type: "remote" → GPU 主机起 `scripts/serve.py --model <act|pi05> --checkpoint-dir <ckpt>`
 #                            （该 server 加载 checkpoint），这里只填 host/port；机器人端零改动
 #   backend_type: "inproc" → checkpoint_dir 指向本地 checkpoint（node 与模型同解释器时）
-astral_policy_inference:
+# ⚠️ 顶层键必须 = 节点名（policy_node）。rclpy 按节点名匹配 --params-file 的
+# 段，键不匹配整份参数被静默丢弃（曾导致 yaml 全失效、节点按代码默认值跑）。
+policy_node:
   ros__parameters:
     # ---------------- robot：必须与数采当时一致（schema 真源） ----------------
     arms: ["left"]            # ["left"] | ["left", "right"]
@@ -45,7 +47,7 @@ astral_policy_inference:
     # ACT 时序融合系数（借鉴 lerobot ACTTemporalEnsembler，ACT 论文 Algorithm 2）：
     # >0 时引擎换 chunk 把旧尾段与新头部按 exp(-coeff*i) 权重平均，消除切换跳变
     # （缓解真机"一卡一卡"）。ACT 推荐 0.01；0 = 关闭（硬切换）。开/关可 A/B 对比。
-    temporal_ensemble_coeff: 0.01
+    temporal_ensemble_coeff: 0.05
     # 换 chunk 切换平滑：安装时续播起点（融合后 chunk[i0]）偏离"正在执行的旧 command"
     # >tol rad 时，前 chunk_anchor_blend 行从旧值平滑过渡到新轨迹——消除收敛拉回
     # （旧 command 漂移、换 chunk 一步追向实测）与模型突变两类切换尖峰（0.1-0.2rad）。
@@ -58,7 +60,7 @@ astral_policy_inference:
     #   = 40 → 每 10 步融合（当前设置：重规划更勤、观测更新鲜、重叠 40 行更平滑，
     #          代价是推理频率 1.2Hz→3Hz，直连网线下无压力）
     # 0 = 自动 (action_chunk//2)。仅 queue_async 生效（rtc 用 rtc_* 参数）。
-    async_prefetch_ahead: 40
+    async_prefetch_ahead: 25
     control_interp: 2         # 控制率 = dataset_fps × N（2=60Hz 插值下发，把 30Hz 大步拆半；
                               #   1=每策略步发一次）。真机快动作"卡一下"用 2 拆小。
     # 绝对动作语义守卫：chunk 首行在 |state|>1.0 的维上离当前 state 超过该值即拒绝

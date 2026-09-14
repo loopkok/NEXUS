@@ -182,6 +182,15 @@ class PolicyNode(Node):
             f"arms={self._schema.arms} ee=({self._schema.end_effector_left},"
             f"{self._schema.end_effector_right}) fps={self._schema.dataset_fps} "
             f"ctrl={self._ctrl_rate}Hz mode={self.get_parameter('engine_mode').value}"
+            # 生效参数自报（防 yaml 被静默丢弃/launch 覆盖后无感）：
+            # yaml 顶层键≠节点名时整份参数被 rclpy 忽略，节点按代码默认值跑。
+            f" coeff={self.get_parameter('temporal_ensemble_coeff').value} "
+            f"anchor_tol={self.get_parameter('chunk_anchor_tol').value} "
+            f"anchor_blend={self.get_parameter('chunk_anchor_blend').value} "
+            f"prefetch={self.get_parameter('async_prefetch_ahead').value} "
+            f"jpeg={self.get_parameter('jpeg_transport').value} "
+            f"backend={self.get_parameter('backend_type').value} "
+            f"host={self.get_parameter('host').value}:{self.get_parameter('port').value}"
         )
 
     # ------------------------------------------------------------- parameters
