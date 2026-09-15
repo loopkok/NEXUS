@@ -106,6 +106,44 @@ test/                     ← pytest 全套（见下"测试"）
 | 对齐后帧数 ≠ fps×时长 | 对齐网格含边界帧/保持帧 | **不要硬编码帧数算 episode 偏移**，从 parquet 读真实段长（测试里踩过） |
 | 改采集配置后同目录重转，v3 升版混入旧布局脏行 | `convert_session` 只截断 meta jsonl、不删旧 `data/videos`；v3 升版按目录遍历文件 → 旧段（另一 schema 的维数/内容）被当新段并进 parquet | ①`convert_session` 重跑前清空 `data/`+`videos/`（输出目录=数据集专属，重跑即替换）；②`convert_to_lerobot_v3` 以 `meta/episodes.jsonl` 为权威，数据/视频文件集与清单不符即报错（列出多余/缺失下标）。`test_reconvert_same_output_cleans_stale` / `test_v3_rejects_dirty_source` 双回归 |
 
+## 数据质量优化历程（2026-09-14 前后，按时间顺序）
+
+> 给新会话/接手者：理解数采链路质量认知的演进顺序（坑表是"症状→防护"，这里是"决策顺序 +
+> 数据 + 教训"）。完整逐日记录见 `astral_ws/CHANGELOG.md`。
+
+**第 1 层：采集链路精度（上游量化阶梯）**
+慢速遥操"抖抖的"——上游 `astral-tracking` 位姿序列化 F4/F3（0.1mm/0.001）量化成台阶，下游
+EMA 滤不净（遥操日志实测 VR 零速占比 36%、cmd 高频抖动 ~10mm/s）。**修法**：上游改 F7/F6
+（1e-7/1e-6 ≈ float 原生精度），协议行结构不变、`quest3_hand_mocap` 解析零改动。**教训**：
+采集质量的最上游是精度，量化台阶在慢速段最显眼。
+
+**第 2 层：实时防线（采集时就知道坏了）**
+之前"改了数据才发现问题"。逐步补齐采集时可见的信号：`low_fps_warning`（参考相机半速 → 红条）、
+**空录告警**（启动 ~2s 数值+图像全 0 → `EMPTY-REC` 三档文案，管"源未就绪全 0"这种 low_fps 管
+不到的）、**吞指令留痕**（非法态被忽略的按键计数进 state JSON——键盘/VR 无 disabled 视觉，
+"以为开了实际没录"）、`session` 溯源（每段 meta 记目录）。**原则**：数据坏了要"当时"知道，
+不是离线复盘才知道。
+
+**第 3 层：控制面与目录（单人采集不打断节奏）**
+VR 手柄控制录制（A=start/B=stop&save/摇杆=discard，上升沿+状态门控，纯决策模块离线单测）、
+session 运行期切换（换目录不重启节点，仅 IDLE、目录名安全校验）、三目录约定（raw/pi/act 各进
+各的）+ 剔 video2（openpi camera_map 本就只用 video8+video0）。**目的**：让"录到好数据"这件事
+本身顺手、不易出错。
+
+**第 4 层：转换自检（坏段隔离 + ACT 两级自检）**
+`validate` 默认隔离 fail 段到 `quarantine/`（移动不删除可逆），隔离后仍有 fail 即中止转换；
+`convert_to_act.py` 结构级自检（stats/相机同 shape/tasks/可读可解码，不过即退出）+ 深度级
+（`--check-python` 现代 lerobot 真装载）。**目的**：堵坏数据进训练集的通路，宁可中止不静默。
+
+**第 5 层：训练数据节奏（治本，卡点根因）**
+采集质量修好后，真机推理仍**固定卡点**（到目标前/夹取后/放置前/释放后）。定位到：**训练数据
+本身走走停停**（pick_place_merged 实测 20.6% 帧速度 <0.008 rad/帧、208 个慢速段遍布）——ACT
+忠实学进示范节奏，真机在对应任务状态复现停顿。**修法**：`scripts/compress_pauses.py`（raw 删
+停顿帧）/ `repair_aligned.py`（aligned **弧长均匀选帧**，零错位）。**关键设计决策**：
+repair 从"插值"改"选帧"——关节插值必然造成关节 vs 图像错位（图像只能取离散帧），**选帧
+（弧长均匀取原始帧）零错位**；`--speed-ref` 控压缩比（小 = 更温和更多帧）。**教训**：模型是
+示范的镜子——要流畅的动作，先要有流畅的示范（或修复数据）。
+
 ## 下游约定（openpi v2.1 / lerobot ACT v3.0，改采集必须连带核对）
 
 - 两条下游：**openpi（pinned lerobot 0.1.0）直接消费 v2.1**；**ACT 走专属

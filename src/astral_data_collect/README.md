@@ -232,7 +232,6 @@ python3 -m astral_data_collect.convert_to_act \
 （224×224 同 shape 由转换期 letterbox 保证）。
 
 ### 5b-底层工具：v2.1 → v3.0 升版 `convert_to_lerobot_v3.py`
-
 `convert_to_act.py` 内部复用此通用升版（镜像官方 `convert_dataset_v21_to_v30`），
 也可单独用于把已有 v2.1 升版给其它现代 lerobot 策略：
 
@@ -267,6 +266,44 @@ HF_LEROBOT_HOME=~/lerobot_home lerobot-train \
 加载并逐帧解码成功、`lerobot-train` ACT 冒烟（2 步）真实跑通并落 checkpoint。
 状态/动作语义与 v2.1 完全相同（`action` 绝对关节角 + `_ee_` 末端绝对）；
 若想训 delta action，属**训练前数据变换**范畴，改数据处理而非本转换。
+
+### 5c. 数据质量优化（采集 → 训练）
+
+从"慢速遥操抖抖的 / 训练后真机固定卡点"到质量可控的完整过程。核心结论：**数据质量决定
+训练质量**——采集链路（上游精度、实时防线）、转换（自检）、**训练数据节奏**（示范停顿
+耦合）三层都要管；引擎参数只能平滑推理表现，治本在数据。
+
+**症状画像（怎么发现问题）**
+
+| 症状 | 根因 | 防线 / 修法 |
+|---|---|---|
+| 慢速平移"抖抖的"（遥操日志 VR 零速占比 36%、cmd 高频抖动 ~10mm/s） | 上游 `astral-tracking` 位姿序列化 F4/F3 → 0.1mm/0.001 量化阶梯，下游 EMA 滤不净 | 上游改 F7/F6（1e-7/1e-6，~float 原生精度），协议行结构不变、解析无需改 |
+| 录制中相机只有 3fps 没人知道 | 抽头链路异常（限流器/编码器/GIL） | `low_fps_warning`：参考相机实率 < fps/2 → state JSON + 节点 WARN + web 红条 |
+| 空录（忘 armed / teleop 没发布 / 抽头没开） | 源未就绪数值+图像全 0 | `EMPTY-REC` 空录告警（启动 ~2s 全 0 → 三档文案 + web 红条，段级判定） |
+| "以为开了实际没录"（SAVING 期按 start 被吞） | 键盘/VR 无 disabled 视觉，非法态按键静默 | 吞指令计数 `ignored` 入 state JSON + web chip（pause/resume 原静默 no-op 也计数） |
+| 坏段进训练集 | 短段/体检差段未被隔离，validate 默认只出报告 | `vla_process_*.sh` validate 默认 `--apply`（fail 段移 `quarantine/`，可逆），隔离后仍有 fail 即 `exit 1` 中止；`--no-quarantine` 显式放行 |
+| 训练后真机**固定卡点**（到目标前/夹取后/放置前/释放后"停一下"） | 训练数据本身走走停停（pick_place_merged 实测 **20.6% 帧速度 <0.008 rad/帧**、208 个慢速段）——ACT 忠实学进示范节奏 | 数据修复（见下） |
+
+**防线体系（三层，各司其职）**
+
+- **实时（采集时）**：`low_fps_warning` / 空录告警 / 吞指令留痕 / `session` 溯源（每段 meta 记
+  目录，切目录不重启节点）
+- **离线（转换前）**：`validate_data` F1-F6 fail / W1-W6 warn + 默认隔离 fail 段 + 隔离后中止
+- **转换（ACT 训练数据）**：`convert_to_act.py` **两级自检**——结构级（stats mean/std 齐全 /
+  相机同 shape / tasks 非空 / parquet+视频可读可解码，不过即退出）+ 深度级（`--check-python`
+  用现代 lerobot 真装载 `LeRobotDataset` + ACT 预处理管线 + 逐帧解码）
+
+**训练数据节奏修复（治本）**
+
+模型复现的是示范节奏——示范停顿 → 真机卡点。两个脚本（`astral_ws/scripts/`）：
+
+| 脚本 | 处理层 | 方法 | 效果 |
+|---|---|---|---|
+| `compress_pauses.py` | raw h5（robot/camera） | 删停顿段中间帧（`--speed-thresh` 判低速，`--min-keep` 每段保留） | pick_place_merged **-35% 帧**，动作略"跳" |
+| `repair_aligned.py` | aligned_data.h5 | **弧长均匀选帧**（按累计运动量重采样，`--speed-ref` 控压缩比；**选帧非插值 = 零图像-关节错位**） | **-51% 帧**、速度更匀、时间戳均匀（validate W2 gap 100→0） |
+
+修完 `vla_process_act.sh`（align 检测 aligned 存在即跳过）→ `act_train.sh` 重新训练 → 真机
+对比卡点是否消失。`--speed-ref` 调压缩比：更小 = 更温和更多帧（动作不那么快）。
 
 ## 6. 数据格式（raw）
 
