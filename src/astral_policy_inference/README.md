@@ -260,6 +260,81 @@ console script 放进 `install/astral_policy_inference/bin/` 而无 resource ind
 - **运行期观测门控**：POLICY 运行中 state 反馈缺失超过 `obs_stale_stop_s` 自动暂停（保持当前
   目标），而不是继续用陈旧观测盲推盲发。
 
+## 推理质量优化（真机卡顿 → 流畅）
+
+从真机推理"一卡一卡 / 任务固定卡点 / 换 chunk 冲一下"到基本流畅的完整过程：参数体系、
+诊断工作流与实测数据。核心结论：**多数"卡顿"不是引擎 bug，而是 ①参数没生效（yaml 命名
+空间）、②模型忠实复现了训练数据里的停顿节奏、③网络带宽限制换 chunk 频率**。
+
+### 症状画像（按真机/日志可复现性）
+
+| 症状 | 特征 | 根因层 |
+|---|---|---|
+| 换 chunk"冲一下" | 固定间隔，`pi_cmds` 实测 106~149ms 指令空档后接 0.1~0.15 rad 步 | 引擎锁跨推理（已修） |
+| 换 chunk 后 2-3 行尖峰 | 0.1-0.2 rad 单关节步，全在 `engine.plans` 递增边界 | 收敛拉回（anchor_tol/coeff 修） |
+| 任务固定卡点 | 到目标前/夹取后/放置前/释放后"停一下"，与换 chunk 无关 | **训练数据节奏**（数据修复） |
+| 慢速平移"停一下走一下" | 低速段骤停再走 | 训练数据 + 链路延迟混合 |
+
+### 根因链（按排查顺序）
+
+1. **参数从未生效（最隐蔽）**：yaml 顶层键 `astral_policy_inference:` ≠ 节点名 `policy_node` →
+   rclpy 按节点名匹配 `--params-file` 段，键不匹配**整份参数静默丢弃**，节点落回代码默认值
+   （interp=1/coeff=0/tol=0/jpeg=false）。此前所有真机"调参没反应"都因此。**防复发**：节点
+   启动行自报生效参数（`ctrl=..Hz coeff=.. anchor_tol=.. ... jpeg=..`），看到默认值即 yaml 没加载。
+2. **换 chunk 指令断流**：`_run_plan` 锁跨 `backend.infer()` → 慢推理（远程 ~120ms）堵控制线程
+   `tick()` → 空档。→ 推理移出引擎锁（锁内快照 + 锁外 infer + 锁内安装）。
+3. **换 chunk 尖峰（收敛拉回）**：旧 chunk 开环预测漂移 + 观测过时（请求→推理→回传期间机器人
+   已前进 4-5 行），重规划时新预测一步追回实测。时序融合（coeff）只平滑"新旧预测"、不平滑
+   "预测 vs 执行"→ 叠加切换平滑（anchor_tol）。
+4. **数据节奏（卡点根因）**：训练数据本身走走停停（pick_place_merged 实测 20.6% 帧速度
+   <0.008 rad/帧），ACT 忠实学进停顿 → 真机在对应任务状态复现。→ 数据修复（见下）。
+
+### 参数体系（policy_inference.yaml，全可 launch 覆盖，真机 A/B）
+
+| 参数 | 默认 | 机制 | 调优方向 |
+|---|---|---|---|
+| `temporal_ensemble_coeff` | 0.05 | 时序融合：换 chunk 新旧预测指数加权（借鉴 lerobot ACTTemporalEnsembler） | 大=更平滑但"肉"；0=关 |
+| `chunk_anchor_tol` | 0.05 | 切换平滑：安装时续播起点偏离**正在执行的旧 command** >tol → 前 `chunk_anchor_blend`(4) 行从旧值线性过渡 | 0=硬切换；真机仍跳可调大 |
+| `control_interp` | 2 | 控制率 = dataset_fps×N（2=60Hz 插值下发，把 30Hz 大步拆半；3=90Hz） | 拆小大步、缓解肉眼卡顿 |
+| `async_prefetch_ahead` | 25 | 每 (chunk−N) 行重规划并融合（小=重规划更勤、观测更新鲜，但推理频率高） | 直连网线小值；带宽紧大值 |
+| `jpeg_transport` | true | 上行 camera 槽位发 JPEG（载荷 1.38MB→~0.2MB，RTT 主项是带宽×载荷） | false=原始 RGB（兼容官方 serve） |
+| `engine_mode` | queue_async | 后台预取整 chunk（方案 A 后默认即 30Hz） | 时序融合 checkpoint 才需 queue_sync |
+
+### 诊断工作流（真机排障三板斧）
+
+```bash
+# ① 落盘：state 指标 + 关节指令流（--metrics 供换 chunk 关联）
+ros2 launch astral_policy_inference policy_inference.launch.py ... \
+    metrics_log_file:=/tmp/pi_metrics.jsonl joint_stream_log_file:=/tmp/pi_cmds.jsonl
+# ② 分析：尖峰换 chunk 关联 + 收敛拉回/模型突变分类（--self-test 先自测）
+/usr/bin/python3 astral_ws/scripts/plot_inference_curves.py \
+    --log /tmp/pi_cmds.jsonl --metrics /tmp/pi_metrics.jsonl --out /tmp/pi_curves.png
+# ③ 拆延迟：engine.last_plan_ms（端到端 RTT，state/metrics 均带）− server_timing.total = 网络+序列化
+```
+
+关键判读：`engine.last_plan_ms` = 发送观测→收到 action 的端到端（remote 实测 p50 41ms，
+含 1.38MB/0.2MB 上行 + 服务端推理 ~10ms）；`latency_ms.obs_age` = 观测龄期（~23ms，观测本身
+新鲜）；`latency_ms.loop` = 节点处理（~3ms）。尖峰分类：**收敛拉回** = command 一步追向 state
+（旧 chunk 漂移 → 换 chunk 纠正，anchor_tol 对症）；**模型突变** = 主动跳离 state（真策略行为，
+需看是否该动作本就快）。
+
+### 实测（test4 → test5，同一任务两段录制）
+
+| 指标 | test4（参数未生效） | test5（参数生效） |
+|---|---|---|
+| \>0.1 rad 尖峰 | 7 个 | **0 个** |
+| 最大步长 | 0.200 rad | 0.084 rad |
+| 控制率 | ~30Hz | ~50Hz（interp=2） |
+| 端到端 RTT | ~140ms | ~56ms（jpeg） |
+
+### 数据层（卡点治本）
+
+模型复现的是训练数据节奏，引擎参数只能平滑、不能消除"模型在固定状态输出低速"。**治本**：
+- `scripts/compress_pauses.py`（raw 层删停顿帧，-35%，动作略"跳"）
+- `scripts/repair_aligned.py`（aligned 层**弧长均匀选帧**，-50%，速度更匀；选帧而非插值 =
+  零图像-关节错位；`--speed-ref` 控压缩比，小=更温和更多帧）
+- 修完重新 `vla_process_act.sh` → `act_train.sh` 训练 → 真机对比卡点是否消失
+
 ## 测试
 
 ```bash

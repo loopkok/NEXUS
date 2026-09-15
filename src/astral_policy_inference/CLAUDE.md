@@ -60,6 +60,52 @@
 | 真机换 chunk 时"冲一下"（固定时刻 hold→lunge，pi_cmds 实测 106~149ms 空档后接 0.1~0.15 rad 步） | `_run_plan` 锁跨 `backend.infer()` 持有，慢推理（远程网络 ~120ms）堵住控制线程 `tick()` → 指令断流；且 `i0=round(latency_ms×fps)` 按"机器人前进了"估算，但锁内推理时机器人实际没动 → 超前跳 | **推理移出引擎锁**（锁内快照 obs + `_i_snap` 锚点 → 锁外 infer → 锁内安装）；续播索引用**实测 `consumed = _i − _i_snap`**；时序融合锚点用 `_i_snap`。queue_sync 的 `_plan_blocking` 外层仍持锁（阻塞语义不变）。3 例回归：慢推理不堵 tick、从 new[consumed] 续播、融合锚点对齐 |
 | 换 chunk 后 2-3 行仍出现 0.1-0.2 rad 尖峰（temporal_ensemble 已开，pi_cmds 实测 7 个全在换 chunk 边界） | 时序融合只平滑"新旧预测"，不平滑"预测 vs 执行"——旧 command 开环 chunk 内漂移（观测过时 + 预测漂移），重规划时新预测一步追向实测（收敛拉回，跳后新 chunk[i0]≈state、cmd-state 0.003~0.055）；起点用"实测"的 blend 对收敛拉回无效（dev<tol） | **`chunk_anchor_tol` 切换平滑**（默认 0.05，yaml 开）：安装时续播起点偏离**正在执行的旧 command** >tol → 前 `chunk_anchor_blend`(4) 行从旧值线性过渡到新轨迹。真实数据离线模拟：7 尖峰 0.1-0.2 → ≤0.04 rad。3 例单测（旧值起步 blend / tol 内不触发 / 关闭） |
 
+## 推理优化历程（2026-09-14 实录，按时间顺序）
+
+> 给新会话/接手者：理解**为什么**有这些参数和机制（坑表是"症状→防护"，这里是"决策顺序 + 数据 +
+> 教训"）。完整逐日记录见 `astral_ws/CHANGELOG.md`。
+
+**第 0 层：参数根本没生效（最隐蔽、最贵的教训）**
+yaml 顶层键 `astral_policy_inference:` 而节点名是 `policy_node`——rclpy 按节点名匹配
+`--params-file` 段，键不匹配**整份参数静默丢弃**，节点落回代码默认值。连续 4 轮真机"改了
+coeff/tol/interp/jpeg 运动却不见变化"的根因全在这。**修法**：yaml 顶层键改 `policy_node:` +
+节点启动自报生效参数（`ctrl=60Hz coeff=0.05 anchor_tol=0.05 ... jpeg=True`）。**教训**：
+改参数后先看节点启动行确认生效，不要假设 yaml 被加载（Humble 无单键回退，静默丢）。
+
+**第 1 层：换 chunk 指令断流（hold→lunge）**
+`_run_plan` 锁跨 `backend.infer()`（远程 ~120ms）堵控制线程 → 每次重规划 ~120ms 指令空档。
+**修法**：推理移出引擎锁（锁内快照 obs + `_i_snap` → 锁外 infer → 锁内安装），续播索引用实测
+`consumed = _i − _i_snap`（替代 latency_ms 估算，后者在"控制线程被堵、机器人没动"时超前跳）。
+
+**第 2 层：换 chunk 收敛拉回尖峰**
+锁移出后空档消失，但仍有 0.1-0.2 rad 尖峰全在换 chunk 边界（`plot_inference_curves --metrics`
+关联 `engine.plans` 递增确认）。机制：旧 chunk 开环漂移 + 观测过时（请求→推理→回传 ~130ms 期间
+机器人已前进 4-5 行）→ 新预测一步追回实测。时序融合（`temporal_ensemble_coeff`，借鉴 lerobot
+ACTTemporalEnsembler）只平滑"新旧预测"连续性，不平滑"预测 vs 执行"（旧预测已漂移）。**修法**：
+`chunk_anchor_tol` 切换平滑——安装时续播起点偏离**正在执行的旧 command** >tol 则前 blend 行
+从旧值过渡。实测 7 尖峰 0.1-0.2 → ≤0.04。**关键认知**：起点必须用"最后已发出的行 `_i-1`"而非
+"下一行 `_i`"（后者超前一行，blend 起点错）。
+
+**第 3 层：任务固定卡点 = 训练数据节奏**
+尖峰清零后肉眼仍见 4 个**固定**卡点（到目标前/夹取后/放置前/释放后）。与换 chunk 无关（跨 2-3
+chunk），是模型在对应任务状态输出低速轨迹——因为训练数据本身走走停停（pick_place_merged 实测
+20.6% 帧速度 <0.008 rad/帧、208 个慢速段遍布）。**结论**：引擎参数只能平滑不能消除（卡点是
+"模型预测"），治本在数据（`scripts/compress_pauses.py` / `repair_aligned.py`，见 README 数据层）。
+
+**第 4 层：网络带宽（RTT 主项）**
+`engine.last_plan_ms` 端到端 ~140ms，`server_timing.total` 服务端推理仅 ~10ms——差值是上行
+1.38MB 原始 RGB 在受限链路的传输（WiFi 约百 ms 级）。**修法**：`jpeg_transport`（camera 槽位
+编码 JPEG，载荷 ~7× 小，RTT 140→56ms）。
+
+**顺手的诊断资产**（都沉淀成工具）：
+- `metrics_log_file` / `joint_stream_log_file`：state 指标 + 关节指令流落盘（JSONL）
+- `plot_inference_curves.py`：尖峰换 chunk 关联 + 收敛拉回/模型突变分类（`--self-test` 自测）
+- `engine.server_timing` 透传：state/metrics 直接可拆"网络+序列化 vs 服务端推理"
+
+**数据修复设计决策**：`repair_aligned.py` 从"插值"改成"选帧"——关节插值必然造成关节 vs 图像
+错位（图像只能取离散帧），**选帧（弧长均匀取原始帧）零错位**；`--speed-ref` 控压缩比（小=更
+温和更多帧）。
+
 ## 代码路径速查
 
 ```text

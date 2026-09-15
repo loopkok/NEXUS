@@ -1,5 +1,18 @@
 # Changelog（astral_ws）
 
+## 2026-09-15
+
+**推理优化历程文档化——README「推理质量优化」+ CLAUDE.md「优化历程实录」**——
+`astral_policy_inference`。把 09-14 真机推理优化全过程的认知沉淀成文档：**README** 新增
+「推理质量优化（真机卡顿→流畅）」章节——症状画像（换 chunk 冲一下/边界尖峰/固定卡点/慢速
+一卡一卡）、根因链（①yaml 命名空间未生效 ②引擎锁跨推理 ③收敛拉回 ④训练数据节奏）、参数体系
+表（coeff/anchor_tol/control_interp/prefetch/jpeg 各自机制与调优方向）、诊断三板斧
+（metrics+joint_stream 落盘 → plot_inference_curves 换 chunk 关联 → last_plan_ms−server_timing
+拆延迟）、实测对比（test4→test5：尖峰 7→0、RTT 140→56ms）、数据层治本（compress/repair）。
+**CLAUDE.md** 新增「推理优化历程（2026-09-14 实录）」时间线——按排查顺序讲清每个机制的
+**为什么**与关键教训（参数自报防复发、起点用最后已发出行 _i-1、时序融合不平滑"预测 vs 执行"、
+固定卡点=训练数据节奏、选帧零错位 vs 插值必然错位）。**验证**：纯文档，无代码改动。
+
 ## 2026-09-14
 
 **真机推理调参：`async_prefetch_ahead` 25→5、`control_interp` 2→3**——`astral_policy_inference`。
