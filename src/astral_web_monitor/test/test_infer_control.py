@@ -9,8 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from astral_web_monitor.config import (  # noqa: E402
     PI_COMMANDS,
-    PI_JOINT_LOG_DEFAULT,
-    PI_METRICS_LOG_DEFAULT,
+    PI_LOG_ROOT,
     policy_launch_args,
     valid_infer_cmd,
 )
@@ -26,6 +25,7 @@ def test_policy_launch_args_defaults() -> None:
     assert args["engine_mode"] == "queue_async"
     assert args["keyboard"] == "false"  # web 按钮取代键盘节点
     assert "metrics_log_file" not in args  # 日志默认关
+    assert "log_dir" not in args
 
 
 def test_policy_launch_args_overrides() -> None:
@@ -44,9 +44,9 @@ def test_policy_launch_args_overrides() -> None:
     assert args["engine_mode"] == "rtc"
     assert args["model"] == "pi05"
     assert args["backend_type"] == "stub"
-    # 日志开关 → state + joint 两个文件都落到 /tmp 默认路径
-    assert args["metrics_log_file"] == PI_METRICS_LOG_DEFAULT
-    assert args["joint_stream_log_file"] == PI_JOINT_LOG_DEFAULT
+    # 日志开关 → 注入 log_dir 根目录（launch 每次自动建运行子目录，metrics/cmd 落里面）
+    assert args["log_dir"] == PI_LOG_ROOT
+    assert "metrics_log_file" not in args
 
 
 def test_policy_launch_args_int_coercion() -> None:

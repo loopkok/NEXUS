@@ -189,29 +189,39 @@ PI_TASK_TOPIC = "/policy_inference/task"
 PI_STATE_TOPIC = "/policy_inference/state"
 # 允许的推理命令（对应 keyboard 全部功能：s/y/space/n/h/g/x）
 PI_COMMANDS = ("policy", "playback", "pause", "resume", "takeover", "release", "stop")
-# 记录日志开关 → 默认落盘路径（metrics=state 指标 JSON 行；joint=关节指令流 JSON 行）
-PI_METRICS_LOG_DEFAULT = "/tmp/pi_metrics.jsonl"
-PI_JOINT_LOG_DEFAULT = "/tmp/pi_cmds.jsonl"
+# 记录日志开关 → 落盘根目录。每次 `ros2 launch` 由 launch 层自动建
+# `{root}/{YYYYMMDD-HHMMSS}[_tag]/` 运行子目录（见 policy_inference/astral_dual_arm_teleop
+# 的 log_dir 逻辑）：区分每次记录、持久化到测试归档、不复用同一个 /tmp 文件（重启即丢）。
+# 默认测试归档 inference_test_logs/（推理 → inference/，遥操 → teleop/），
+# env ASTRAL_WEB_MONITOR_LOG_ROOT 可覆盖（如 Jetson 工作区路径不同）。
+_LOG_CONFIG_DIR = os.path.dirname(os.path.abspath(__file__))  # .../astral_web_monitor/astral_web_monitor
+_LOG_WS_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_LOG_CONFIG_DIR)))  # → <ws>
+LOG_ROOT_DEFAULT = os.environ.get(
+    "ASTRAL_WEB_MONITOR_LOG_ROOT",
+    os.path.join(_LOG_WS_ROOT, "inference_test_logs"),
+)
+# metrics=state 指标 JSON 行（pi_metrics.jsonl）；joint=关节指令流 JSON 行（pi_cmds.jsonl）
+PI_LOG_ROOT = os.path.join(LOG_ROOT_DEFAULT, "inference")
 
 # --- astral_arm_teleop（遥操诊断日志）-----------------------------------------
-# 预设启动勾选「记录遥操日志」时注入的共享基路径；双臂 launch 按侧拆 _left/_right。
-# 节点记录 kind=loop/wrist/state/body/metrics 的 JSON 行（见 teleop_log.py）。
-# 只对声明了 teleop_log_file 参数的 launch 预设注入（launch_manager.preset_with_teleop_log）。
-TELEOP_LOG_DEFAULT = "/tmp/teleop_teleop.jsonl"
+# 预设启动勾选「记录遥操日志」时注入的 log_dir 根目录；launch 每次按侧拆 _left/_right
+# 并建运行子目录。节点记录 kind=loop/wrist/state/body/metrics 的 JSON 行（见 teleop_log.py）。
+# 只对声明了 log_dir 参数的 launch 预设注入（launch_manager.preset_with_teleop_log）。
+TELEOP_LOG_ROOT = os.path.join(LOG_ROOT_DEFAULT, "teleop")
 
 
 def policy_launch_args(cfg: dict) -> dict[str, str]:
     """web 推理配置 → policy_inference.launch.py 显式参数（k:=v，str→str）。
 
-    日志开关为 True 时把 state 指标（metrics_log_file）与关节指令流
-    （joint_stream_log_file）落到 /tmp 默认路径。
+    日志开关为 True 时注入 `log_dir`（launch 每次自动建运行子目录，metrics/cmd
+    两条流落到里面）——不再写 /tmp 固定文件。
 
     **消毒（对抗性审查）**：推理泳道的 launch 参数来自 web 用户输入，而
     LaunchManager 用 ``bash -c "exec ros2 launch ... k:=v"`` 拼装命令——host/
     backend_type/model/engine_mode 若含 shell 元字符（``;`` ``$`` ``()`` …）就是
     命令注入。这些值本应只含字母数字/_/./:/−（IPv4/IPv6/主机名），白名单清洗，
     非法字符直接剔除。port/camera_image_size 先 int 化再 str（天然安全），
-    日志路径是包内常量。
+    日志根目录是包内常量（含 `/`，不走 safe 清洗）。
     """
     _SAFE = re.compile(r"[^A-Za-z0-9_.:\-]")
     safe = lambda v: _SAFE.sub("", str(v))  # noqa: E731
@@ -226,8 +236,7 @@ def policy_launch_args(cfg: dict) -> dict[str, str]:
         "keyboard": "false",  # web 按钮取代键盘节点
     }
     if cfg.get("log"):
-        args["metrics_log_file"] = PI_METRICS_LOG_DEFAULT
-        args["joint_stream_log_file"] = PI_JOINT_LOG_DEFAULT
+        args["log_dir"] = PI_LOG_ROOT
     return args
 
 

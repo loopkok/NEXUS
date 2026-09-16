@@ -274,11 +274,15 @@ Quest3 有线：`adb reverse tcp:8000 tcp:8000`。
 | `metrics` | ~2s | LatencyMeter 窗口 `ms` 统计 + `counts`（含 `hard_fallback`/`ik_fail`/`psi_escape`…） |
 
 ```bash
-# CLI：launch 透传（共享基路径，双臂自动拆 _left/_right）
+# CLI：log_dir 模式（推荐）——每次 launch 自动建 {log_dir}/{YYYYMMDD-HHMMSS}[_tag]/
+# 运行子目录并按侧拆 _left/_right：区分每次记录、持久化、不复用同一文件（旧 /tmp
+# 模式重启即丢、多跑互相追加）。
 ros2 launch astral_teleop full_teleop.launch.py \
   with_arm_driver:=true right_hand_source:=none with_gripper:=true arm_side:=left \
-  teleop_log_file:=/tmp/teleop_teleop.jsonl
-# web：System tab 预设启动旁勾选「记录遥操日志」→ 落 /tmp/teleop_teleop_{left,right}.jsonl
+  log_dir:=<ws>/inference_test_logs/teleop log_tag:=pick_place_test7
+#   → <ws>/inference_test_logs/teleop/20260916-153012_pick_place_test7/teleop_teleop_{left,right}.jsonl
+# 精确路径模式（旧）：teleop_log_file:=/tmp/teleop_teleop.jsonl（显式路径优先于 log_dir）
+# web：System tab 预设启动旁勾选「记录遥操日志」→ 自动落 <ws>/inference_test_logs/teleop/...
 ```
 
 分析：按 `kind` 过滤 + `t` 对齐；`vr`→`filt`→`cmd` 逐级求速度可定位阶梯产生/抹平在哪一级，

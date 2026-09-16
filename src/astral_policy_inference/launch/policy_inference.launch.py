@@ -16,12 +16,28 @@ backend_type = 传输（remote | inproc | stub）；model = 模型族（act | pi
 """
 
 import os
+import time
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+# run 目录生成（生产路径用包内已单测的 runlog.run_log_dir；裸路径直接 launch
+# 文件时包不在 sys.path，内联兜底，避免解析期 ModuleNotFoundError）。
+try:
+    from astral_policy_inference.runlog import run_log_dir
+except ImportError:  # pragma: no cover - 生产安装路径走上面的 import
+    def run_log_dir(root, tag=""):
+        root = (root or "").strip()
+        if not root:
+            return ""
+        tag = (tag or "").strip().replace("/", "_").replace(" ", "_")
+        name = f"{time.strftime('%Y%m%d-%H%M%S')}_{tag}" if tag else time.strftime("%Y%m%d-%H%M%S")
+        d = os.path.join(root, name)
+        os.makedirs(d, exist_ok=True)
+        return d
 
 
 def _default_params() -> str:
@@ -50,6 +66,14 @@ def _node(context):
     async_prefetch_ahead = LaunchConfiguration("async_prefetch_ahead").perform(context)
     metrics_log_file = LaunchConfiguration("metrics_log_file").perform(context)
     joint_stream_log_file = LaunchConfiguration("joint_stream_log_file").perform(context)
+    log_dir = LaunchConfiguration("log_dir").perform(context)
+    log_tag = LaunchConfiguration("log_tag").perform(context)
+    # log_dir 模式：每次 launch 建 {log_dir}/{stamp}_{tag}/ 运行目录，metrics + cmd
+    # 两条流一起落进去（不再重复写同一个 /tmp 文件、重启即丢）。显式
+    # metrics_log_file / joint_stream_log_file 仍优先于 log_dir。
+    run_dir = ""
+    if log_dir:
+        run_dir = run_log_dir(log_dir, log_tag)
     parameters = [params_file]
     if backend_type:
         params_bt = {"backend_type": backend_type}
@@ -85,8 +109,12 @@ def _node(context):
         parameters.append({"async_prefetch_ahead": int(async_prefetch_ahead)})
     if metrics_log_file:
         parameters.append({"metrics_log_file": metrics_log_file})
+    elif run_dir:
+        parameters.append({"metrics_log_file": os.path.join(run_dir, "pi_metrics.jsonl")})
     if joint_stream_log_file:
         parameters.append({"joint_stream_log_file": joint_stream_log_file})
+    elif run_dir:
+        parameters.append({"joint_stream_log_file": os.path.join(run_dir, "pi_cmds.jsonl")})
     node = Node(
         package="astral_policy_inference",
         executable="policy_node",
@@ -146,6 +174,17 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "joint_stream_log_file", default_value="",
                 description="非空则节点把每次下发的关节指令流（30Hz JSON 行）追加写该文件"),
+            DeclareLaunchArgument(
+                "log_dir", default_value="",
+                description=(
+                    "非空根目录 → 每次 launch 自动建 {log_dir}/{YYYYMMDD-HHMMSS}[_tag]/ "
+                    "运行目录，把 pi_metrics.jsonl + pi_cmds.jsonl 落进去（区分每次记录、"
+                    "持久化、不复用同一文件）。显式 metrics/joint_stream_log_file 优先。"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "log_tag", default_value="",
+                description="事件名，追加到运行目录名（log_dir 模式）"),
             DeclareLaunchArgument("keyboard", default_value="false"),
             DeclareLaunchArgument("cmd_topic", default_value="/policy_inference/cmd"),
             DeclareLaunchArgument("state_topic", default_value="/policy_inference/state"),

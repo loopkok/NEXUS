@@ -136,7 +136,10 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   到 2/3（节点把 30Hz 数据线性插值到 60/90Hz 下发，恢复采集时的细粒度）。
 - 序列化用包内 vendored `protocol`（`__ndarray__`），client/serve/node 三端一致。
 
-**真机指标自动记录**：launch 传 `metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点
+**真机指标自动记录**：推荐 `log_dir:=<root> log_tag:=<事件>`——每次 launch 自动建
+`{log_dir}/{YYYYMMDD-HHMMSS}[_tag]/` 运行目录，把 `pi_metrics.jsonl`（指标）+ `pi_cmds.jsonl`
+（指令流）一起落进去：区分每次记录、持久化到测试归档（不复用同一 /tmp 文件、重启即丢）。
+也可用精确路径：`metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点
 每次发布 state（1Hz + 状态变化）把带时间戳的 JSON（含 `latency_ms.loop/obs_age`、engine
 `pops/plans/last_plan_ms/server_timing/remaining`、`exec_events`）追加写该文件，并在终端打印
 一行 `[MET]` 摘要（含 `plan_ms` 与 `srv`=服务端推理 total）。
@@ -303,9 +306,12 @@ console script 放进 `install/astral_policy_inference/bin/` 而无 resource ind
 ### 诊断工作流（真机排障三板斧）
 
 ```bash
-# ① 落盘：state 指标 + 关节指令流（--metrics 供换 chunk 关联）
+# ① 落盘：state 指标 + 关节指令流（推荐 log_dir 模式：每次 launch 自动建运行子目录
+#    区分记录、持久化；--metrics 供换 chunk 关联）
 ros2 launch astral_policy_inference policy_inference.launch.py ... \
-    metrics_log_file:=/tmp/pi_metrics.jsonl joint_stream_log_file:=/tmp/pi_cmds.jsonl
+    log_dir:=<ws>/inference_test_logs/inference log_tag:=pick_place_test7
+#    → <ws>/inference_test_logs/inference/20260916-153012_pick_place_test7/{pi_metrics,pi_cmds}.jsonl
+# 精确路径模式（旧）：metrics_log_file:=/tmp/pi_metrics.jsonl joint_stream_log_file:=/tmp/pi_cmds.jsonl
 # ② 分析：尖峰换 chunk 关联 + 收敛拉回/模型突变分类（--self-test 先自测）
 /usr/bin/python3 astral_ws/scripts/plot_inference_curves.py \
     --log /tmp/pi_cmds.jsonl --metrics /tmp/pi_metrics.jsonl --out /tmp/pi_curves.png

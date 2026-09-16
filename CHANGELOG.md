@@ -2,6 +2,19 @@
 
 ## 2026-09-16
 
+**日志落盘改"每次运行独立目录"：`log_dir`/`log_tag` 取代 /tmp 固定文件**——`astral_arm_teleop` ×
+`astral_policy_inference` × `astral_web_monitor`。**现象**：遥操/推理诊断日志默认写 `/tmp/pi_*.jsonl`、
+`teleop_teleop.jsonl`——重启即丢、多跑互相追加到同一文件、无法区分本次记录。**做法**：两个 launch
+新增 `log_dir`（根目录）+ `log_tag`（事件名）参数，每次 `ros2 launch` 自动建
+`{log_dir}/{YYYYMMDD-HHMMSS}[_tag]/` 运行目录并落文件——遥操按侧拆 `teleop_teleop_{left,right}.jsonl`，
+推理落 `pi_metrics.jsonl`+`pi_cmds.jsonl`；显式 `teleop_log_file`/`metrics_log_file`/`joint_stream_log_file`
+仍优先（向后兼容）。新增共享小助手 `run_log_dir`（arm 侧进 `teleop_log.py`、policy 侧进新 `runlog.py`，
+两侧各带 4 例单测：空 root 关闭/目录创建/stamp 格式/tag 消毒）。web「记录遥操日志」与推理日志开关从注入
+固定 /tmp 路径改为注入根目录 `<ws>/inference_test_logs/{teleop,inference}`（`ASTRAL_WEB_MONITOR_LOG_ROOT`
+可覆盖）。**验证**：arm `test_teleop_log_run_dir` 4/4、policy `test_runlog` 4/4、web 全套 15/15、policy
+全量测试脚本 exit=0；全仓无旧常量残留、改动文件全部 py_compile 通过。用法：`log_dir:=<ws>/inference_test_logs/teleop log_tag:=pick_place_test7` → 目录 `.../teleop/20260916-153012_pick_place_test7/`。
+
+
 **扳机夹爪映射改线性：`trigger_gamma` 1.4→1.0**——`astral_gripper_teleop`。**现象**：手柄扳机前半段闭合量很小、后半段才明显闭合，手感和"半程=半闭合"直觉不符。**根因**：扳机整形链的 `trigger_gamma=1.4`（幂曲线）把前半行程压细——按到 50% 闭合比只有 0.5^1.4≈0.38，前一半行程只贡献约 1/3 行程。**做法**：yaml `trigger_gamma: 1.0`（代码 `!=1.0` 时跳过幂运算，为严格线性；死区重标定后 1:1）。顺手修正 yaml 头注释过期值（gripper_open_rad 1.5→2.5）。`max_ratio_rate: 2.5`（输出限速）不受影响，快速扣扳机仍会按斜率逼近。节点无热改回调，改后需重启节点。
 
 

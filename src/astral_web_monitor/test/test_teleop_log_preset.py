@@ -1,4 +1,4 @@
-"""遥操诊断日志开关：预设注入 teleop_log_file（launch_manager.preset_with_teleop_log）。"""
+"""遥操诊断日志开关：预设注入 log_dir 根目录（launch_manager.preset_with_teleop_log）。"""
 
 from __future__ import annotations
 
@@ -18,23 +18,23 @@ def _preset(package: str, name: str = "p") -> Preset:
 
 
 def test_injects_for_astral_teleop() -> None:
-    p = preset_with_teleop_log(_preset("astral_teleop"), "/tmp/t.jsonl")
-    assert p.args["teleop_log_file"] == "/tmp/t.jsonl"
+    p = preset_with_teleop_log(_preset("astral_teleop"), "/logs/teleop")
+    assert p.args["log_dir"] == "/logs/teleop"
     assert p.args["a"] == "1"  # 原参数保留
-    assert _preset("astral_teleop").args.get("teleop_log_file") is None  # 源未改
+    assert _preset("astral_teleop").args.get("log_dir") is None  # 源未改
 
 
 def test_injects_for_astral_arm_teleop() -> None:
-    p = preset_with_teleop_log(_preset("astral_arm_teleop"), "/tmp/t.jsonl")
-    assert p.args["teleop_log_file"] == "/tmp/t.jsonl"
+    p = preset_with_teleop_log(_preset("astral_arm_teleop"), "/logs/teleop")
+    assert p.args["log_dir"] == "/logs/teleop"
 
 
 def test_skips_non_whitelisted_package() -> None:
-    p = preset_with_teleop_log(_preset("astral_mujoco_sim"), "/tmp/t.jsonl")
-    assert p.args.get("teleop_log_file") is None
+    p = preset_with_teleop_log(_preset("astral_mujoco_sim"), "/logs/teleop")
+    assert p.args.get("log_dir") is None
     assert p.args["a"] == "1"
 
 
 def test_empty_path_skips() -> None:
     p = preset_with_teleop_log(_preset("astral_teleop"), "")
-    assert p.args.get("teleop_log_file") is None
+    assert p.args.get("log_dir") is None

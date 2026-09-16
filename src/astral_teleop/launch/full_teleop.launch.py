@@ -193,6 +193,8 @@ def _setup(context, *args, **kwargs):
             "require_start_signal": _opt(context, "require_start_signal"),
             "arm_side": _opt(context, "arm_side") or "both",
             "teleop_log_file": _opt(context, "teleop_log_file"),
+            "log_dir": _opt(context, "log_dir"),
+            "log_tag": _opt(context, "log_tag"),
         }.items(),
     )
 
@@ -402,6 +404,21 @@ def generate_launch_description() -> LaunchDescription:
                     "diagnostics log (loop/wrist/state/body/metrics records), "
                     "e.g. /tmp/teleop_teleop.jsonl → ..._left/_right.jsonl."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "log_dir",
+                default_value="",
+                description=(
+                    "empty → off. Non-empty root dir → per-run stamped directory "
+                    "{log_dir}/{YYYYMMDD-HHMMSS}[_tag]/ for the teleop JSONL logs "
+                    "(distinguishes each recording, survives reboot). "
+                    "teleop_log_file, when set, wins over this."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "log_tag",
+                default_value="",
+                description="Event name appended to the run directory (log_dir mode).",
             ),
             OpaqueFunction(function=_setup),
         ]

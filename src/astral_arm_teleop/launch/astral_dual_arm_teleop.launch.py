@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import time
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -25,11 +26,11 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-# 按侧拆分共享日志基路径（生产路径用包内已单测的 side_log_path）。
+# 按侧拆分共享日志基路径 + run 目录（生产路径用包内已单测的 side_log_path/run_log_dir）。
 # 裸路径直接 `ros2 launch <launch 文件路径>` 时包不在 sys.path、导入会失败——
 # 内联同逻辑兜底，避免 launch 解析期报 ModuleNotFoundError。
 try:
-    from astral_arm_teleop.teleop_log import side_log_path
+    from astral_arm_teleop.teleop_log import run_log_dir, side_log_path
 except ImportError:  # pragma: no cover - 生产安装路径走上面的 import
     def side_log_path(base, side):
         b = (base or "").strip()
@@ -40,6 +41,17 @@ except ImportError:  # pragma: no cover - 生产安装路径走上面的 import
         if b.endswith(".jsonl"):
             return f"{b[:-6]}_{side}.jsonl"
         return f"{b}_{side}.jsonl"
+
+    def run_log_dir(root, tag=""):
+        root = (root or "").strip()
+        if not root:
+            return ""
+        tag = (tag or "").strip().replace("/", "_").replace(" ", "_")
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        name = f"{stamp}_{tag}" if tag else stamp
+        d = os.path.join(root, name)
+        os.makedirs(d, exist_ok=True)
+        return d
 
 
 def _opt(context, name: str) -> str:
@@ -75,7 +87,14 @@ def _launch_setup(context, *args, **kwargs):
     want_r = arm_side in ("right", "both")
 
     # 遥操诊断 JSONL 日志（可选）：给共享基路径按侧拆 _left/_right（见 teleop_log.py）。
+    # log_dir 模式：每次 launch 自动建 {log_dir}/{stamp}_{tag}/ 运行目录，基路径放里面
+    # （不再重复写同一个 /tmp 文件、重启即丢）。显式 teleop_log_file 优先于 log_dir。
     tlog = _opt(context, "teleop_log_file")
+    log_dir = _opt(context, "log_dir")
+    if not tlog and log_dir:
+        run_dir = run_log_dir(log_dir, _opt(context, "log_tag"))
+        if run_dir:
+            tlog = os.path.join(run_dir, "teleop_teleop.jsonl")
 
     mocap_extra = {"arm_side": arm_side}
     protocol = _opt(context, "protocol")
@@ -211,10 +230,26 @@ def generate_launch_description() -> LaunchDescription:
                 "teleop_log_file",
                 default_value="",
                 description=(
-                    "empty → off. Non-empty shared base path → per-side JSONL "
-                    "diagnostics log (loop/wrist/state/body/metrics records), "
+                    "empty → off (or log_dir). Non-empty shared base path → per-side "
+                    "JSONL diagnostics log (loop/wrist/state/body/metrics records), "
                     "e.g. /tmp/teleop_teleop.jsonl → ..._left/_right.jsonl."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "log_dir",
+                default_value="",
+                description=(
+                    "empty → off. Non-empty root dir → create a per-run stamped "
+                    "directory {log_dir}/{YYYYMMDD-HHMMSS}[_tag]/ and write the "
+                    "per-side teleop JSONL logs there (avoids reusing one shared "
+                    "file across runs / losing logs in /tmp on reboot). "
+                    "teleop_log_file, when set, wins over this."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "log_tag",
+                default_value="",
+                description="Event name appended to the run directory (log_dir mode).",
             ),
             OpaqueFunction(function=_launch_setup),
         ]

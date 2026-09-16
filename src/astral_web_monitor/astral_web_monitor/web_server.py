@@ -218,9 +218,9 @@ async def start(req: StartRequest) -> ApiEnvelope:
     if preset is None:
         raise HTTPException(status_code=404, detail=f"未知预设: {req.preset}")
     if req.log:
-        # 遥操日志开关：给白名单预设注入 teleop_log_file（副本，不改 presets.yaml 源）。
-        # 双臂 launch 会把共享基路径按侧拆成 _left/_right。
-        preset = preset_with_teleop_log(preset, config.TELEOP_LOG_DEFAULT)
+        # 遥操日志开关：给白名单预设注入 log_dir 根目录（副本，不改 presets.yaml 源）。
+        # launch 每次自动建 {log_dir}/{stamp}[_tag]/ 运行子目录、按侧拆 _left/_right。
+        preset = preset_with_teleop_log(preset, config.TELEOP_LOG_ROOT)
     ok, msg = _launch_mgr.start(preset)
     if not ok:
         raise HTTPException(status_code=409, detail=msg)

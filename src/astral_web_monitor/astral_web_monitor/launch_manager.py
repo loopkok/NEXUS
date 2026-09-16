@@ -73,20 +73,22 @@ def load_presets() -> dict[str, Preset]:
     return out
 
 
-# 遥操诊断日志注入白名单：只有这些包的 launch 声明了 `teleop_log_file` 参数。
+# 遥操诊断日志注入白名单：只有这些包的 launch 声明了 `log_dir` 参数。
 # 其余预设（如 MuJoCo sim）不注入——未声明参数传给 `ros2 launch` 会启动报错。
 _TELEOP_LOG_PACKAGES = ("astral_teleop", "astral_arm_teleop")
 
 
-def preset_with_teleop_log(preset: Preset, log_path: str) -> Preset:
-    """Return a copy of ``preset`` with ``teleop_log_file`` injected (whitelisted only).
+def preset_with_teleop_log(preset: Preset, log_dir: str) -> Preset:
+    """Return a copy of ``preset`` with ``log_dir`` injected (whitelisted only).
 
     非白名单预设原样返回；白名单预设用 ``dataclasses.replace`` 生成副本，不改
-    presets.yaml 源。log_path 空串也原样返回（等价于不记录）。
+    presets.yaml 源。log_dir 空串也原样返回（等价于不记录）。launch 层收到
+    ``log_dir`` 后每次自动建 ``{log_dir}/{stamp}[_tag]/`` 运行子目录，把遥操
+    JSONL（按侧 _left/_right）落进去——不复用同一个 /tmp 文件。
     """
-    if not log_path or preset.package not in _TELEOP_LOG_PACKAGES:
+    if not log_dir or preset.package not in _TELEOP_LOG_PACKAGES:
         return preset
-    return replace(preset, args={**preset.args, "teleop_log_file": log_path})
+    return replace(preset, args={**preset.args, "log_dir": log_dir})
 
 
 class LaunchManager:

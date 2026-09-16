@@ -16,6 +16,30 @@ Records written by ``astral_arm_teleop_node`` (discriminated by ``kind``):
 from __future__ import annotations
 
 import json
+import os
+import time
+
+
+def run_log_dir(root: str, tag: str = "") -> str:
+    """Create a per-run directory ``{root}/{stamp}[_tag]`` and return it.
+
+    ``stamp`` is the local launch time ``YYYYMMDD-HHMMSS``; ``tag`` (event name,
+    e.g. the test case) is sanitized (``/`` `` `` → ``_``) and appended when
+    non-empty. Empty ``root`` → ``""`` (disabled).
+
+    Used by the launch files so each ``ros2 launch`` scopes its JSONL logs into
+    a fresh directory (stamped by time + event) instead of appending to a shared
+    file that is lost on reboot (old behaviour: ``/tmp/pi_*.jsonl`` etc.).
+    """
+    root = (root or "").strip()
+    if not root:
+        return ""
+    tag = (tag or "").strip().replace("/", "_").replace(" ", "_")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    name = f"{stamp}_{tag}" if tag else stamp
+    d = os.path.join(root, name)
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
 def side_log_path(base: str, side: str) -> str:

@@ -98,7 +98,7 @@
 | GET | `/api/v1/presets` | 启动预设列表 |
 | GET | `/api/v1/state` | 当前快照（同步，含 health + state_rates_hz） |
 | GET | `/api/v1/logs` | Launch 环形缓冲全量（默认 8000 行；WS `log_tail` 只推尾 800） |
-| POST | `/api/v1/start` | `{preset: "...", log?: bool}` 启动指定预设（只把遥操栈拉起来；使能交给 driver auto_ready/一键就绪——曾自动等 `~/enable` 导致启动即 503，已回退）。`log:true` 且预设属 astral_teleop/astral_arm_teleop 时注入 `teleop_log_file=/tmp/teleop_teleop.jsonl`（双臂按侧拆 `_left/_right`） |
+| POST | `/api/v1/start` | `{preset: "...", log?: bool}` 启动指定预设（只把遥操栈拉起来；使能交给 driver auto_ready/一键就绪——曾自动等 `~/enable` 导致启动即 503，已回退）。`log:true` 且预设属 astral_teleop/astral_arm_teleop 时注入 `log_dir=<inference_test_logs>/teleop`（launch 每次自动建 `{stamp}[_tag]/` 运行子目录、按侧拆 `_left/_right`；`ASTRAL_WEB_MONITOR_LOG_ROOT` 可改根目录） |
 | POST | `/api/v1/stop` | SIGINT 停止 launch（30s 超时 SIGKILL） |
 | POST | `/api/v1/pause` | 发 `/teleop/disarm`（软暂停，节点保持运行） |
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
