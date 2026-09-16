@@ -2,6 +2,11 @@
 
 ## 2026-09-16
 
+**删除空壳功能包 `astral_urdf_ik` / `astral_analytic_ik`**——两个包仅含 `COLCON_IGNORE`
+（colcon 忽略占位），无代码、全仓零引用（IK 已由 `astral_arm_teleop` 的 geometric/analytic
+实现，见该包）。直接删除，源码树 21 包 → 19 包。
+
+
 **废弃 `compress_pauses.py` + repair 的 drop 模式（收敛到单一弧长选帧法）**——
 **动机**：09-16 实测对比——compress_pauses 删停顿段但每段保留 4 帧过渡帧，压缩后平段占比
 反而从 11.3%→20% 放大；repair 的 drop 模式与之同思路同病；修复后的 resample（臂维弧长均值
