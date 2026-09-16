@@ -2,6 +2,9 @@
 
 ## 2026-09-16
 
+**扳机夹爪映射改线性：`trigger_gamma` 1.4→1.0**——`astral_gripper_teleop`。**现象**：手柄扳机前半段闭合量很小、后半段才明显闭合，手感和"半程=半闭合"直觉不符。**根因**：扳机整形链的 `trigger_gamma=1.4`（幂曲线）把前半行程压细——按到 50% 闭合比只有 0.5^1.4≈0.38，前一半行程只贡献约 1/3 行程。**做法**：yaml `trigger_gamma: 1.0`（代码 `!=1.0` 时跳过幂运算，为严格线性；死区重标定后 1:1）。顺手修正 yaml 头注释过期值（gripper_open_rad 1.5→2.5）。`max_ratio_rate: 2.5`（输出限速）不受影响，快速扣扳机仍会按斜率逼近。节点无热改回调，改后需重启节点。
+
+
 **删除空壳功能包 `astral_urdf_ik` / `astral_analytic_ik`**——两个包仅含 `COLCON_IGNORE`
 （colcon 忽略占位），无代码、全仓零引用（IK 已由 `astral_arm_teleop` 的 geometric/analytic
 实现，见该包）。直接删除，源码树 21 包 → 19 包。

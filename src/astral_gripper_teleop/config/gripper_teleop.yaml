@@ -2,7 +2,7 @@
 #
 # 本节点只发 0..1 闭合比；弧度映射（open_rad/closed_rad，CMD 0x97/0x98）唯一权威
 # 在 astral_robot_control 的 config/astral_robot.yaml（left/right_gripper_open_rad
-# 当前 1.5，硬止点 2.0）。切勿同时发 joint_commands：driver 两个话题都订，
+# 当前 2.5）。切勿同时发 joint_commands：driver 两个话题都订，
 # 双流不同 rad 会让夹爪按控制频率来回抽。
 #
 # Swap this node later: another publisher on /left_gripper/command is enough
@@ -24,8 +24,9 @@ pinch_gripper_node:
     auto_range_forget_s: 8.0
     auto_range_min_span_m: 0.01
     # 扳机整形链：死区(trigger_deadzone)重标定到 [0,1] → gamma → EMA。
-    # gamma>1 前半程更细，便于半捏精操作；1.0 = 线性。EMA 去 Joy 抖动（首帧直取）。
-    trigger_gamma: 1.4
+    # 1.0 = 线性（当前实机要求：扳机行程与闭合比 1:1）。改 >1 前半程更细（半捏精
+    # 操作）；<1 前半程更灵敏。EMA 去 Joy 抖动（首帧直取）。
+    trigger_gamma: 1.0
     trigger_ema_alpha: 0.4
     # 输出限速（ratio/s）：驱动每拍发绝对角度、夹爪伺服全速赴位，不限速时
     # 快速扣扳机会"啪"地合死。2.5 = 全行程 ≥0.4s；<=0 关闭。trigger/pinch 都生效。
