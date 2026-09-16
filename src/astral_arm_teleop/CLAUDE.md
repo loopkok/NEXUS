@@ -50,6 +50,39 @@ test_ik_solver.py      ← DH 套件（改 analytic.py 后必跑）
 | sim e2e 好真机差 | PC loop 2ms 预算充裕，问题全被掩盖 | 看 `[Latency]` 各分项定位：e2e 高+ik/loop 低 → 查 vr_rx/vr_age（上游 Quest/WiFi） |
 | `--params-file` 不生效 | ros2 run 节点名与 yaml key 不匹配 | 加 `-r __node:=astral_arm_teleop_left` |
 | import rclpy 失败 | miniconda python 抢占 | 显式 `/usr/bin/python3` |
+| 慢速平移"抖抖的"、快速流畅 | 驱动层静摩擦粘滑（电机 speed 环 kp=0.04 微弱，慢速产不出扭矩/阻尼）；非遥操/IK 上游 | 排障工具链见下节：遥操 `teleop_log_file` jsonl → SDK 直连 `repro_stickslip.py` 复现 → `read_gains.py` 定位 speed 环 → `set_pid.py` 调 spd_kp / `calib_friction.py` 摩擦补偿 |
+
+## 低速粘滑排障（慢速平移"抖"）全记录
+
+**症状**：慢速平移机械臂"停一下走一下"地抖，快速流畅；不在肘伸直奇异位置也抖。
+**结论**：根因在**驱动层**（电机低速静摩擦粘滑，speed 环 kp 微弱），与遥操/IK/指令精度无关。
+从发现到根因的完整链路（2026-09-14~16）：
+
+1. **建遥操 JSONL 诊断日志**（本包）：`teleop_log_file` 参数 + web「记录遥操日志」开关，
+   kind=loop/wrist/state/body/metrics 五类记录（详见 README「遥操诊断 JSONL 日志」节）。
+2. **真实数据定位**：慢速段实测关节 30~56% 时间停帧、12~19Hz 粘滑、突发峰值 >1 rad/s，
+   IK/安全/人肘计数器干净 → 排除上游，指向驱动层。顺带发现 VR 位姿 0.1mm 量化
+   （Quest App `HandLandmarkStreamer` `F4`）并修 F4→F7（精度瑕疵，非主因）。
+3. **SDK 直连复现**（`astral_robot_sdk/demos/repro_stickslip.py`）：绕过 ROS/IK 从当前
+   位姿发干净恒定低速三角波 → 实测关节仍 70% 停帧、21Hz 粘滑、滞后 3.4° → **驱动层实锤**；
+   pos(0x90) vs pv(0x95) 对照 → 速度前馈**无效**（70.7% vs 69.7%）。
+4. **定位根因**（`read_gains.py`）：电机四环 PID 级联 position(35)→speed(0.04)→iq(2)，
+   **speed 环 kp=0.04 微弱** → 慢速产不出扭矩/阻尼 → 粘滑。板卡 CFG 无可调电流/力矩限制，
+   只有 MIT_KP/KD 与摩擦补偿（0x0010/11、0x0014/15）。
+5. **解决方案**（`set_pid.py`）：调 speed 环 kp（0.1→0.2→0.4 从低往高扫，太高振荡）；
+   补充 `calib_friction.py`（0xC4 静摩擦自测→set_friction）与 `repro --kp/--kd`（MIT 增益）。
+   **⚠ 验证状态：未实机确认**——调参后重跑 repro 的"去量化平段/低频滞后"下降才算修好
+   （17:31 的 pos 重跑 74.8% 平段无改善，待 set_pid 后重跑对照）。
+
+**工具速查**：
+
+| 工具 | 位置 | 用途 |
+|---|---|---|
+| 遥操 jsonl | 本包 `teleop_log_file` | 链路逐级数据（vr/filt/cmd/q/counters） |
+| `repro_stickslip.py` | `astral_robot_sdk/demos/` | SDK 直连驱动层粘滑复现 + pos/pv 对照 + 扫 MIT 增益 |
+| `read_gains.py` | 同上 | 读电机四环 PID 级联 + MIT + 摩擦（在线可读） |
+| `set_pid.py` | 同上 | 写 speed/position 环 PID（下电） |
+| `calib_friction.py` | 同上 | 0xC4 静摩擦自测 + set_friction 补偿（下电） |
 
 ## 延迟指标速查（`[Latency]` 行）
 

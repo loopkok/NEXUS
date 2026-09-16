@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""对抗性零错位验证：resample(选帧) 与 drop 两个模式，输出必须满足——
+"""对抗性零错位验证：repair_aligned(弧长选帧) 输出必须满足——
 1) state 每行精确等于原始某帧（选帧非插值）；2) 图像 bytes 是原始帧集合的成员
 （与 state 同源同一原始帧）；3) 时间戳严格单调；4) action = next-state。"""
 import h5py, numpy as np, os
@@ -47,6 +47,5 @@ def check(name: str) -> bool:
 
 
 ok1 = check("repaired")
-ok2 = check("dropped")
-print("\n零错位对抗验证:", "ALL PASS" if ok1 and ok2 else "FAIL")
-raise SystemExit(0 if ok1 and ok2 else 1)
+print("\n零错位对抗验证:", "ALL PASS" if ok1 else "FAIL")
+raise SystemExit(0 if ok1 else 1)

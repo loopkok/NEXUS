@@ -1,5 +1,80 @@
 # Changelog（astral_ws）
 
+## 2026-09-16
+
+**废弃 `compress_pauses.py` + repair 的 drop 模式（收敛到单一弧长选帧法）**——
+**动机**：09-16 实测对比——compress_pauses 删停顿段但每段保留 4 帧过渡帧，压缩后平段占比
+反而从 11.3%→20% 放大；repair 的 drop 模式与之同思路同病；修复后的 resample（臂维弧长均值
++去重）已覆盖全部需求（平段 0.6%、不加速、跳变不放大、零错位）。**做法**：删除
+`scripts/compress_pauses.py`；`repair_aligned.py` 移除 `--method drop`/`drop_frames`/
+`--min-speed`/`--min-keep`，脚本收敛为"弧长匀速化选帧"单一功能（`--speed-ref`/`--fps`/
+`--dry-run`）；`verify_aligned.py` 只验 resample 输出。文档同步：data_collect README/CLAUDE.md
+第 5 层、policy_inference README/CLAUDE.md 的压缩脚本引用全部改为 `repair_aligned.py`（带新
+数值 -27%/平段 0.6%）。**验证**：语法 OK、dry-run 21321→15503（-27.3%）与修复后一致、残留
+引用 grep 清零（仅无关测试名）。**遗留**：历史 CHANGELOG 条目保留作演进记录；旧数据产物
+`*_smooth`/`*_dropped` 目录仍可转换训练（不再推荐新数据走此路径）。
+
+
+**动机**：用户用 repair 重训后"丝滑了不少但速度变快非常多、大抖动被放大"——旧默认
+speed-ref=p90（≈1.9x 均值）把整段数据提速并放大每帧跳变（实测每帧最大跳变 p50
+0.019→0.043、>0.05 rad 占比 16%→40%）；且弧长把夹爪 ratio（无量纲，占 15%）和关节
+rad 混算，污染速度参考。
+**做法**：① 读 meta.json schema 的 state_blocks 生成臂维掩码，弧长/速度判定只用臂关节
+（ee/waist/head 排除）；② 默认 speed-ref 由 p90 改为 session 臂维弧长**均值**（总弧长/总
+帧数：重采样后帧数≈原始、总时长不变，只匀掉停滞不加速）；③ 去重连续重复帧——弧长网格间距
+小于快速帧弧长跨度时多个网格点就近映射到同一原始帧，留下 ~30% 假"停顿"帧（新伪影），去重
+只删无信息副本、零错位不变。
+**验证**（pick_place_merged 全 100 段，真实重跑）：帧数 21321→15503（**-27%**，原 p90 为
+-51%）；平段(delta=0) 11.3%→**0.6%**（均值无去重时反而 33.9%，去重后归零）；每帧最大跳变
+p50 0.019→0.025、>0.05 rad 占比 16%→**17%**（不再放大）；零错位对抗全过（state/图像同源、
+时间戳单调、action=next_state，3363 帧 ALL PASS）。speed-ref 可调：0.035~0.07 区间压缩稳定
+21-36%、平段 0%，>0.07 放大效应回归。**遗留**：驱动层静摩擦粘滑（speed 环 kp=0.04）是
+物理根因，见本日 SDK 排障条目；`action_source: command` 意图语义是采集侧根治方案（未实测）。
+
+
+**采集数据"意图 vs 摩擦"量化工具 `quantify_cmd_state.py`**——`astral_ws/scripts/`。
+**动机**：遥操粘滞/静摩擦 → state"粘-滑"（平段+突跳）→ next-state 语义 action[t]=state[t+1]
+把摩擦伪影直接做成回归目标 → 模型学到"停-跳"节奏（真机固定卡点的数据侧源头）。要决策
+"标签平滑 vs 切 command-source"，需要先把每个停顿量化成**意图型**（cmd 也停=操作者/任务
+真实停顿，训练该保留）还是**摩擦型**（cmd 平滑移动、state 平段突跳=摩擦伪影，训练该去掉）。
+**做法**：新脚本读 raw `robot_data.h5` 的 `/streams/*_cmd`+`/*_state`（各自时间戳，最近邻
+重采样到共同网格）→ 逐关节输出 state/cmd 平段占比（速度口径 flat_v=0.02 rad/s）、粘滑频率、
+突跳幅度分布（p50/p90/max）、每个停顿（≥min_pause）分型意图/摩擦/混合；`--aligned` 模式读
+aligned_data.h5 的 /action 输出 next-state 零膨胀统计；`--out` JSON 全明细、`--plot` PNG
+（state vs cmd 曲线 + 平段着色：绿=意图、橙=摩擦）。聚合只算峰值 cmd 速度 ≥ min_peak_v
+（默认 0.1）的**活跃关节**（全程低速的小关节恒判平段会污染聚合/分型），逐关节仍全列。
+**自测**：`--self-test` 合成数据——cmd 平滑斜坡+state 粘滑→摩擦型（13 个）、cmd+state
+同停→意图型、aligned 零占比 80% 全 PASS。**过程中抓到并修 3 个方法 bug**：① 平段阈值用每格
+步长会把 0.05 rad/s 慢速移动误判成平段→改速度口径；② 最近邻重采样在比源采样率细的网格上
+重复样本→慢速流重复点速度 0→误判平段，改**折叠重复源样本、速度在真实采样间隔上算**
+（`_distinct`）；③ 慢关节污染聚合→`--min-peak-v` 活跃关节聚合。**验证**：raw/aligned/plot
+三路径冒烟通过（合成 60s episode：主关节 j0 state平段 26.6% vs cmd 20.1% = 6.5pp 摩擦份额、
+7 个意图停顿、粘滑 1.3Hz，符合注入场景）；py_compile OK。脚本入 git（
+`scripts/quantify_cmd_state.py`），归档 README 工具表已同步。**实跑（pick_place_merged
+100 episode，`--align` 对齐后）**：state 平段中位 34.9% vs cmd 平段 9.3% → **摩擦份额
+~25.6pp**、粘滑 11.7Hz、1316 个停顿分型 = 意图 **13%** / **摩擦 38%** / 混合 49% →
+训练数据 next-state 标签的假停顿以摩擦为主（非操作者犹豫），标签平滑/切 command-source
+可捞回 ~25pp 丢失动作。**`--align`（分型前互相关对齐，默认开）**：实测 **cmd 领先 state
+~120ms**（物理跟踪滞后，与推理侧 210ms 同向；初版把符号标反误报"state 领先 200ms"，
+独立验证 corr(S(t),C(t+lag)) 峰 -121ms 定死方向）——不对齐时 state 停顿窗口看的 cmd
+错位一个跟踪滞后，短停顿被错分（对齐后意图 7%→13%、摩擦 55%→38%，混合区增大=过渡停顿
+更真实）；自测场景4 验证对齐纠正错分。
+归档见 `inference_test_logs/teleop/SUMMARY.md`。
+
+**慢速平移"抖"根因实锤 + 排障全记录文档化**——`astral_arm_teleop` × `astral_robot_sdk`。
+**结论**：慢速遥操"停一下走一下"的抖，根因在**驱动层**——电机低速静摩擦粘滑（speed 环
+kp=0.04 微弱，慢速产不出扭矩/阻尼），与遥操/IK/指令精度无关；速度前馈(0x95 PV)无效。
+**过程（可复现链路）**：① 遥操 JSONL 诊断日志（teleop_log_file，09-14 已建）真实数据——
+慢速段实测关节 30~56% 停帧、12~19Hz 粘滑、突发>1 rad/s，上游计数器干净→指向驱动层；
+② 顺带发现并修 Quest App `F4`(0.1mm) 量化→F7（精度瑕疵非主因）；③ SDK 直连复现
+`repro_stickslip.py`（干净三角波仍 70% 停帧/21Hz/滞后3.4°→驱动层实锤，pos vs pv 对照
+70.7% vs 69.7%→速度前馈无效）；④ `read_gains.py` 读电机四环 PID 级联 position(35)→
+speed(0.04)→iq(2) 定位 speed 环微弱；⑤ `set_pid.py` 调 speed 环 kp / `calib_friction.py`
+摩擦补偿 / `repro --kp/--kd` MIT 增益。**⚠ 验证未完成**：17:31 重跑 pos 74.8% 平段无改善，
+待 set_pid 改完 speed 环后重跑 repro 对照（平段显著下降才算修好）。**文档**：本包
+README「遥操不平滑排障全记录」+ CLAUDE.md「低速粘滑排障全记录」；SDK demos 4 个脚本
+（repro_stickslip/read_gains/set_pid/calib_friction）已在 astral_robot_sdk 仓库提交推送。
+
 ## 2026-09-15
 
 **推理优化历程文档化——README「推理质量优化」+ CLAUDE.md「优化历程实录」**——

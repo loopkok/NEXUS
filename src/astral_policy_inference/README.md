@@ -330,9 +330,9 @@ ros2 launch astral_policy_inference policy_inference.launch.py ... \
 ### 数据层（卡点治本）
 
 模型复现的是训练数据节奏，引擎参数只能平滑、不能消除"模型在固定状态输出低速"。**治本**：
-- `scripts/compress_pauses.py`（raw 层删停顿帧，-35%，动作略"跳"）
-- `scripts/repair_aligned.py`（aligned 层**弧长均匀选帧**，-50%，速度更匀；选帧而非插值 =
-  零图像-关节错位；`--speed-ref` 控压缩比，小=更温和更多帧）
+- `scripts/repair_aligned.py`（aligned 层**弧长均匀选帧**，-27% 帧、平段 11.3%→0.6%、速度更匀
+  且不加速、每帧跳变不放大；选帧而非插值 = 零图像-关节错位；`--speed-ref` 控速度/压缩比，
+  默认臂维弧长均值=保留总时长，想更快给 0.07、别超 0.07 否则跳变放大回归）
 - 修完重新 `vla_process_act.sh` → `act_train.sh` 训练 → 真机对比卡点是否消失
 
 ## 测试

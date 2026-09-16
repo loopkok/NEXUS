@@ -1,43 +1,42 @@
 #!/usr/bin/env python3
-"""对齐数据完整修复：弧长匀速化重采样（插补）——消除静止帧/卡顿/速度不均。
+"""对齐数据完整修复：弧长匀速化重采样（选帧）——消除静止帧/卡顿/速度不均。
 
-动机：真机推理固定卡点 = 训练数据里操作员停顿/减速被模型复现。compress_pauses.py
-（raw 层删帧）会让相邻帧位移变大、动作变"跳"；本脚本在 **aligned_data.h5 层**用
-**插补**替代删帧：把「快-停-快」的轨迹按累计运动量（弧长）重新映射成**匀速**——
-静止帧在弧长空间不占长度→自然压缩，速度不均→均匀，时间戳→严格单调（validate 的
-W2 gap 消失）。关节是数值线性插值（平滑），相机帧取最近原始帧（JPEG 无法插值）。
+动机：真机推理固定卡点 = 训练数据里操作员停顿/减速被模型复现。本脚本在
+**aligned_data.h5 层**用**弧长均匀选帧**：把「快-停-快」的轨迹按累计运动量（弧长）
+重新映射成**匀速**——静止帧在弧长空间不占长度→自然压缩，速度不均→均匀，时间戳→
+严格单调（validate 的 W2 gap 消失）。**选帧**（取"弧长最近的原始帧"）保证 state 与
+图像**严格同源**、零错位；插值会破坏这一点（图像只能取离散帧），故不用。
 
 处理对象：session 下 episode*/aligned_data.h5（已对齐的数据）。输出新 session 的
 aligned_data.h5（+ 原样复制 robot/camera/meta，供后续 vla_process 直接 convert——
 align 检测到 aligned 已存在会跳过）。
 
-方法：
-  resample（默认）：弧长匀速化插补。每帧弧长 = Σ_j|Δstate_j|（8 维位移和，夹爪
-    动作也计弧长、不被压缩掉）；目标每帧弧长 = --speed-ref（默认 p90 原始速度，
-    即运动段的典型速度），帧数 = 总弧长 / speed-ref；关节按弧长线性插值，相机取
-    最近帧。等效：静止压缩、运动段保持原速度、全程匀速。
-  drop：删帧（compress_pauses 思路搬到 aligned 层）——速度 < --min-speed 的停顿段
-    删中间帧，每段保留 --min-keep 帧。
+方法（弧长匀速化选帧）：
+  每帧弧长 = Σ_j|Δstate_j|，**仅臂关节维参与**（夹爪/末端 ratio 无量纲，与 rad 混算
+  会污染速度参考——实测占全维弧长 15%、把 speed-ref 抬 16%）；目标每帧弧长 =
+  --speed-ref（默认 session 臂维弧长**均值** = 总弧长/总帧数：重采样后帧数≈原始、
+  总时长不变，只把静止/停滞帧的弧长匀到运动段——丝滑但**不加速**；旧默认 p90
+  ≈1.9x 均值会整体提速并放大每帧跳变，实测每帧最大跳变 p50 0.019→0.043、>0.05 rad
+  占比 16%→40%，故弃用）；每个重采样点取"弧长最近的原始帧"，静止段弧长≈0 被压缩、
+  帧间位移≈speed-ref（速度近似均匀）；连续重复帧（快速帧弧长跨度>网格间距时的采样
+  伪影）去重，避免在快跳后制造假停顿。
 
 用法:
   /usr/bin/python3 astral_ws/scripts/repair_aligned.py \
       --session ~/astral_data/raw/pick_place_merged \
       --out-session ~/astral_data/raw/pick_place_merged_repaired \
-      [--method resample] [--speed-ref 0.0] [--fps 30] \
-      [--min-speed 0.008] [--min-keep 4] [--dry-run]
+      [--speed-ref 0.0] [--fps 30] [--dry-run]
 
 参数:
-  --method resample|drop     修复方法（默认 resample=弧长匀速化插补）
-  --speed-ref rad/帧         目标每帧弧长（默认 0=自动取原数据 p90 速度）
+  --speed-ref rad/帧         目标每帧弧长（默认 0=自动取臂维弧长均值，保留总时长不加速）
   --fps                      输出时间戳网格（默认 30）
-  --min-speed rad/帧         drop 模式：低于此速度算停顿（默认 0.008）
-  --min-keep 帧              drop 模式：每段停顿保留帧数（默认 4）
   --dry-run                  只报告不写文件
 退出码 0=成功。
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -49,6 +48,26 @@ import numpy as np
 CAM_KEYS = None  # 运行时探测 aligned 里的 camera 组名（video0/video8/...）
 
 
+def arm_mask_from_meta(ep_dir: str, n_dim: int) -> np.ndarray | None:
+    """返回臂维掩码（True=臂关节，参与弧长/速度判定）。
+
+    读 meta.json 的 schema.state_blocks：name 含 "arm" 的块参与（left_arm/right_arm），
+    ee/waist/head 排除（gripper 的 ratio 无量纲，与 rad 混算污染速度参考）。
+    无 meta/schema 时回退 None=全维（历史行为）。
+    """
+    try:
+        with open(os.path.join(ep_dir, "meta.json"), encoding="utf-8") as f:
+            meta = json.load(f)
+        mask = []
+        for b in meta["schema"]["state_blocks"]:
+            mask += ["arm" in b["name"]] * b["dim"]
+        if len(mask) == n_dim:
+            return np.asarray(mask, dtype=bool)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def _camera_groups(f) -> list[str]:
     return [k for k in f.keys()
             if isinstance(f[k], h5py.Group) and "images" in f[k]]
@@ -56,18 +75,21 @@ def _camera_groups(f) -> list[str]:
 
 def resample_frames(state: np.ndarray, quality: np.ndarray,
                     cam_images: dict, cam_offsets: dict, cam_ts: dict,
-                    speed_ref: float, fps: int, state_ts0: float = 0.0):
+                    speed_ref: float, fps: int, state_ts0: float = 0.0,
+                    arm_mask: np.ndarray | None = None):
     """弧长均匀重采样（**选帧**，零错位）：按累计运动量均匀取**原始帧**。
 
     不用关节插值——插值必然造成"关节 vs 图像"错位（关节值在弧长空间插值、图像只能
     取离散原始帧，两者最多差半帧弧长）。这里每个重采样点取"弧长最近的原始帧"，
     state/action 与图像**严格同源**（同一原始帧），零错位；同时静止段弧长≈0 被压缩、
-    帧间位移≈speed_ref（速度近似均匀）。代价：相邻新帧可能重复（静止段）或快慢不均
-    （原始帧离散），但绝无 state-图像错位。
+    帧间位移≈speed_ref（速度近似均匀）。代价：快慢不均（快速帧是原始的单大步、慢速
+    帧原始离散），但绝无 state-图像错位、也无伪影重复帧（连续重复已去重）。
 
-    speed_ref=0 → 用调用方算好的全局 p90。返回帧序列 = 原始帧下标 idx 的子集。
+    弧长只算 arm_mask 的臂维（默认全维兼容）。speed_ref<=0 或 S_total<=0 → 返回 None
+    （纯静止/退化 episode，调用方原样复制）。
     """
-    d = np.abs(np.diff(state, axis=0)).sum(axis=1)          # (N-1,)
+    st = state[:, arm_mask] if arm_mask is not None else state
+    d = np.abs(np.diff(st, axis=0)).sum(axis=1)          # (N-1,) 臂维每帧弧长
     S = np.concatenate([[0.0], np.cumsum(d)])               # (N,) 累计弧长
     S_total = S[-1]
     if speed_ref <= 0 or S_total <= 0:
@@ -76,6 +98,13 @@ def resample_frames(state: np.ndarray, quality: np.ndarray,
     s_grid = np.linspace(0.0, S_total, N_new)
     # 弧长最近原始帧（argmin；精确对齐到原始帧，零错位）
     idx = np.array([int(np.argmin(np.abs(S - g))) for g in s_grid])
+    # 去重：快速帧弧长跨度 > 网格间距时，多个网格点就近映射到同一原始帧 → 连续重复帧。
+    # 这是纯采样伪影（状态/图像全同、无信息），留着会在每个快跳后制造假"停顿"帧
+    # （实测默认均值速度下 30% 帧重复）。去重只删无信息副本，零错位不变。
+    if len(idx) > 1:
+        dedup = np.concatenate([[True], idx[1:] != idx[:-1]])
+        idx = idx[dedup]
+    N_new = len(idx)
 
     state_new = state[idx]                                  # 原始帧值（非插值）
     quality_new = quality[idx]
@@ -91,41 +120,8 @@ def resample_frames(state: np.ndarray, quality: np.ndarray,
     return state_new, action_new, quality_new, timestamps_new, idx, cam_new, off_new, ts_cam_new
 
 
-def drop_frames(state: np.ndarray, quality: np.ndarray,
-                cam_images: dict, cam_offsets: dict, cam_ts: dict,
-                min_speed: float, min_keep: int, fps: int = 30,
-                state_ts0: float = 0.0):
-    """删帧法（drop）：速度 < min_speed 的停顿段删中间帧，每段保留 min_keep。"""
-    d = np.abs(np.diff(state, axis=0)).max(axis=1)
-    low = d < min_speed
-    keep = np.ones(len(state), dtype=bool)
-    i = 0
-    n = len(state)
-    while i < n - 1:
-        if low[i]:
-            j = i
-            while j < n - 1 and low[j]:
-                j += 1
-            if j - i + 1 > min_keep:
-                keep[i + min_keep // 2: j - min_keep // 2 + 1] = False
-            i = j
-        else:
-            i += 1
-    idx = np.where(keep)[0]
-    state_new = state[idx]
-    quality_new = quality[idx]
-    cam_new = {c: cam_images[c][idx] for c in cam_images}
-    off_new = {c: cam_offsets[c][idx] for c in cam_offsets}
-    ts_cam_new = {c: cam_ts[c][idx] for c in cam_ts}
-    action_new = np.vstack([state_new[1:], state_new[-1]])
-    # 删帧后时间戳压缩为均匀 1/fps（消除 gap 警告）
-    ts_new = state_ts0 + np.arange(len(state_new)) / fps
-    return state_new, action_new, quality_new, ts_new, idx, cam_new, off_new, ts_cam_new
-
-
-def repair_episode(ep_dir: str, out_ep_dir: str, method: str,
-                   speed_ref: float, fps: int, min_speed: float,
-                   min_keep: int, dry_run: bool) -> dict:
+def repair_episode(ep_dir: str, out_ep_dir: str,
+                   speed_ref: float, fps: int, dry_run: bool) -> dict:
     src = os.path.join(ep_dir, "aligned_data.h5")
     if not os.path.exists(src):
         return {"episode": os.path.basename(ep_dir), "error": "无 aligned_data.h5"}
@@ -141,22 +137,19 @@ def repair_episode(ep_dir: str, out_ep_dir: str, method: str,
         cam_offsets = {c: np.asarray(f[f"{c}/src_offsets"]) if f"{c}/src_offsets" in f[c] else np.zeros(len(cam_images[c]), dtype=np.int64) for c in cams}
         cam_ts = {c: np.asarray(f[f"{c}/src_timestamps"]) if f"{c}/src_timestamps" in f[c] else np.zeros(len(cam_images[c])) for c in cams}
 
-    if method == "resample":
-        r = resample_frames(state, quality, cam_images, cam_offsets, cam_ts,
-                            speed_ref, fps, state_ts0)
-        if r is None:  # 纯静止/退化 episode：无法重采样，原样复制
-            if not dry_run:
-                for fname in ("aligned_data.h5", "robot_data.h5", "camera_data.h5", "meta.json"):
-                    p = os.path.join(ep_dir, fname)
-                    if os.path.exists(p):
-                        shutil.copy2(p, os.path.join(out_ep_dir, fname))
-            return {"episode": os.path.basename(ep_dir), "frames": len(state),
-                    "kept": len(state), "pct": 0.0}
-        state_new, action_new, quality_new, ts_new, idx, cam_new, off_new, ts_cam_new = r
-    else:
-        r = drop_frames(state, quality, cam_images, cam_offsets, cam_ts,
-                        min_speed, min_keep, fps, state_ts0)
-        state_new, action_new, quality_new, ts_new, idx, cam_new, off_new, ts_cam_new = r
+    arm_mask = arm_mask_from_meta(ep_dir, state.shape[1])  # 弧长只用臂维
+
+    r = resample_frames(state, quality, cam_images, cam_offsets, cam_ts,
+                        speed_ref, fps, state_ts0, arm_mask)
+    if r is None:  # 纯静止/退化 episode：无法重采样，原样复制
+        if not dry_run:
+            for fname in ("aligned_data.h5", "robot_data.h5", "camera_data.h5", "meta.json"):
+                p = os.path.join(ep_dir, fname)
+                if os.path.exists(p):
+                    shutil.copy2(p, os.path.join(out_ep_dir, fname))
+        return {"episode": os.path.basename(ep_dir), "frames": len(state),
+                "kept": len(state), "pct": 0.0}
+    state_new, action_new, quality_new, ts_new, idx, cam_new, off_new, ts_cam_new = r
 
     if not dry_run:
         with h5py.File(os.path.join(out_ep_dir, "aligned_data.h5"), "w") as fo:
@@ -199,11 +192,13 @@ def repair_episode(ep_dir: str, out_ep_dir: str, method: str,
     }
 
 
-def session_speed_ref(session: str, eps: list, thresh: float) -> float:
-    """session 全局 speed_ref：所有 episode 逐帧位移合并后的 p90。
+def session_speed_ref(session: str, eps: list, arm_mask: np.ndarray | None) -> float:
+    """session 全局 speed_ref：所有 episode 臂维每帧弧长合并后的**均值**。
 
-    比每 episode 独立 p90 更稳——各段统一速度尺度（实测独立 p90 跨段差 1.3x，
-    模型学到不一致的节奏）。thresh 用于跳过超静止（避免 p90 被退化段拉低）。
+    选均值而非 p90：均值 = 总弧长/总帧数，重采样后总帧数≈原始（总时长不变），
+    只把静止/停滞帧的弧长匀到运动段——丝滑但**不加速**；旧默认 p90（≈1.9x 均值）
+    会把整段数据提速、放大每帧跳变（实测每帧最大跳变 p50 0.019→0.043、
+    >0.05 rad 占比 16%→40%）。各段统一速度尺度，避免模型学到不一致的节奏。
     """
     ds = []
     for ep in eps:
@@ -213,6 +208,8 @@ def session_speed_ref(session: str, eps: list, thresh: float) -> float:
         try:
             with h5py.File(p, "r") as f:
                 st = np.asarray(f["observation/state"], dtype=np.float64)
+                if arm_mask is not None:
+                    st = st[:, arm_mask]
             if len(st) < 3:
                 continue
             d = np.abs(np.diff(st, axis=0)).sum(axis=1)
@@ -222,19 +219,16 @@ def session_speed_ref(session: str, eps: list, thresh: float) -> float:
     if not ds:
         return 0.0
     all_d = np.concatenate(ds)
-    return float(np.percentile(all_d, 90))
+    return float(all_d.mean())
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--session", required=True, help="含 episode*/aligned_data.h5 的 session")
     ap.add_argument("--out-session", required=True)
-    ap.add_argument("--method", choices=["resample", "drop"], default="resample")
     ap.add_argument("--speed-ref", type=float, default=0.0,
-                    help="目标每帧弧长 rad/帧（0=自动取整个 session 的 p90，统一各段速度尺度）")
+                    help="目标每帧弧长 rad/帧（0=自动取 session 臂维弧长均值，保留总时长不加速；想更快给 p70~p90 量级，如 0.07）")
     ap.add_argument("--fps", type=int, default=30)
-    ap.add_argument("--min-speed", type=float, default=0.008, help="drop 模式停顿阈值")
-    ap.add_argument("--min-keep", type=int, default=4, help="drop 模式每段保留帧数")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -246,20 +240,28 @@ def main() -> int:
     if not eps:
         print("无 episode", file=sys.stderr)
         return 1
-    # 全局 speed_ref（若未显式指定）：所有 episode 合并的 p90，统一速度尺度
+    # 臂维掩码（弧长只用臂关节；无 meta 则全维）
+    arm_mask = None
+    for ep0 in eps:
+        ap = os.path.join(args.session, ep0, "aligned_data.h5")
+        if os.path.exists(ap):
+            with h5py.File(ap) as f:
+                n_dim = f["observation/state"].shape[1]
+            arm_mask = arm_mask_from_meta(os.path.join(args.session, ep0), n_dim)
+            break
+    # 全局 speed_ref（若未显式指定）：所有 episode 臂维弧长均值，统一速度尺度、不加速
     if args.speed_ref <= 0:
-        args.speed_ref = session_speed_ref(args.session, eps, args.min_speed)
+        args.speed_ref = session_speed_ref(args.session, eps, arm_mask)
     out_root = args.session if args.dry_run else args.out_session
     if not args.dry_run:
         os.makedirs(out_root, exist_ok=True)
 
-    print(f"修复: 方法={args.method} speed_ref={'自动(全局p90=%.4f)' % args.speed_ref if args.speed_ref>0 else args.speed_ref} "
+    print(f"修复: 弧长匀速化选帧 speed_ref={'自动(臂维均值=%.4f)' % args.speed_ref if args.speed_ref > 0 else args.speed_ref} "
           f"{'[DRY-RUN]' if args.dry_run else ''}")
     tot0 = tot1 = 0
     for ep in eps:
         st = repair_episode(os.path.join(args.session, ep), os.path.join(out_root, ep),
-                            args.method, args.speed_ref, args.fps,
-                            args.min_speed, args.min_keep, args.dry_run)
+                            args.speed_ref, args.fps, args.dry_run)
         tot0 += st.get("frames", 0); tot1 += st.get("kept", 0)
         if "error" in st:
             print(f"  {ep}: {st['error']}")

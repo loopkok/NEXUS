@@ -284,6 +284,65 @@ ros2 launch astral_teleop full_teleop.launch.py \
 分析：按 `kind` 过滤 + `t` 对齐；`vr`→`filt`→`cmd` 逐级求速度可定位阶梯产生/抹平在哪一级，
 `wrist` 的 `age_ms`/事件间隔看上游是否停帧，`counts.ik_fail`/`hard_fallback` 看 IK 是否偶发失败。
 
+## 遥操不平滑（慢速平移"抖"）排障全记录
+
+**症状**：慢速平移机械臂"停一下走一下"地抖、快速流畅；**不在肘伸直奇异位置**也抖。
+**结论**：根因在**驱动层**——电机低速静摩擦粘滑（speed 环 kp=0.04 微弱），与遥操/IK/指令
+精度无关。从发现到根因的完整链路（2026-09-14~16），每一步都是可复现的：
+
+### 第 1 步：建遥操 JSONL 诊断日志（本包能力）
+
+`teleop_log_file` 参数 + web「记录遥操日志」开关（见上一节）。真实会话 117.7s 落盘
+40K 行，`kind` 区分五类记录。**这一步让"抖"从感觉变成可量化的数据**——否则只能靠
+"好像有点抖"猜。
+
+### 第 2 步：真实数据定位（排除上游）
+
+慢速段逐级分析：
+- `vr`（原始 VR）36% 时间零速、步长 0.1mm 整数倍 → **Quest App 用 `ToString("F4")` 发位姿**
+  （0.1mm 量化）。已修 F4→F7（`astral-tracking`），但**这不是主因**——0.1mm 精度本身够细，
+  残留抖动只有 ~10mm/s 高频纹波。
+- 实测关节（`kind=state`）30~56% 时间停帧、12~19Hz 粘滑、突发峰值 >1 rad/s，而指令每拍
+  都在动 → **指向驱动层**。
+- IK/安全/人肘计数器干净（仅 `hard_follow`，无 `ik_fail`/`ik_sat`/`hard_fallback`）→ 排除。
+
+### 第 3 步：SDK 直连复现（驱动层实锤）
+
+`astral_robot_sdk/demos/repro_stickslip.py`：绕过 ROS/IK，从当前位姿用 SDK 直接发
+**干净恒定低速三角波**（无任何量化/纹波）→ 实测关节仍 **70% 停帧、21Hz 粘滑、滞后 3.4°**。
+pos(0x90) vs pv(0x95 速度前馈) 对照几乎一样（70.7% vs 69.7%）→ **速度前馈无效**，修复路线排除。
+
+### 第 4 步：定位根因（板卡/电机配置）
+
+`read_gains.py` 读电机内部四环 PID 级联：**position(35)→speed(0.04)→iq(2)**，
+speed 环 kp=0.04 微弱 → 慢速产不出扭矩/阻尼 → 静摩擦粘滑。板卡 CFG 无可调电流/力矩限制，
+只有 MIT_KP/KD（0x0010/11）与摩擦补偿（0x0014/15）。
+
+### 第 5 步：解决方案（⚠ 待实机验证）
+
+| 手段 | 工具 | 说明 |
+|---|---|---|
+| **主修**：调 speed 环 kp | `set_pid.py --joint 3 --spd-kp 0.2` | 0.1→0.2→0.4 从低往高扫，太高会振荡（电流尖峰/嘎嘎响）；改后重跑 repro 看"低频真实滞后/去量化平段" |
+| 补充：静摩擦补偿 | `calib_friction.py --write` | 0xC4 自测→set_friction（0~1.0），先下电放安全位 |
+| 补充：MIT 增益 | `repro --kp/--kd` | 下电写，扫位置环增益 |
+
+**验证状态：未实机确认**。调参后的重跑（17:31 stickslip_pos.csv 74.8% 平段 vs 基线 70.7%）
+无改善——必须 `set_pid.py` 改完 speed 环后重跑 repro 对照，平段占比显著下降才算修好。
+
+### 工具速查
+
+| 工具 | 位置 | 用途 |
+|---|---|---|
+| 遥操 jsonl | 本包 `teleop_log_file` | 链路逐级数据（vr/filt/cmd/q/counters） |
+| `repro_stickslip.py` | `astral_robot_sdk/demos/` | 驱动层粘滑复现 + pos/pv 对照 + 扫 MIT 增益 |
+| `read_gains.py` | 同上 | 读电机四环 PID 级联 + MIT + 摩擦（在线可读） |
+| `set_pid.py` | 同上 | 写 speed/position 环 PID（下电） |
+| `calib_friction.py` | 同上 | 0xC4 静摩擦自测 + set_friction 补偿（下电） |
+
+**排障顺序建议**：先 jsonl 看 `state` 是否停帧（驱动层嫌疑）→ SDK `repro --mode pos` 复现实锤
+→ `read_gains.py` 看 speed 环 → `set_pid.py` 调 → 重跑 repro 对照。不要一开始就调遥操平滑参数
+（pos_smoothing 只是掩盖驱动层问题，且加滞后）。
+
 ## 外部启动闸门（`require_start_signal`）
 
 **问题**：Quest3 端点 "start stream" 时手得抬起来点按钮，推流一来第一帧腕姿就在按钮位置，旧逻辑把第一帧当 `vr_init`（零点），于是零点错位、机器人一上手就偏。

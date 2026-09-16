@@ -295,15 +295,15 @@ HF_LEROBOT_HOME=~/lerobot_home lerobot-train \
 
 **训练数据节奏修复（治本）**
 
-模型复现的是示范节奏——示范停顿 → 真机卡点。两个脚本（`astral_ws/scripts/`）：
+模型复现的是示范节奏——示范停顿 → 真机卡点。一个脚本（`astral_ws/scripts/`）：
 
 | 脚本 | 处理层 | 方法 | 效果 |
 |---|---|---|---|
-| `compress_pauses.py` | raw h5（robot/camera） | 删停顿段中间帧（`--speed-thresh` 判低速，`--min-keep` 每段保留） | pick_place_merged **-35% 帧**，动作略"跳" |
-| `repair_aligned.py` | aligned_data.h5 | **弧长均匀选帧**（按累计运动量重采样，`--speed-ref` 控压缩比；**选帧非插值 = 零图像-关节错位**） | **-51% 帧**、速度更匀、时间戳均匀（validate W2 gap 100→0） |
+| `repair_aligned.py` | aligned_data.h5 | **弧长均匀选帧**（按累计运动量重采样，`--speed-ref` 控压缩比；**选帧非插值 = 零图像-关节错位**；弧长只算臂维、连续重复帧去重） | pick_place_merged **-27% 帧**、平段 11.3%→0.6%、每帧跳变不放大、时间戳均匀（validate W2 gap 100→0） |
 
 修完 `vla_process_act.sh`（align 检测 aligned 存在即跳过）→ `act_train.sh` 重新训练 → 真机
-对比卡点是否消失。`--speed-ref` 调压缩比：更小 = 更温和更多帧（动作不那么快）。
+对比卡点是否消失。`--speed-ref` 调速度/压缩比（默认臂维弧长均值=保留总时长不加速；想更快给
+0.07，**别超 0.07** 否则跳变放大回归；更低 0.035~0.045 更贴近原速）。
 
 ## 6. 数据格式（raw）
 

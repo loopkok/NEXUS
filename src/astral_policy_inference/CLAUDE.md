@@ -90,7 +90,7 @@ ACTTemporalEnsembler）只平滑"新旧预测"连续性，不平滑"预测 vs �
 尖峰清零后肉眼仍见 4 个**固定**卡点（到目标前/夹取后/放置前/释放后）。与换 chunk 无关（跨 2-3
 chunk），是模型在对应任务状态输出低速轨迹——因为训练数据本身走走停停（pick_place_merged 实测
 20.6% 帧速度 <0.008 rad/帧、208 个慢速段遍布）。**结论**：引擎参数只能平滑不能消除（卡点是
-"模型预测"），治本在数据（`scripts/compress_pauses.py` / `repair_aligned.py`，见 README 数据层）。
+"模型预测"），治本在数据（`scripts/repair_aligned.py`，见 README 数据层）。
 
 **第 4 层：网络带宽（RTT 主项）**
 `engine.last_plan_ms` 端到端 ~140ms，`server_timing.total` 服务端推理仅 ~10ms——差值是上行
