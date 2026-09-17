@@ -5,6 +5,12 @@
 **电机指令最小步长地板（`cmd_deadband_mrad`）+ 遥操 JSONL 跟手/慢速跟踪指标**——
 `astral_arm_teleop`。**现象**：geometric vs urdf_numerical 遥操对比（两份 JSONL），
 慢速移动 geometric 肉眼"一顿一顿"。**根因**：电机最小可靠步长 ~1 mrad（机械/固件死区，
+**更新 2026-09-17 二次真机 A/B：`cmd_deadband_mrad` 实测无效**——floor1_geo 指令层步长已
+全抬到 ≥1mrad（整臂全低 1% vs floor0 22%、db_nudge 58% 拍），但慢速窗实测关节平段占比
+三方法都 ~35-40%（j3：floor1=25% / floor0=14% / urdf=18%），floor 未改善反使 j3 变差
+（地板硬抬→过冲振荡）；且 1mrad 测量分辨不出 geometric/urdf 差异。**结论：电机硬件间隙
+问题暂无法解决**（调增益/摩擦/地板均无效），`cmd_deadband_mrad` 保留参数但标注实测无效、
+默认关。详见 `doc/2026-09-17-ik-solver-comparison.md` §7。
 实机验证调 speed 增益无效）；geometric 精确解+最小关节速度优化，慢速时把指令压到死区下
 （匹配速度段实测：**24% 拍整臂 7 关节全 <1 mrad、单关节 51~69% <1 mrad**，中位步长
 0.55~0.97 mrad）→ 电机不执行 → 攒误差跳一下；urdf 的"浪费型"关节运动（123 vs 10 mrad/拍，
