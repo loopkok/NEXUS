@@ -70,9 +70,10 @@ ros2 run astral_data_collect keyboard_controller
 （长按不重复）；采集节点未运行或状态不合法时按键静默忽略（节点 info 日志说明）。
 需遥操链路 `quest3_hand_mocap` 在发布 `quest3/right_controller_joy`（mocap 没跑则无动作）。
 
-**推理 HUMAN 时 A 键 = HUMAN 释放（2026-09-17 起）**：`vr_collect_control` 会订
-`/policy_inference/state`，当 activity==human 时 A 键改发 `/policy_inference/cmd`="release"
-（把控制权交还策略/回放），**不再**发采集 start；其余状态 A 仍为采集 start。B/摇杆语义不变。
+**推理 HUMAN 时 A 键 = HUMAN 释放（2026-09-17 起）**：主路由在**常驻遥操栈**的
+`controller_start_gate`（订 `/policy_inference/state`，activity==human 时右手 A 发
+`/policy_inference/cmd`="release"），不依赖数采栈。`vr_collect_control` 也保留同路由
+（数采栈运行时 HUMAN 下 A 归推理域）；其余状态 A 仍为采集 start。B/摇杆语义不变。
 
 **左手柄 X 键 = 段间回位**（teleop 侧 `controller_workpos_gate`，随 `full_teleop` 同启）：
 停止跟随 VR + **直接**回到 init_pose 工作位（**不经 init_waypoints**，`/teleop/init_direct`），

@@ -6,11 +6,18 @@ line-buffered, and a write failure never touches the control flow.
 
 Records written by ``astral_arm_teleop_node`` (discriminated by ``kind``):
   loop    — every armed control tick: raw VR / filtered / commanded TCP pos,
-            q / q_state, psi_ref, per-frame timings and IK/workspace flags
+            q / q_state, psi_ref, per-frame timings, IK/workspace flags,
+            and tracking-quality fields ``pos_err``/``ori_err`` (command FK vs
+            filtered target — geometric≈0, numeric larger on orientation),
+            ``psi_err`` (arm-angle follow error, null when no human-elbow
+            prior = numeric/DH), ``vr_vel`` (VR target speed mm/s for
+            slow/fast tagging)
   wrist   — every Quest wrist pose arrival (upstream staircase / stream health)
   state   — every joint_states arrival (measured exec chain)
   body    — every body_joints arrival (human elbow dir, EMA'd)
   metrics — every ~2s: LatencyMeter window (ms stats + counters) + armed/homing
+            + ``track`` summary (slow_frac + pos/ori_err p95 on slow vs fast
+            segments — the solver-comparison metrics)
 """
 
 from __future__ import annotations

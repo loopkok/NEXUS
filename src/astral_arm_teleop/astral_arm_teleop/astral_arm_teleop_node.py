@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from collections import deque
 from typing import List, Optional
 
 import numpy as np
@@ -195,6 +196,13 @@ class AstralTeleopArmNode(Node):
         self.declare_parameter("human_elbow_weight", 2.0)
         self.declare_parameter("human_elbow_timeout", 0.3)
         self.declare_parameter("human_elbow_smoothing_tau", 0.15)
+        # HITL re-anchor 臂角保持（方案B）：reanchor 后肘保持接管时刻的臂角，直到
+        # 操作者手臂方向相对 reanchor 时刻变化超过 reanchor_elbow_release_thresh
+        # 才切回人肘硬跟随——避免"接管后肘自行摆动到操作者手臂角度"（真机实测
+        # 方案A 的 EMA 过渡被感知为"卡一下/臂自己在动"，0.07-0.42 rad/1s）。
+        # <=0 关闭保持（回方案A 的即时 EMA 过渡）。
+        self.declare_parameter("reanchor_elbow_hold", True)
+        self.declare_parameter("reanchor_elbow_release_thresh", 0.2)
         # Straightness gate: when the human arm is nearly straight (elbow
         # within ~sin*upper-arm-length of the shoulder-wrist line), psi is
         # unobservable and IOBT bias would swivel the robot elbow to a
@@ -270,6 +278,15 @@ class AstralTeleopArmNode(Node):
         self._elbow_dir_vr: Optional[np.ndarray] = None  # EMA-smoothed unit dir
         self._elbow_dir_t: float = 0.0
         self._body_subs = None
+        # 方案B：reanchor 后保持臂角直到操作者手臂方向变化超阈值。
+        self._reanchor_elbow_hold = bool(
+            self.get_parameter("reanchor_elbow_hold").value
+        )
+        self._reanchor_elbow_release_thresh = float(
+            self.get_parameter("reanchor_elbow_release_thresh").value
+        )
+        self._elbow_held = False
+        self._elbow_reanchor_dir: Optional[np.ndarray] = None
         # Arm-angle escape watcher state (geometric solver; see main loop).
         self._esc_prev_active = False
         init_q_old = np.asarray(
@@ -443,6 +460,9 @@ class AstralTeleopArmNode(Node):
         self._tlog = TeleopJsonlLog(
             str(self.get_parameter("teleop_log_file").value or "")
         )
+        # 跟手/慢速跟踪指标状态：上一拍 vr 目标 + 窗口聚合缓存（供 kind=metrics 汇总）。
+        self._prev_vr_tgt: Optional[np.ndarray] = None
+        self._track_buf = deque(maxlen=400)  # ~4s @100Hz；metrics 窗口 2s
         if self._tlog.enabled:
             self.get_logger().info(
                 f"[{self.side}] teleop jsonl log -> {self._tlog.path}"
@@ -978,12 +998,16 @@ class AstralTeleopArmNode(Node):
         # HITL/任意位姿 re-anchor 时把**臂角参考**一并重锚到当前配置：人肘
         # EMA 重置为当前上臂方向，首个 solve_hard 解在当前臂角（肘不跳，
         # 否则 human_elbow_mode=hard 会立刻把臂角摆到操作者手臂角度——
-        # 实测 reanchor 后 0.7s 内关节重构 0.26-0.32 rad）；随后 _on_body_joints
-        # 的 EMA（human_elbow_smoothing_tau）平滑过渡到实时手臂。
+        # 实测 reanchor 后 0.7s 内关节重构 0.26-0.32 rad）。
+        # 方案B（reanchor_elbow_hold，默认开）：随后**保持**当前臂角，直到
+        # 操作者手臂方向相对 reanchor 时刻变化超过阈值才切回人肘跟随——
+        # 避免方案A 的 EMA 过渡被感知为"接管后肘自行摆动"（0.07-0.42 rad/1s）。
         try:
             u_se = self.ik.elbow_direction(q_ik)
             self._elbow_dir_vr = self.pose.R_vr_to_arm.T @ u_se
             self._elbow_dir_t = time.monotonic()
+            self._elbow_held = self._reanchor_elbow_hold
+            self._elbow_reanchor_dir = self._elbow_dir_vr.copy()
         except Exception as exc:  # noqa: BLE001 非 geometric 求解器无该方法（无害）；
             if hasattr(self.ik, "solve_hard"):  # 但 hard 模式缺重锚 = 肘会跳
                 self.get_logger().warn(
@@ -1166,6 +1190,25 @@ class AstralTeleopArmNode(Node):
         now = time.monotonic()
         if self._elbow_dir_vr is None or self._elbow_dir_t <= 0.0:
             self._elbow_dir_vr = d
+        elif self._elbow_held and self._elbow_reanchor_dir is not None:
+            # 方案B：接管后保持 reanchor 时刻的臂角，直到操作者手臂方向相对
+            # 该时刻变化超过阈值才切回人肘 EMA 跟随——肘不自行摆动（"卡/怪"）。
+            ang = float(np.arccos(np.clip(np.dot(self._elbow_reanchor_dir, d), -1.0, 1.0)))
+            if ang > self._reanchor_elbow_release_thresh:
+                self._elbow_held = False
+                if self._tlog.enabled:
+                    self._tlog.write(
+                        {
+                            "kind": "event",
+                            "t": time.time(),
+                            "side": self.side,
+                            "event": "elbow_hold_release",
+                            "angle": round(ang, 4),
+                        }
+                    )
+            else:
+                # 保持接管时刻方向（不向操作者方向混合）
+                self._elbow_dir_vr = self._elbow_reanchor_dir.copy()
         else:
             dt_e = min(0.5, max(1e-3, now - self._elbow_dir_t))
             a = math.exp(-dt_e / max(1e-3, self._human_elbow_tau))
@@ -1375,6 +1418,36 @@ class AstralTeleopArmNode(Node):
             rec["q"] = self.q_cmd.tolist()
             rec["ik_fail"] = 0
             rec["ik_sat"] = ik_sat
+            # ---- 跟手/慢速跟踪指标（量化 solver 差异的核心字段）----
+            # vr_vel：VR 原始目标速度（mm/s），用于给慢/快帧打标
+            vr_tgt = self.robot_init_pos + self.pose.last_raw_delta_pos
+            if self._prev_vr_tgt is not None:
+                vr_vel = (
+                    float(np.linalg.norm(vr_tgt - self._prev_vr_tgt))
+                    / max(dt, 1e-3)
+                    * 1000.0
+                )
+            else:
+                vr_vel = None
+            self._prev_vr_tgt = vr_tgt.copy()
+            rec["vr_vel"] = None if vr_vel is None else round(vr_vel, 1)
+            # pos_err/ori_err：命令 FK 与滤波目标的跟踪误差（跟手性核心）
+            #   geometric 精确解析 → ori_err≈0；urdf_numerical 姿态权重 0.3 → 较大
+            pos_err = float(np.linalg.norm(T_cmd[:3, 3] - T_tcp[:3, 3])) * 1000.0
+            dR = T_cmd[:3, :3] @ T_tcp[:3, :3].T
+            cos_a = float(np.clip((np.trace(dR) - 1.0) / 2.0, -1.0, 1.0))
+            ori_err = math.degrees(math.acos(cos_a))
+            rec["pos_err"] = round(pos_err, 3)
+            rec["ori_err"] = round(ori_err, 3)
+            # psi_err：臂角跟随误差 |θ0_sel − psi_ref|（仅人肘先验有效；
+            #   numeric/DH 无 psi_ref → null，表示压根没追人肘 = 肘乱跑的直接证据）
+            theta0 = getattr(getattr(self.ik, "_state", None), "theta0_prev", None)
+            psi_err = None
+            if psi_ref is not None and theta0 is not None:
+                psi_err = abs(float(psi_ref - theta0))
+            rec["psi_err"] = None if psi_err is None else round(psi_err, 4)
+            if vr_vel is not None:
+                self._track_buf.append((vr_vel, pos_err, ori_err))
             self._tlog.write(rec)
         self._publish_tune_poses(T_tcp)
         if self.dry_run:
@@ -1692,14 +1765,39 @@ class AstralTeleopArmNode(Node):
         ]
         self._tune_pubs["xyz"].publish(packed)
 
+    def _track_summary(self) -> dict:
+        """慢/快段跟踪质量窗口汇总（供 kind=metrics 的 track 字段）。
+
+        按 vr_vel（mm/s）分慢（<40）/快（≥40）段，输出 pos_err/ori_err 的 p95
+        与慢帧占比。用于对比 solver（geometric vs urdf_numerical）的跟手性与
+        慢速跟踪：numeric 姿态权重低 → ori_err 更大，慢速段更明显。
+        """
+        buf = list(self._track_buf)
+        self._track_buf.clear()
+        if len(buf) < 10:
+            return {}
+        vr_vel = np.array([b[0] for b in buf])
+        pe = np.array([b[1] for b in buf])
+        oe = np.array([b[2] for b in buf])
+        slow = vr_vel < 40.0
+        out = {"slow_frac": round(float(np.mean(slow)), 3)}
+        if slow.sum() >= 5:
+            out["pos_err_slow_p95"] = round(float(np.percentile(pe[slow], 95)), 2)
+            out["ori_err_slow_p95"] = round(float(np.percentile(oe[slow], 95)), 2)
+        if (~slow).sum() >= 5:
+            out["pos_err_fast_p95"] = round(float(np.percentile(pe[~slow], 95)), 2)
+            out["ori_err_fast_p95"] = round(float(np.percentile(oe[~slow], 95)), 2)
+        return out
+
     def _maybe_log_latency(self) -> None:
         if not self._print_latency or not self._lat.has_samples():
             return
         if not self._lat.should_print():
             return
         if self._tlog.enabled:
-            # kind=metrics：LatencyMeter 窗口汇总（ms 统计 + 计数），随 [Latency]
-            # 周期 ~2s 落一条；非破坏性 snapshot，format_and_reset 照常清窗。
+            # kind=metrics：LatencyMeter 窗口汇总（ms 统计 + 计数）+ 慢/快段跟踪质量，
+            # 随 [Latency] 周期 ~2s 落一条；非破坏性 snapshot，format_and_reset 照常清窗。
+            track = self._track_summary()
             self._tlog.write(
                 {
                     "kind": "metrics",
@@ -1708,6 +1806,7 @@ class AstralTeleopArmNode(Node):
                     "armed": self._armed,
                     "homing": self._homing,
                     **self._lat.snapshot(),
+                    **({"track": track} if track else {}),
                 }
             )
         self.get_logger().info(

@@ -110,7 +110,9 @@ ros2 launch astral_data_collect data_collect.launch.py session:=pick_place
 **推理活跃时 grip 语义改变（2026-09-17 起）**：`controller_start_gate` 会订
 `/policy_inference/state`——当 activity∈{policy,playback}（策略/回放运行中），左 **grip**
 改发 `/policy_inference/cmd`="takeover"（HITL 接管），**不再**发 `/teleop/start`（否则会
-重新武装遥操、与策略双写 `joint_commands`）。HUMAN/IDLE/无数采时仍为原「开始遥操」。
+重新武装遥操、与策略双写 `joint_commands`）。**HUMAN 时右手 A 上升沿** → `/policy_inference/cmd`
+="release"（交还控制权；本门随遥操栈常驻，HITL 释放不依赖数采栈）。HUMAN/IDLE/无数采时
+grip 仍为原「开始遥操」。
 
 **关键顺序要求**（影响数据质量，不损坏数据）：
 - **先 grip 再按 A**：段间回位后臂是 disarmed，若先 A 后 grip，新段 armed 覆盖率统计不足

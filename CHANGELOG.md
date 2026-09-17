@@ -2,6 +2,21 @@
 
 ## 2026-09-17
 
+**接管臂角改方案B（保持到操作者手臂真的动） + 右手 A 释放移到常驻 gate**——
+`astral_arm_teleop` × `astral_teleop`。**现象**（真机复测 09-17-11:06，5 次接管）：方案A
+（reanchor 重锚臂角到当前配置 + EMA 过渡）虽消除了首拍跳变（cmd==state，FK 验证一致），
+但**接管后肘仍自行摆动 0.07-0.42 rad/1s**（body_joints 62Hz 新鲜、腕部跟手零延迟
+|vr−cmd|≤3mm）——EMA 过渡被感知为"卡一下/臂自己在动"；且操作者手臂角度 ≠ 策略留下
+的臂角，遥操"怪"。**修法**：①方案B（`reanchor_elbow_hold=true` 默认开）：reanchor 后
+肘**保持接管时刻臂角**，直到操作者手臂方向相对 reanchor 时刻变化超
+`reanchor_elbow_release_thresh`(0.2 rad) 才切回人肘 EMA 跟随——肘不自行摆动；
+②右手 A 的 HUMAN 释放原本在 `vr_collect_control`（仅数采栈运行），推理会话没启数采栈
+→ A 无响应。把 release 路由移到**常驻遥操栈**的 `controller_start_gate`（新纯函数
+`decide_release_action`，订 `quest3/right_controller_joy`）。**验证**：`test_reanchor_teleop.py`
+新增 `test_elbow_hold_keeps_config_until_operator_moves`（阈值内保持/超阈值释放）；
+`test_start_gate_logic.py` 新增 4 例 release 路由；全量套件绿。**待真机**：确认方案B
+（臂角保持 + 手臂动则跟随）是否消除"卡/怪"。
+
 **HITL 接管肘部重构修复（方案A：reanchor 重锚臂角参考）**——`astral_arm_teleop`。
 **现象**：策略运行中点击「接管」进入 HUMAN，机械臂"原地等待一会"后**肘部突然重构**
 （手腕 TCP 不动、整段前臂/肘换姿势），然后才响应手柄；用户预期"接管后原地不动、

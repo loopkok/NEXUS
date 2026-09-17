@@ -26,7 +26,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Bool, String
 
-from astral_teleop.start_gate_logic import decide_start_action
+from astral_teleop.start_gate_logic import decide_release_action, decide_start_action
 
 
 def _sensor_qos() -> QoSProfile:
@@ -61,6 +61,8 @@ class ControllerStartGate(Node):
         # 推理感知：策略活跃（policy/playback）时 grip 改为 HITL 接管。
         self.declare_parameter("policy_state_topic", "/policy_inference/state")
         self.declare_parameter("policy_cmd_topic", "/policy_inference/cmd")
+        # 右手 A 在推理 HUMAN 时 = 释放（本门随遥操栈常驻，HITL 释放不依赖数采栈）。
+        self.declare_parameter("right_joy_topic", "quest3/right_controller_joy")
 
         joy_topic = str(self.get_parameter("joy_topic").value).strip()
         self.button_index = int(self.get_parameter("button_index").value)
@@ -68,6 +70,7 @@ class ControllerStartGate(Node):
         armed_topic = str(self.get_parameter("armed_topic").value).strip()
         state_topic = str(self.get_parameter("policy_state_topic").value).strip()
         self._policy_cmd_topic = str(self.get_parameter("policy_cmd_topic").value).strip()
+        right_joy_topic = str(self.get_parameter("right_joy_topic").value).strip()
 
         # RELIABLE + VOLATILE: one-shot, not latched (match monitor_node).
         self._pub = self.create_publisher(Bool, start_topic, 10)
@@ -76,6 +79,10 @@ class ControllerStartGate(Node):
         # BEST_EFFORT sub is compatible with the mocap Joy publisher (RELIABLE
         # default) and CLI `ros2 topic pub` — no dual-sub needed.
         self.create_subscription(Joy, joy_topic, self._on_joy, _sensor_qos())
+        self._prev_right_buttons: list[int] = [0] * 6
+        self.create_subscription(
+            Joy, right_joy_topic, self._on_right_joy, _sensor_qos()
+        )
         # 策略节点状态（latched，新订阅者立即拿到当前值）；无人发布=None。
         self._activity: str | None = None
         self.create_subscription(String, state_topic, self._on_policy_state, _latched_qos())
@@ -84,7 +91,8 @@ class ControllerStartGate(Node):
         self.get_logger().info(
             f"controller_start_gate joy={joy_topic} button={self.button_index} "
             f"(5=gripClick) → {start_topic} + {armed_topic} "
-            f"(policy active → {self._policy_cmd_topic} 'takeover')"
+            f"(policy active → {self._policy_cmd_topic} 'takeover'; "
+            f"right A in HUMAN → 'release')"
         )
 
     def _on_policy_state(self, msg: String) -> None:
@@ -114,6 +122,17 @@ class ControllerStartGate(Node):
                     f"{self._pub.topic} + {self._pub_armed.topic}"
                 )
         self._prev_pressed = pressed
+
+    def _on_right_joy(self, msg: Joy) -> None:
+        """右手 A 在推理 HUMAN 时 → /policy_inference/cmd 'release'。"""
+        cur = list(msg.buttons) if msg.buttons else []
+        cur += [0] * (6 - len(cur))
+        if decide_release_action(self._activity, self._prev_right_buttons, cur):
+            self._policy_cmd_pub.publish(String(data="release"))
+            self.get_logger().info(
+                f"right A pressed → {self._policy_cmd_topic} 'release' (HUMAN)"
+            )
+        self._prev_right_buttons = cur
 
 
 def main(args=None) -> None:

@@ -268,11 +268,17 @@ Quest3 有线：`adb reverse tcp:8000 tcp:8000`。
 | kind | 触发 | 关键字段 |
 |------|------|---------|
 | `event` | 每次生命周期/接管事件 | `event`=armed/disarm/reanchor/start/fault、`disarm_reason`、`ok`、`timeout_s`（一条 jsonl 即可还原 HITL takeover 全流程） |
-| `loop` | 每 armed 控制拍 | `vr`/`filt`/`cmd` TCP 位、`q`/`q_state`、`psi_ref`、`vr_age_ms`/`ik_ms`/`loop_ms`、`ik_fail`/`ik_sat`/`hard_fallback`/`ws_clip`/`reach_clip` |
+| `loop` | 每 armed 控制拍 | `vr`/`filt`/`cmd` TCP 位、`q`/`q_state`、`psi_ref`、`vr_age_ms`/`ik_ms`/`loop_ms`、`ik_fail`/`ik_sat`/`hard_fallback`/`ws_clip`/`reach_clip`、**`pos_err`/`ori_err`**（命令 FK vs 滤波目标）、**`psi_err`**（臂角跟随误差，无人肘先验=null）、**`vr_vel`**（VR 目标速度 mm/s） |
 | `wrist` | 每腕位事件 | `pos`/`quat`/`age_ms`/`frame`（upstream 阶梯/到达率证据） |
 | `state` | 每实测关节事件 | `q`（命令→实体执行链） |
 | `body` | 每 body_joints | `elbow_dir`/`elbow_dir_ema`（臂角 psi 源） |
-| `metrics` | ~2s | LatencyMeter 窗口 `ms` 统计 + `counts`（含 `hard_fallback`/`ik_fail`/`psi_escape`…） |
+| `metrics` | ~2s | LatencyMeter 窗口 `ms` 统计 + `counts` + **`track`**（`slow_frac` 慢帧占比 + 慢/快段 `pos_err`/`ori_err` p95） |
+
+**对比 solver（geometric vs urdf_numerical）用 `pos_err`/`ori_err`/`psi_err`/`track`**：
+geometric 精确解析 → `pos_err`≈0、`ori_err`≈0、`psi_err`≈0（硬跟人肘）；urdf_numerical
+姿态权重 0.3 → `ori_err` 明显更大、`psi_err`=null（不追人肘）、肘乱跑但位置跟得上。
+同一段遥操分别用两种 `solver_type` 各录一份，对比 `track` 的慢/快段 p95 即量化跟手性与
+慢速差异。
 
 ```bash
 # CLI：log_dir 模式（推荐）——每次 launch 自动建 {log_dir}/{YYYYMMDD-HHMMSS}[_tag]/
@@ -393,12 +399,13 @@ ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
 > 标志），start 时会把机器人原点**重锚到当前实测关节角**（与 `~/reanchor` 同一逻辑），
 > 遥操从实际位姿纯增量开始，不会向启动位 FK 锚点跳变。
 >
-> **重锚同时重锚臂角参考（2026-09-17 起）**：`~/reanchor`（HITL 接管）与任意位姿 start
+> **重锚同时重锚臂角参考（2026-09-17 起，方案B）**：`~/reanchor`（HITL 接管）与任意位姿 start
 > 的重锚除了 robot_init，还把**人肘参考 `_elbow_dir_vr` 重灌为当前上臂方向**——否则
 > `human_elbow_mode=hard` 的第一拍 `solve_hard` 会立刻把臂角摆到操作者当前手臂角度
 > （真机实测 reanchor 后 0.7s 内肘部关节重构 0.26-0.32 rad、TCP 不动，即"接管时肘突然
-> 换姿势"）。重锚后由 `_on_body_joints` 的 EMA（`human_elbow_smoothing_tau`）平滑过渡
-> 到实时手臂。
+> 换姿势"）。**重锚后默认保持该臂角**（`reanchor_elbow_hold=true`），直到操作者手臂方向
+> 相对 reanchor 时刻变化超 `reanchor_elbow_release_thresh`(0.2 rad) 才切回人肘 EMA 跟随——
+> 肘不自行摆动（实测方案A 的 EMA 过渡被感知为"卡一下/臂自己在动"）。<0 关闭保持（回方案A）。
 
 ## 工作位（去初始位 / go-to-init）
 

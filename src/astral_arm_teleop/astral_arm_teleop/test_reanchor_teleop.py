@@ -101,6 +101,11 @@ def _make_node():
     node._flip_needed = False
     node._elbow_dir_vr = np.array([0.0, 1.0, 0.0])  # conflicting human-elbow dir
     node._elbow_dir_t = time.monotonic()
+    node._human_elbow_tau = 0.15
+    node._reanchor_elbow_hold = True
+    node._reanchor_elbow_release_thresh = 0.2
+    node._elbow_held = False
+    node._elbow_reanchor_dir = None
     node._tlog = _FakeTlog()
     node._log = _FakeLog()
     node.get_logger = lambda: node._log
@@ -174,6 +179,44 @@ def test_reanchor_reseeds_elbow_to_current_config():
     assert node._elbow_dir_t > 0.0
     # A conflicting prior (the operator's arm pointing elsewhere) is gone.
     assert not np.allclose(node._elbow_dir_vr, [0.0, 1.0, 0.0])
+    # 方案B：reanchor 后臂角保持开启（直到操作者手臂方向变化超阈值）。
+    assert node._elbow_held is True
+    assert np.allclose(node._elbow_reanchor_dir, node._elbow_dir_vr)
+
+
+class _FakePos:
+    def __init__(self, x, y, z):
+        self.position = type("_P", (), {"x": x, "y": y, "z": z})()
+
+
+class _FakeBodyMsg:
+    """Shoulder at origin, elbow at ``d`` (unit upper-arm direction)."""
+
+    def __init__(self, d):
+        self.poses = [_FakePos(0.0, 0.0, 0.0), _FakePos(*d)]
+
+
+def test_elbow_hold_keeps_config_until_operator_moves():
+    """方案B：reanchor 后肘保持接管时刻臂角；操作者手臂方向变化超阈值才
+    切回人肘 EMA 跟随（不自行摆动 = 不"卡/怪"）。"""
+    node = _make_node()
+    node._body_names = ["left-arm-upper", "left-arm-lower"]
+    ok, _ = node._reanchor_teleop()
+    assert ok is True and node._elbow_held is True
+    held = node._elbow_dir_vr.copy()
+    # 操作者手臂方向与 reanchor 时刻接近（阈值内）→ 保持，不混合
+    near = np.array([1.0, 0.05, 0.0])
+    near /= np.linalg.norm(near)
+    node._on_body_joints(_FakeBodyMsg(near))
+    assert node._elbow_held is True
+    assert np.allclose(node._elbow_dir_vr, held)
+    # 操作者手臂方向明显变化（超阈值）→ 释放，从保持值平滑 EMA 跟随
+    far = np.array([0.7, 0.7, 0.1])
+    far /= np.linalg.norm(far)
+    node._on_body_joints(_FakeBodyMsg(far))
+    assert node._elbow_held is False
+    assert not np.allclose(node._elbow_dir_vr, far)  # EMA 已开始混合
+    assert np.allclose(node._elbow_dir_vr, held, atol=0.5)  # 但仍接近保持值
 
 
 def _run_all():
@@ -184,6 +227,7 @@ def _run_all():
         test_reanchor_falls_back_to_q_cmd_when_state_missing,
         test_reanchor_falls_back_when_state_stale,
         test_reanchor_reseeds_elbow_to_current_config,
+        test_elbow_hold_keeps_config_until_operator_moves,
     ]
     failed = 0
     for t in tests:
