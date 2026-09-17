@@ -1044,6 +1044,27 @@ class GeometricIKSolver:
             self._state.local_fail_streak = 0
             self._state.home_ok_streak = 0
 
+    def elbow_direction(self, q: np.ndarray) -> np.ndarray:
+        """Upper-arm direction (shoulder → elbow, unit, arm base frame) of ``q``.
+
+        ``u = R03 @ v_se_hat`` — the shoulder rotation from q1-q3 applied to
+        the home upper-arm direction. Used to re-anchor the human-elbow
+        reference (``_elbow_dir_vr``) to the arm's *current* configuration at
+        HITL ``~/reanchor`` / ``_start_teleop``: the first ``solve_hard`` then
+        keeps the current arm angle (no elbow snap), and the live human-elbow
+        EMA blends in smoothly as the operator moves.
+        """
+        q_7 = np.asarray(q, dtype=float).reshape(7)
+        g = self.geom
+        R03 = (
+            _axis_angle_rot(g.axes[0], q_7[0])
+            @ _axis_angle_rot(g.axes[1], q_7[1])
+            @ _axis_angle_rot(g.axes[2], q_7[2])
+        )
+        u = R03 @ g.v_se_hat
+        n = float(np.linalg.norm(u))
+        return u / n if n > 1e-9 else g.v_se_hat.copy()
+
     def check_self_collision(self, q: np.ndarray) -> bool:
         """Stub: no collision geometry model in the geometric solver."""
         return False

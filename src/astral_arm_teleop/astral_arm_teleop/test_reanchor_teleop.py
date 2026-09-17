@@ -31,6 +31,7 @@ class _FakePose:
         self.vr_current_pos = np.zeros(3)
         self.vr_current_rot = Rotation.identity()
         self.calibrated = 0
+        self.R_vr_to_arm = np.eye(3)
 
     def calibrate_from_current(self):
         self.calibrated += 1
@@ -49,6 +50,10 @@ class _FakeIk:
 
     def fk(self, q):
         return self._t0
+
+    def elbow_direction(self, q):
+        # Upper-arm direction of the current config (arbitrary but deterministic).
+        return np.array([1.0, 0.0, 0.0])
 
 
 class _FakeSafety:
@@ -70,6 +75,13 @@ class _FakeLog:
         self.messages.append(msg)
 
 
+class _FakeTlog:
+    enabled = False
+
+    def write(self, rec):
+        pass
+
+
 def _make_node():
     node = AstralTeleopArmNode.__new__(AstralTeleopArmNode)
     node.side = "left"
@@ -87,6 +99,9 @@ def _make_node():
     node._armed = False
     node._disarm_reason = None
     node._flip_needed = False
+    node._elbow_dir_vr = np.array([0.0, 1.0, 0.0])  # conflicting human-elbow dir
+    node._elbow_dir_t = time.monotonic()
+    node._tlog = _FakeTlog()
     node._log = _FakeLog()
     node.get_logger = lambda: node._log
     return node
@@ -145,6 +160,22 @@ def test_reanchor_falls_back_when_state_stale():
     assert np.allclose(node.ik.synced, node.q_cmd)
 
 
+def test_reanchor_reseeds_elbow_to_current_config():
+    """HITL re-anchor must ALSO re-anchor the arm-angle reference: the human
+    elbow EMA is reset to the arm's current upper-arm direction, so the first
+    solve_hard keeps the current config (no elbow snap — regression: reanchor
+    后 0.26-0.32 rad 肘部重构)."""
+    node = _make_node()
+    ok, _ = node._reanchor_teleop()
+    assert ok is True
+    # _elbow_dir_vr is rotated into the VR frame: R_vr_to_arm.T @ u_se.
+    expected = node.pose.R_vr_to_arm.T @ node.ik.elbow_direction(node.state_q)
+    assert np.allclose(node._elbow_dir_vr, expected)
+    assert node._elbow_dir_t > 0.0
+    # A conflicting prior (the operator's arm pointing elsewhere) is gone.
+    assert not np.allclose(node._elbow_dir_vr, [0.0, 1.0, 0.0])
+
+
 def _run_all():
     tests = [
         test_reanchor_blocks_while_homing,
@@ -152,6 +183,7 @@ def _run_all():
         test_reanchor_uses_fresh_measured_state,
         test_reanchor_falls_back_to_q_cmd_when_state_missing,
         test_reanchor_falls_back_when_state_stale,
+        test_reanchor_reseeds_elbow_to_current_config,
     ]
     failed = 0
     for t in tests:

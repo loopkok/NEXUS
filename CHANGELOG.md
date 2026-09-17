@@ -1,6 +1,80 @@
 # Changelog（astral_ws）
 
+## 2026-09-17
+
+**HITL 接管肘部重构修复（方案A：reanchor 重锚臂角参考）**——`astral_arm_teleop`。
+**现象**：策略运行中点击「接管」进入 HUMAN，机械臂"原地等待一会"后**肘部突然重构**
+（手腕 TCP 不动、整段前臂/肘换姿势），然后才响应手柄；用户预期"接管后原地不动、
+增量遥操"。**根因**（真机日志实证，`inference_test_logs/20260916`）：`_reanchor_teleop`
+只重锚了 robot_init（位置），没重锚**臂角（psi）**；`human_elbow_mode=hard` 的
+`solve_hard` 在精确人臂角上解算，reanchor 时操作者手肘举着 → 第一拍就把臂角摆到
+当前手臂角度。三次接管实测：指令空档仅 11-56ms（臂没"等"），但 0.7s 内肘部关节
+重构 **0.26-0.32 rad**，TCP 钉在当前位（FK 逐拍验证一致）。**修法**：`geometric.py`
+新增 `elbow_direction(q)`（肩→肘单位向量，`R03 @ v_se_hat`）；`_anchor_origin_to_measured`
+（`_reanchor_teleop` 与 `_start_teleop` 重锚分支共用）末尾把 `_elbow_dir_vr` 重灌为
+当前上臂方向（`R_vr_to_arm.T @ u_se`）——首个 `solve_hard` 解在当前臂角（零跳），
+随后 `_on_body_joints` EMA（τ=0.15s）平滑过渡到实时手臂。**验证**：新用例
+`test_elbow_direction_reanchor_keeps_config`（`elbow_direction` 与候选解 psi 一致，
+`solve_hard`@重锚方向 worst config move 0.0005 rad）、`test_reanchor_reseeds_elbow_to_current_config`
+（`_elbow_dir_vr` 被重锚到当前配置方向）全绿；顺带修了 `test_reanchor_teleop.py`
+缺 `_tlog` stub（节点 09-16 加 `_tlog_event` 后测试骨架没跟上）。**用户真机 A/B**：
+方案A 效果不满意则切方案B（reanchor 后保持当前臂角，直到手臂方向变化超阈值）。
+
+**~1.1s 接管状态显示延迟：加时间戳日志 + 提前发布 HUMAN**——`astral_policy_inference`。
+**现象**：reanchor 武装遥操（如 28.58s）到 web 显示 HUMAN（29.71s）稳定差 ~1.1-1.3s
+（三次一致）；期间状态话题仍 POLICY，操作者以为没接管。**排查**：29.198s 的 POLICY
+发布证明 `_tick` 未在 teardown 中阻塞 → 更可能是 reanchor 响应/提交延迟。**本轮修法**：
+①接管流程三处加**精确时间戳日志**（`_cmd_takeover` send → `_poll_takeover` all-reanchor-done
+→ `_commit_takeover` committed，`time.strftime('%H:%M:%S.%f')`）；②防御性：`_commit_takeover`
+在 FSM 切 HUMAN 后、`_teardown_engine()` 前**立即 publish state**——即使拆引擎阻塞（join
+planner+关后端可达 ~2s），web 也立即显示 HUMAN。**验证**：推理包全套 108 例全绿。**待真机**：
+下一次复现抓 policy_node 终端三行时间戳，钉死"响应慢 vs 提交慢 vs teardown"后针对性修。
+
+**VR 键位语义：推理活跃时 grip=HUMAN 接管、右手 A=HUMAN 释放**——`astral_teleop` ×
+`astral_data_collect`。**动机**：策略运行中误按 grip 会 `/teleop/start` 重新武装遥操，
+与策略**双写** `/left_arm/joint_commands`（150Hz 遥操盖掉 30Hz 策略）；改为推理活跃
+（`/policy_inference/state` activity∈{policy,playback}）时 grip 发
+`/policy_inference/cmd`="takeover"（不发 /teleop/start+/armed）；右手 A 在 HUMAN 时发
+"release"（交还控制权），其余仍发采集 start。**修法**：新纯逻辑 `start_gate_logic.py`
+`decide_start_action`（policy/playback→takeover，否则 teleop_start）；`controller_start_gate.py`
+订 `/policy_inference/state`（latched）按决策路由 grip；`vr_collect_logic.py` 新增
+`decide_release_or_collect`（HUMAN→release，否则采集路由）；`vr_collect_control.py` 订
+`/policy_inference/state` + 新增 `/policy_inference/cmd` 发布器。**验证**：新增
+`test_start_gate_logic.py` 4 例 + `test_vr_collect_control.py` 扩 5 例，全绿；B/摇杆语义不变。
+**设计假设**：grip→接管只在推理**活跃**时生效，IDLE/HUMAN 下 grip 仍走 /teleop/start
+（起策略前可手动摆位）；HUMAN 下 grip=重标定（现状）。
+
 ## 2026-09-16
+
+**遥操 jsonl 新增 `kind=event` 生命周期/接管记录**——`astral_arm_teleop`。**现象**：HITL
+takeover 的 armed/disarm/reanchor/start/fault 只打终端日志，jsonl 里只有 loop 断档能间接推断，
+单看遥操文件无法还原接管时序（用户反馈"takeover 没有记录"）。**做法**：`teleop_log.py` 新增
+纯函数 `teleop_event_record(event, side, **fields)`（kind=event、t=墙钟、side、自由字段）；
+节点加 `_tlog_event` 辅助并埋在五个事件点：`_on_armed`（armed）、`_on_disarm`（disarm +
+`disarm_reason` + `homing_cancelled`）、`_start_teleop`（start + `reanchored`）、
+`_reanchor_teleop`（reanchor 成败 + reason）、VR 看门狗（fault + `timeout_s`）。零开销路径
+（日志关）不碰。**验证**：`test_teleop_log_run_dir.py` 4→**7 例**全绿（event 结构/自由字段/
+t 默认现在）；README kind 表加 event 行、五类→六类；py_compile 通过。
+
+**`quantify_cmd_state.py` 修复 + `repair_aligned.py` 意图感知重采样（--keep-intent）**——
+**动机**：① `--aligned` 的"零步占比"语义错——量的是 `|action 绝对位|<阈值`（关节在零位，
+对 gripper=开位），不是"没动"（实测 gripper 62.9% 假零步 vs 真 delta=0 11.3%）；②
+`_cross_lag` 无守卫——静止关节近恒定序列任何 shift 都"相关"，返回噪声 lag 错移 cmd 平段
+标志→分型错分；③ 用户要的"意图滤波"落地——repair 默认把所有停顿一视同仁压缩，会毁掉
+任务合法停顿（抓握保持/放置等待）。
+**做法**：① `analyze_aligned` 改收 state，`action_zero_prop` 用 delta=action-state 判定
+（无 state 退化用 action 平段）；② `_cross_lag` 加方差守卫（任一方 std<1e-4 → 0）+
+相关度守卫（bestc<0.5 → 0），classify 阈值提成 `--intent-thresh/--friction-thresh` 参数；
+③ `repair_aligned.py` 新增 `--keep-intent`：读 raw `*_cmd` 流（优先 schema 臂块同名，防双臂
+拿错侧），互相关对齐后把 state 停顿分型——意图型（cmd 同步停）帧在重采样度量里每帧推进
+speed_ref（时长 1:1 保留），摩擦型照常压缩；去重豁免意图停顿帧（连续重复=时长正确表示）。
+**验证**：两脚本自测全过（quantify 9 例含静止关节 lag=0 新例；repair 7 例含意图保留/摩擦
+压缩/对照/零错位）。真机 pick_place_merged 全 100 段：普通 repair -27.3%（平段 0.6%）、
+`--keep-intent` -24.6%（平段 5.3%=保留的意图停顿），两者零错位对抗 ALL PASS（3529 帧）。
+**对抗性审查**：滞后 ±0.2s 意图仍识别、全静止双路径安全（keep-intent 保留 ~n 帧/无 intent
+退化复制）、边界停顿不崩、NaN 不崩、混合停顿零错位——ALL PASS。**遗留**：意图停顿在输出
+有 ~0.2s 边界过保留（最近帧选帧的边缘效应，无害）；分型质量依赖对齐可靠性（已有守卫）。
+
 
 **日志落盘改"每次运行独立目录"：`log_dir`/`log_tag` 取代 /tmp 固定文件**——`astral_arm_teleop` ×
 `astral_policy_inference` × `astral_web_monitor`。**现象**：遥操/推理诊断日志默认写 `/tmp/pi_*.jsonl`、

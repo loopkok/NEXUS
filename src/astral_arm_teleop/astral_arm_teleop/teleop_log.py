@@ -42,6 +42,20 @@ def run_log_dir(root: str, tag: str = "") -> str:
     return d
 
 
+def teleop_event_record(event: str, side: str, **fields) -> dict:
+    """Build a ``kind=event`` record for takeover/lifecycle diagnostics.
+
+    One record per lifecycle transition (``armed``/``disarm``/``reanchor``/
+    ``start``/``fault``); ``side`` and free-form ``fields`` (e.g.
+    ``disarm_reason``, ``ok``) ride along so a single jsonl timeline can
+    reconstruct the full HITL takeover sequence without cross-referencing the
+    policy-side metrics file. ``t`` is the local wall-clock arrival time.
+    """
+    rec = {"kind": "event", "t": time.time(), "side": side, "event": event}
+    rec.update(fields)
+    return rec
+
+
 def side_log_path(base: str, side: str) -> str:
     """Per-side JSONL path from a shared launch base path.
 

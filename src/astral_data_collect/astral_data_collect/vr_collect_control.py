@@ -1,9 +1,12 @@
-"""VR 采集控制：右手柄按键 → /data_collect/control 命令。
+"""VR 采集控制：右手柄按键 → /data_collect/control 命令（推理感知）。
 
 单人数据采集时手不离手柄即可控制录制（键盘控制器的手动替代）：
   Quest 右手柄  A 键      → start（开始录制，仅 IDLE 有效）
                 B 键      → stop（结束并保存当前段，仅录制中有效）
                 摇杆按下  → discard（丢弃当前段，仅录制中有效）
+
+推理感知（HITL）：/policy_inference/state 的 activity==human 时，A 键改发
+/policy_inference/cmd = "release"（把控制权交还策略/回放），不再发采集 start。
 
 上升沿触发（长按不重复）；本地按 /data_collect/state 做状态门控——非法状态或
 采集节点未运行（未收到 state）时按键静默忽略（info 日志），不给采集节点发
@@ -29,6 +32,7 @@ from astral_data_collect.vr_collect_logic import (
     BUTTON_A,
     BUTTON_B,
     BUTTON_STICK_PRESS,
+    decide_release_or_collect,
     decide_vr_command,
 )
 
@@ -55,6 +59,7 @@ _CMD_BTN_NAMES = {
     "start": "A 键",
     "stop": "B 键",
     "discard": "摇杆按下",
+    "release": "A 键",
 }
 _BTN_NAMES = {
     BUTTON_STICK_PRESS: "摇杆按下",
@@ -66,6 +71,8 @@ _BTN_NAMES = {
 class VrCollectControl(Node):
     def __init__(self) -> None:
         super().__init__("data_collect_vr_control")
+        self.declare_parameter("policy_state_topic", "/policy_inference/state")
+        self.declare_parameter("policy_cmd_topic", "/policy_inference/cmd")
         self._ctrl_pub = self.create_publisher(
             String, "/data_collect/control", _CONTROL_QOS
         )
@@ -73,13 +80,26 @@ class VrCollectControl(Node):
         self.create_subscription(
             String, "/data_collect/state", self._on_state, _LATCHED_QOS
         )
+        # 推理 HUMAN 时 A 键 → release。
+        self._activity: str | None = None
+        self._policy_cmd_topic = str(self.get_parameter("policy_cmd_topic").value)
+        self._policy_cmd_pub = self.create_publisher(
+            String, self._policy_cmd_topic, _CONTROL_QOS
+        )
+        self.create_subscription(
+            String,
+            str(self.get_parameter("policy_state_topic").value),
+            self._on_policy_state,
+            _LATCHED_QOS,
+        )
         self.create_subscription(
             Joy, "quest3/right_controller_joy", self._on_joy, _SENSOR_QOS
         )
         self._prev_buttons: list[int] = [0] * 6
         self.get_logger().info(
-            "VR 采集控制就绪：右手柄 A=start  B=stop&save  摇杆按下=discard"
-            "（订 quest3/right_controller_joy + /data_collect/state）"
+            "VR 采集控制就绪：右手柄 A=start/release  B=stop&save  摇杆按下=discard"
+            "（订 quest3/right_controller_joy + /data_collect/state + "
+            f"{str(self.get_parameter('policy_state_topic').value)}）"
         )
 
     def _on_state(self, msg: String) -> None:
@@ -89,19 +109,29 @@ class VrCollectControl(Node):
             self._state = None
         self.get_logger().info(f"data_collect state = {self._state}")
 
-    def _send(self, cmd: str) -> None:
+    def _on_policy_state(self, msg: String) -> None:
+        try:
+            self._activity = json.loads(msg.data).get("activity")
+        except Exception:  # noqa: BLE001
+            self._activity = None
+
+    def _send(self, cmd: str, to_policy: bool = False) -> None:
         msg = String()
         msg.data = cmd
-        self._ctrl_pub.publish(msg)
+        (self._policy_cmd_pub if to_policy else self._ctrl_pub).publish(msg)
         self.get_logger().info(
-            f"-> {cmd}（{_CMD_BTN_NAMES[cmd]}，state={self._state}）"
+            f"-> {cmd}（{_CMD_BTN_NAMES.get(cmd, cmd)}，state={self._state}）"
         )
 
     def _on_joy(self, msg: Joy) -> None:
         cur = list(msg.buttons) if msg.buttons else []
         cur += [0] * (6 - len(cur))
-        cmd = decide_vr_command(self._state, self._prev_buttons, cur)
-        if cmd is not None:
+        cmd = decide_release_or_collect(
+            self._activity, self._state, self._prev_buttons, cur
+        )
+        if cmd == "release":
+            self._send("release", to_policy=True)
+        elif cmd is not None:
             self._send(cmd)
         else:
             # 有键按下但被门控 / 采集节点未运行：只打 info 不上发——采集节点

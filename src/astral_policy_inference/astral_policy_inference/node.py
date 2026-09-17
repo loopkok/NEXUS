@@ -755,7 +755,9 @@ class PolicyNode(Node):
             pends[name] = client.call_async(Trigger.Request())
         self._takeover_pending = pends
         self._takeover_deadline = time.monotonic() + 3.0
-        self.get_logger().info("takeover: re-anchoring VR teleop…")
+        self.get_logger().info(
+            f"takeover: re-anchoring VR teleop @ {time.strftime('%H:%M:%S.%f')[:-3]}"
+        )
 
     def _poll_takeover(self, now: float) -> bool:
         """Advance the takeover handshake; returns True while still pending
@@ -786,6 +788,10 @@ class PolicyNode(Node):
                 )
                 self._abort_takeover(f"re-anchor {name} {msg}")
                 return False
+        self.get_logger().info(
+            "takeover: all reanchor done @ "
+            f"{time.strftime('%H:%M:%S.%f')[:-3]} → committing"
+        )
         self._commit_takeover()
         return False
 
@@ -799,12 +805,19 @@ class PolicyNode(Node):
         except InvalidTransition as exc:
             self._abort_takeover(f"takeover rejected: {exc}")
             return
+        # 防御：FSM 一切 HUMAN 就立刻发布状态（teardown 之前）——即使
+        # _teardown_engine 阻塞（join planner + 关后端，可达 ~2s），web 也
+        # 立即显示 HUMAN，不把"接管反馈"拖到拆引擎之后。
+        self._publish_state()
         self._teardown_engine()
         self._last_cmds = []
         self._obs_lost_since = None
         self._takeover_pending = None
         self._publish_state()
-        self.get_logger().warn("HUMAN takeover: VR teleop armed (incremental)")
+        self.get_logger().warn(
+            "HUMAN takeover: VR teleop armed (incremental) @ "
+            f"{time.strftime('%H:%M:%S.%f')[:-3]}"
+        )
 
     def _abort_takeover(self, reason: str) -> None:
         # Transactional rollback (adversarial-review F8): any arm teleop a

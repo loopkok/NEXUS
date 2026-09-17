@@ -100,6 +100,10 @@ def _cross_lag(x: np.ndarray, tsx: np.ndarray, y: np.ndarray, tsy: np.ndarray,
     gi = np.linspace(t0, t1, max(100, int((t1 - t0) * hz)))
     X = np.interp(gi, tsx, x[:, 0])
     Y = np.interp(gi, tsy, y[:, 0])
+    # 守卫：任一方几乎不动（近恒定）时互相关无意义，任何 shift 都能"匹配"——返回 0，
+    # 避免把静止关节的 cmd 平段标志错移、分型错分。
+    if X.std() < 1e-4 or Y.std() < 1e-4:
+        return 0.0
     step = 1.0 / hz
     best, bestc = 0, -2.0
     for k in range(-int(max_ms * hz / 1000), int(max_ms * hz / 1000) + 1):
@@ -116,6 +120,9 @@ def _cross_lag(x: np.ndarray, tsx: np.ndarray, y: np.ndarray, tsy: np.ndarray,
         c = float(np.dot(ca, cb) / (np.linalg.norm(ca) * np.linalg.norm(cb) + 1e-9))
         if c > bestc:
             best, bestc = k, c
+    # 相关度太低 → 两序列没有可信对齐，返回 0（别用噪声 shift 错移窗口）
+    if bestc < 0.5:
+        return 0.0
     return -best * step
 
 
@@ -176,7 +183,8 @@ def classify_pause(frac: float, intent_frac: float = 0.5, friction_frac: float =
 def analyze_cmd_state(cmd: np.ndarray, ts_cmd: np.ndarray,
                       state: np.ndarray, ts_state: np.ndarray, *,
                       hz: int = 100, flat_v: float = 0.02,
-                      min_pause: float = 0.15, align: bool = True) -> dict:
+                      min_pause: float = 0.15, align: bool = True,
+                      intent_frac: float = 0.5, friction_frac: float = 0.2) -> dict:
     """一条机器人数据流（如 left_arm）：逐关节 cmd vs state 对比 + 停顿分型。
 
     align=True（默认）：分型前用互相关把 cmd 时间轴对齐到 state（减掉 state 领先 cmd 的
@@ -212,7 +220,7 @@ def analyze_cmd_state(cmd: np.ndarray, ts_cmd: np.ndarray,
             t0, t1 = St[i], St[jj]
             inw = (cts >= t0) & (cts < t1)
             frac = float(cflat[inw].mean()) if inw.any() else 1.0
-            kind = classify_pause(frac)
+            kind = classify_pause(frac, intent_frac, friction_frac)
             pauses.append({
                 "t0": round(float(t0) - float(St[0]), 3),
                 "t1": round(float(t1) - float(St[0]), 3),
@@ -237,19 +245,29 @@ def analyze_cmd_state(cmd: np.ndarray, ts_cmd: np.ndarray,
             "t0_origin": float(St[0])}
 
 
-def analyze_aligned(action: np.ndarray, hz: int = 30, flat_v: float = 0.02,
-                    min_pause: float = 0.15) -> dict:
-    """aligned_data.h5 的 /action（next-state）→ 零膨胀/突跳统计。"""
+def analyze_aligned(action: np.ndarray, state: np.ndarray | None, hz: int = 30,
+                    flat_v: float = 0.02, min_pause: float = 0.15) -> dict:
+    """aligned_data.h5 的 /action（next-state）→ 零膨胀/突跳统计。
+
+    zero_prop 用 **delta = action - state**（真·没动）判定；旧实现量 |action| 绝对位
+    近 0（"关节在零位"，对 gripper=开位，语义错）。
+    """
     joints: dict[str, dict] = {}
     d = action.shape[1] if action.ndim == 2 else 1
     A = action if action.ndim == 2 else action[:, None]
     t = np.arange(len(A)) / hz           # 均匀网格时间戳（30Hz）
     zero_th = flat_v * (1.0 / hz)        # 每步"基本没动"的位置阈值
+    has_state = state is not None and state.shape[0] == A.shape[0]
+    D = (A - state) if has_state else None
     for j in range(d):
         s = _signal_stats(A[:, j:j + 1], t, flat_v, min_pause)
+        if has_state:
+            zero_prop = float((np.abs(D[:, j]) < zero_th).mean())
+        else:
+            zero_prop = s["flat_prop"]   # 无 state 时退化用动作平段
         joints[f"j{j}"] = {
             "action_flat_prop": s["flat_prop"],
-            "action_zero_prop": float((np.abs(A[:, j]) < zero_th).mean()),
+            "action_zero_prop": zero_prop,
             "action_step_p50": s["step_p50"], "action_step_p90": s["step_p90"],
             "action_step_max": s["step_max"],
             "n_zero_runs": s["flat_runs"],
@@ -335,7 +353,7 @@ def _print_cmd_state_row(r: dict, min_peak_v: float) -> None:
                           "state_step_p90", "n_intent", "n_friction", "n_mixed")}
     for jj in sel.values():
         for k in agg:
-            agg[k] += jj[k] if k in ("n_intent", "n_friction", "n_mixed") else jj[k]
+            agg[k] += jj[k]
     n = len(sel)
     for k in ("state_flat_prop", "cmd_flat_prop", "slip_hz", "state_step_p90"):
         agg[k] /= n
@@ -405,11 +423,15 @@ def _self_test() -> int:
     check("cmd+state 同停 → 意图型", len(pauses) == 1 and pauses[0]["kind"] == "intent",
           f"{pauses}")
 
-    # 场景3：aligned action 零膨胀
-    act = np.zeros(grid.shape)
-    act[::5] = 0.1  # 80% 零
-    ra = analyze_aligned(act[:, None], hz=hz, flat_v=0.02)
-    check("next-state 零占比检测", abs(ra["joints"]["j0"]["action_zero_prop"] - 0.8) < 0.05,
+    # 场景3：aligned next-state 零膨胀 —— 零步必须量 delta=action-state（真·没动），
+    # 不是 |action| 绝对位近 0。state=台阶（停 4 拍跳 0.1），action=next-state → delta 80% 为 0。
+    st3 = np.zeros(grid.shape)
+    st3[:] = 0.1 * (np.arange(len(grid)) // 5)   # 每 5 拍跳 0.1，中间 80% 停住
+    ac3 = np.empty_like(st3)
+    ac3[:-1] = st3[1:]
+    ac3[-1] = st3[-1]                            # action[t] = state[t+1]
+    ra = analyze_aligned(ac3[:, None], st3[:, None], hz=hz, flat_v=0.02)
+    check("next-state 零占比（delta 语义）", abs(ra["joints"]["j0"]["action_zero_prop"] - 0.8) < 0.05,
           f"={ra['joints']['j0']['action_zero_prop']:.2f}")
 
     # 场景4：cmd 短有意停顿(0.3s)，但 cmd 时间戳被推迟 0.2s（两流时间戳语义差异）——
@@ -426,6 +448,17 @@ def _self_test() -> int:
     p4b = [p for p in r4b["joints"]["j0"]["pauses"] if p["dur_s"] > 0.2]
     check("不对齐 → 该停顿被错分（非意图）",
           not any(p["kind"] == "intent" for p in p4b), f"{p4b}")
+
+    # 场景5：静止关节（cmd/state 都恒定）→ _cross_lag 守卫必须返回 0，不能给噪声 shift
+    # （旧实现近恒定序列任何 shift 都"相关"，会错移 cmd 平段标志 → 分型错分）
+    const = np.full_like(grid, 1.7)
+    lag0 = _cross_lag(const[:, None], grid, const[:, None], grid)
+    check("静止关节 → lag=0（守卫）", lag0 == 0.0, f"lag={lag0}")
+    r5 = analyze_cmd_state(const[:, None], grid, const[:, None], grid,
+                           hz=hz, flat_v=0.02, min_pause=0.1, align=True)
+    # 全程恒定 → 平段≈100%，停顿应判意图（cmd 也停）而非被错移成摩擦
+    j5 = r5["joints"]["j0"]
+    check("静止关节分型不被错移", j5["n_friction"] == 0, f"friction={j5['n_friction']}")
     return 0 if ok else 1
 
 
@@ -437,6 +470,10 @@ def main() -> int:
     ap.add_argument("--flat-v", type=float, default=0.02,
                     help="判定'停住'的速度阈值 rad/s（默认 0.02 ≈ 基本静止）")
     ap.add_argument("--min-pause", type=float, default=0.15, help="最小停顿时长 s（默认 0.15）")
+    ap.add_argument("--intent-thresh", type=float, default=0.5,
+                    help="state 停顿窗口内 cmd 平段占比 ≥ 此值判'意图型'（默认 0.5）")
+    ap.add_argument("--friction-thresh", type=float, default=0.2,
+                    help="cmd 平段占比 ≤ 此值判'摩擦型'（默认 0.2）")
     ap.add_argument("--min-peak-v", type=float, default=0.1,
                     help="聚合只算峰值 cmd 速度 ≥ 该值(rad/s) 的'活跃关节'，"
                          "避免全程低速的小关节污染平段/分型（默认 0.1）")
@@ -456,16 +493,20 @@ def main() -> int:
         for r in _collect_raw(args.h5):
             r["res"] = analyze_cmd_state(r["cmd"], r["cmd_ts"], r["state"], r["state_ts"],
                                          hz=args.hz, flat_v=args.flat_v,
-                                         min_pause=args.min_pause, align=not args.no_align)
+                                         min_pause=args.min_pause, align=not args.no_align,
+                                         intent_frac=args.intent_thresh,
+                                         friction_frac=args.friction_thresh)
             rows.append(r)
     if args.aligned:
         import h5py
 
         with h5py.File(args.aligned, "r") as f:
             action = np.asarray(f["action"], dtype=np.float64)
+            state = (np.asarray(f["observation/state"], dtype=np.float64)
+                     if "observation/state" in f else None)
             fps = int(f.attrs.get("fps", 30))
         rows.append({"h5": args.aligned, "stream": "action(next-state)",
-                     "res": analyze_aligned(action, hz=fps, flat_v=args.flat_v,
+                     "res": analyze_aligned(action, state, hz=fps, flat_v=args.flat_v,
                                             min_pause=args.min_pause)})
 
     if not rows:

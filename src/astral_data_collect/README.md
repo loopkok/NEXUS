@@ -70,6 +70,10 @@ ros2 run astral_data_collect keyboard_controller
 （长按不重复）；采集节点未运行或状态不合法时按键静默忽略（节点 info 日志说明）。
 需遥操链路 `quest3_hand_mocap` 在发布 `quest3/right_controller_joy`（mocap 没跑则无动作）。
 
+**推理 HUMAN 时 A 键 = HUMAN 释放（2026-09-17 起）**：`vr_collect_control` 会订
+`/policy_inference/state`，当 activity==human 时 A 键改发 `/policy_inference/cmd`="release"
+（把控制权交还策略/回放），**不再**发采集 start；其余状态 A 仍为采集 start。B/摇杆语义不变。
+
 **左手柄 X 键 = 段间回位**（teleop 侧 `controller_workpos_gate`，随 `full_teleop` 同启）：
 停止跟随 VR + **直接**回到 init_pose 工作位（**不经 init_waypoints**，`/teleop/init_direct`），
 供段与段之间摆放物品。区别于系统 tab「工作位」的途经点路径（`/teleop/init`）。
@@ -299,7 +303,7 @@ HF_LEROBOT_HOME=~/lerobot_home lerobot-train \
 
 | 脚本 | 处理层 | 方法 | 效果 |
 |---|---|---|---|
-| `repair_aligned.py` | aligned_data.h5 | **弧长均匀选帧**（按累计运动量重采样，`--speed-ref` 控压缩比；**选帧非插值 = 零图像-关节错位**；弧长只算臂维、连续重复帧去重） | pick_place_merged **-27% 帧**、平段 11.3%→0.6%、每帧跳变不放大、时间戳均匀（validate W2 gap 100→0） |
+| `repair_aligned.py` | aligned_data.h5 | **弧长均匀选帧**（按累计运动量重采样，`--speed-ref` 控压缩比；**选帧非插值 = 零图像-关节错位**；弧长只算臂维、连续重复帧去重；`--keep-intent` 用 raw cmd 分型，保留操作者有意停顿时长、只压缩摩擦型停顿） | pick_place_merged **-27% 帧**、平段 11.3%→0.6%（keep-intent 则 -25%、平段 5.3%=保留的意图停顿）、每帧跳变不放大、时间戳均匀（validate W2 gap 100→0） |
 
 修完 `vla_process_act.sh`（align 检测 aligned 存在即跳过）→ `act_train.sh` 重新训练 → 真机
 对比卡点是否消失。`--speed-ref` 调速度/压缩比（默认臂维弧长均值=保留总时长不加速；想更快给

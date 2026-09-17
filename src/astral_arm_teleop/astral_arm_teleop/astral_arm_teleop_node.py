@@ -38,7 +38,7 @@ from astral_arm_teleop.ik.factory import make_single_arm_ik
 from astral_arm_teleop.latency_meter import LatencyMeter, stamp_age_ms
 from astral_arm_teleop.pose_processor import PoseProcessor
 from astral_arm_teleop.safety_filter import SafetyFilter
-from astral_arm_teleop.teleop_log import TeleopJsonlLog
+from astral_arm_teleop.teleop_log import TeleopJsonlLog, teleop_event_record
 
 _LEFT_NAMES = [
     "left_shoulder_pitch",
@@ -703,6 +703,16 @@ class AstralTeleopArmNode(Node):
     def _homing_target(self) -> np.ndarray:
         return self._homing_path[self._homing_i]
 
+    def _tlog_event(self, event: str, **fields) -> None:
+        """Write a ``kind=event`` lifecycle record (armed/disarm/reanchor/start/fault).
+
+        Zero-overhead when the JSONL log is off (the disabled writer is a no-op).
+        Lets a single teleop jsonl timeline reconstruct the full HITL takeover
+        sequence (who armed/disarmed/re-anchored the arm and when).
+        """
+        if self._tlog.enabled:
+            self._tlog.write(teleop_event_record(event, self.side, **fields))
+
     def _on_armed(self, msg: Bool) -> None:
         # Only Bool(true) arms; a stray/default Bool(false) must not arm.
         if not msg.data:
@@ -723,6 +733,7 @@ class AstralTeleopArmNode(Node):
             return
         self._armed = True
         self._disarm_reason = None
+        self._tlog_event("armed")
         self.get_logger().info(f"[{self.side}] armed via /teleop/armed")
 
     def _on_disarm(self, msg: Bool) -> None:
@@ -737,7 +748,8 @@ class AstralTeleopArmNode(Node):
         # pause must not downgrade it (pause→resume would bypass re-centering).
         if self._disarm_reason != "fault":
             self._disarm_reason = "operator"
-        if self._homing:
+        was_homing = bool(self._homing)
+        if was_homing:
             # Operator disarm while a homing/park is running must cancel it:
             # otherwise the node keeps streaming the stale joint trajectory
             # (e.g. the slow startup init move), which would override a later
@@ -749,6 +761,9 @@ class AstralTeleopArmNode(Node):
             self.get_logger().warn(
                 f"[{self.side}] homing cancelled by disarm — hold current pose"
             )
+        self._tlog_event(
+            "disarm", disarm_reason=self._disarm_reason, homing_cancelled=was_homing
+        )
 
     def _on_start(self, msg: Bool) -> None:
         if msg.data:
@@ -778,7 +793,8 @@ class AstralTeleopArmNode(Node):
             msg = "calibrate failed (no VR pose)"
             self.get_logger().warn(f"[{self.side}] start: {msg}")
             return False, msg
-        if not self._at_init_pose:
+        reanchored = not self._at_init_pose
+        if reanchored:
             # 启动不再自动归位（工作位改由 web「工作位」/~/init 触发）后，臂
             # 可能从任意位姿直接 start：若不重锚，遥操增量目标相对启动位 FK
             # 锚点计算，首帧会整体向旧 init 锚点跳变。把原点重锚到当前实测，
@@ -790,6 +806,7 @@ class AstralTeleopArmNode(Node):
             )
         self._armed = True
         self._disarm_reason = None
+        self._tlog_event("start", reanchored=reanchored)
         self.get_logger().warn(
             f"[{self.side}] START: vr_init captured from current pose, teleop armed"
         )
@@ -958,6 +975,20 @@ class AstralTeleopArmNode(Node):
         self.robot_init_rot = T0[:3, :3].copy()
         self.q_cmd = q_hw
         self.safety.set_initial_state(q_ik, self.robot_init_pos)
+        # HITL/任意位姿 re-anchor 时把**臂角参考**一并重锚到当前配置：人肘
+        # EMA 重置为当前上臂方向，首个 solve_hard 解在当前臂角（肘不跳，
+        # 否则 human_elbow_mode=hard 会立刻把臂角摆到操作者手臂角度——
+        # 实测 reanchor 后 0.7s 内关节重构 0.26-0.32 rad）；随后 _on_body_joints
+        # 的 EMA（human_elbow_smoothing_tau）平滑过渡到实时手臂。
+        try:
+            u_se = self.ik.elbow_direction(q_ik)
+            self._elbow_dir_vr = self.pose.R_vr_to_arm.T @ u_se
+            self._elbow_dir_t = time.monotonic()
+        except Exception as exc:  # noqa: BLE001 非 geometric 求解器无该方法（无害）；
+            if hasattr(self.ik, "solve_hard"):  # 但 hard 模式缺重锚 = 肘会跳
+                self.get_logger().warn(
+                    f"[{self.side}] elbow re-anchor failed: {exc}"
+                )
         return "measured joint state" if state_fresh else "last commanded q"
 
     def _on_state(self, msg: JointState) -> None:
@@ -999,18 +1030,22 @@ class AstralTeleopArmNode(Node):
         if self._homing:
             msg = "homing in progress; wait for init pose, then re-anchor"
             self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
+            self._tlog_event("reanchor", ok=False, reason=msg)
             return False, msg
         if self.pose.vr_current_pos is None or self.pose.vr_current_rot is None:
             msg = "no VR wrist pose yet; start Quest stream, place hand, then re-anchor"
             self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
+            self._tlog_event("reanchor", ok=False, reason=msg)
             return False, msg
         src = self._anchor_origin_to_measured()
         if not self.pose.calibrate_from_current():
             msg = "re-anchor failed (no VR pose for zero capture)"
             self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
+            self._tlog_event("reanchor", ok=False, reason=msg)
             return False, msg
         self._armed = True
         self._disarm_reason = None
+        self._tlog_event("reanchor", ok=True)
         self.get_logger().warn(
             f"[{self.side}] REANCHOR: robot origin ← FK({src}) "
             f"{np.round(self.robot_init_pos, 3).tolist()}, vr_init ← current pose, armed"
@@ -1195,6 +1230,7 @@ class AstralTeleopArmNode(Node):
         ):
             self._armed = False
             self._disarm_reason = "fault"
+            self._tlog_event("fault", timeout_s=self.data_timeout)
             self.get_logger().error(
                 f"[{self.side}] VR data timeout (>{self.data_timeout:.2f}s) — "
                 "disarmed; re-send /teleop/start to resume"

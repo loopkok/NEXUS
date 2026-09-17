@@ -9,10 +9,11 @@ import os
 import re
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from astral_arm_teleop.teleop_log import run_log_dir  # noqa: E402
+from astral_arm_teleop.teleop_log import run_log_dir, teleop_event_record  # noqa: E402
 
 _STAMP_RE = re.compile(r"^\d{8}-\d{6}(_[A-Za-z0-9_]+)?$")
 
@@ -44,12 +45,39 @@ def test_separate_calls_exist() -> None:
         assert os.path.isdir(a) and os.path.isdir(b)
 
 
+def test_event_record_builds_dict() -> None:
+    rec = teleop_event_record("reanchor", "left", ok=True)
+    assert rec["kind"] == "event"
+    assert rec["event"] == "reanchor"
+    assert rec["side"] == "left"
+    assert rec["ok"] is True
+    assert isinstance(rec["t"], float) and rec["t"] > 0
+
+
+def test_event_record_extra_fields() -> None:
+    rec = teleop_event_record(
+        "disarm", "right", disarm_reason="operator", homing_cancelled=True
+    )
+    assert rec["disarm_reason"] == "operator"
+    assert rec["homing_cancelled"] is True
+
+
+def test_event_record_t_defaults_now() -> None:
+    before = time.time()
+    rec = teleop_event_record("fault", "left")
+    after = time.time()
+    assert before <= rec["t"] <= after
+
+
 def main() -> int:
     fns = [
         test_empty_root_disables,
         test_creates_stamped_dir,
         test_tag_appended_and_sanitized,
         test_separate_calls_exist,
+        test_event_record_builds_dict,
+        test_event_record_extra_fields,
+        test_event_record_t_defaults_now,
     ]
     failed = 0
     for fn in fns:

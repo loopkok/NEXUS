@@ -263,10 +263,11 @@ Quest3 有线：`adb reverse tcp:8000 tcp:8000`。
 
 排查卡顿（如慢速平移"停一下走一下"）时把链路逐级数据落盘，照 `astral_policy_inference` 的
 `metrics_log_file`/`joint_stream_log_file` 模式。参数 `teleop_log_file`（空=关，零开销）非空则
-行缓冲追加写，写失败不打断控制流。同一文件 `kind` 区分五类记录：
+行缓冲追加写，写失败不打断控制流。同一文件 `kind` 区分六类记录：
 
 | kind | 触发 | 关键字段 |
 |------|------|---------|
+| `event` | 每次生命周期/接管事件 | `event`=armed/disarm/reanchor/start/fault、`disarm_reason`、`ok`、`timeout_s`（一条 jsonl 即可还原 HITL takeover 全流程） |
 | `loop` | 每 armed 控制拍 | `vr`/`filt`/`cmd` TCP 位、`q`/`q_state`、`psi_ref`、`vr_age_ms`/`ik_ms`/`loop_ms`、`ik_fail`/`ik_sat`/`hard_fallback`/`ws_clip`/`reach_clip` |
 | `wrist` | 每腕位事件 | `pos`/`quat`/`age_ms`/`frame`（upstream 阶梯/到达率证据） |
 | `state` | 每实测关节事件 | `q`（命令→实体执行链） |
@@ -391,6 +392,13 @@ ros2 topic pub --once /teleop/start std_msgs/msg/Bool '{data: true}'
 > **直接从任意位姿 `/teleop/start` 也安全**：臂节点知道自己没到过工作位（`_at_init_pose`
 > 标志），start 时会把机器人原点**重锚到当前实测关节角**（与 `~/reanchor` 同一逻辑），
 > 遥操从实际位姿纯增量开始，不会向启动位 FK 锚点跳变。
+>
+> **重锚同时重锚臂角参考（2026-09-17 起）**：`~/reanchor`（HITL 接管）与任意位姿 start
+> 的重锚除了 robot_init，还把**人肘参考 `_elbow_dir_vr` 重灌为当前上臂方向**——否则
+> `human_elbow_mode=hard` 的第一拍 `solve_hard` 会立刻把臂角摆到操作者当前手臂角度
+> （真机实测 reanchor 后 0.7s 内肘部关节重构 0.26-0.32 rad、TCP 不动，即"接管时肘突然
+> 换姿势"）。重锚后由 `_on_body_joints` 的 EMA（`human_elbow_smoothing_tau`）平滑过渡
+> 到实时手臂。
 
 ## 工作位（去初始位 / go-to-init）
 

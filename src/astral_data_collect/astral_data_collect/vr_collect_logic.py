@@ -50,3 +50,24 @@ def decide_vr_command(
         if not prev[idx] and cur[idx] and state in valid_states:
             return cmd
     return None
+
+
+def decide_release_or_collect(
+    activity: Optional[str],
+    collect_state: Optional[str],
+    prev_buttons: Sequence[int],
+    cur_buttons: Sequence[int],
+) -> Optional[str]:
+    """右手 A 键路由：推理 HUMAN → "release"，否则走采集路由（start）。
+
+    - ``activity`` 来自 /policy_inference/state（None=策略节点未跑/无状态）；
+    - 推理 HUMAN 时 A 键不再发采集 start，改为发给 /policy_inference/cmd 的
+      "release"（把控制权交还策略/回放）；
+    - 其余（含推理其它状态、无策略节点）完全走 ``decide_vr_command``：
+      A=start（仅 IDLE）、B=stop、摇杆=discard。
+    """
+    prev = list(prev_buttons) + [0] * 6
+    cur = list(cur_buttons) + [0] * 6
+    if activity == "human" and not prev[BUTTON_A] and cur[BUTTON_A]:
+        return "release"
+    return decide_vr_command(collect_state, prev_buttons, cur_buttons)

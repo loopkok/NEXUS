@@ -15,6 +15,7 @@ from astral_data_collect.vr_collect_logic import (  # noqa: E402
     BUTTON_A,
     BUTTON_B,
     BUTTON_STICK_PRESS,
+    decide_release_or_collect,
     decide_vr_command,
 )
 
@@ -111,6 +112,41 @@ def test_other_buttons_ignored():
     assert decide_vr_command("IDLE", prev, cur) is None
     prev, cur = _press(5)  # gripClick
     assert decide_vr_command("RECORDING", prev, cur) is None
+
+
+# ---------------- decide_release_or_collect：推理 HUMAN 时 A=release ----------------
+
+def test_a_in_human_releases():
+    prev, cur = _press(BUTTON_A)
+    assert decide_release_or_collect("human", "IDLE", prev, cur) == "release"
+    # 采集节点未跑也照样 release（release 属于推理域，不依赖采集状态）
+    assert decide_release_or_collect("human", None, prev, cur) == "release"
+
+
+def test_a_not_in_human_stays_collection():
+    prev, cur = _press(BUTTON_A)
+    # 推理活跃（policy）但非 HUMAN → A 仍是采集 start（仅 IDLE 合法）
+    assert decide_release_or_collect("policy", "IDLE", prev, cur) == "start"
+    assert decide_release_or_collect("playback", "IDLE", prev, cur) == "start"
+    # 推理 HUMAN 但 A 在录制中 → 仍 release（HUMAN 时 A 归推理域）
+    assert decide_release_or_collect("human", "RECORDING", prev, cur) == "release"
+    # 无策略节点（activity=None）→ 纯采集路由
+    assert decide_release_or_collect(None, "IDLE", prev, cur) == "start"
+    assert decide_release_or_collect(None, "RECORDING", prev, cur) is None
+
+
+def test_a_hold_in_human_not_repeated():
+    prev, cur = _press(BUTTON_A)
+    assert decide_release_or_collect("human", "IDLE", prev, cur) == "release"
+    assert decide_release_or_collect("human", "IDLE", cur, cur) is None
+
+
+def test_b_and_stick_unchanged_in_human():
+    # HUMAN 只劫持 A；B/摇杆仍走采集路由（stop/discard）
+    prev, cur = _press(BUTTON_B)
+    assert decide_release_or_collect("human", "RECORDING", prev, cur) == "stop"
+    prev, cur = _press(BUTTON_STICK_PRESS)
+    assert decide_release_or_collect("human", "RECORDING", prev, cur) == "discard"
 
 
 if __name__ == "__main__":

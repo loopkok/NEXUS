@@ -406,6 +406,7 @@ def main() -> None:
         "full_extension": test_full_extension(),
         "roll_escape_hysteresis": test_roll_escape_hysteresis(),
         "hard_elbow_follow": test_hard_elbow_follow(),
+        "elbow_direction_reanchor_keeps_config": test_elbow_direction_reanchor_keeps_config(),
     }
     print("\n  SUMMARY:")
     for k, v in results.items():
@@ -736,6 +737,52 @@ def test_hard_elbow_follow() -> bool:
         print(
             f"  arm {arm}: solved={n_solved}, worst elbow-dir dev {worst_dir:.4f} deg, "
             f"worst pos {worst_pos:.4f} mm -> {'PASS' if ok_arm else 'FAIL'}"
+        )
+    print(f"  Result: {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
+def test_elbow_direction_reanchor_keeps_config() -> bool:
+    """``elbow_direction(q)`` reproduces the arm angle of ``q``, so re-seeding
+    the human-elbow reference from it (HITL ``~/reanchor`` / ``_start_teleop``)
+    makes the first ``solve_hard`` keep the current configuration — no elbow
+    snap at takeover (regression: reanchor 后 0.26-0.32 rad 肘部重构)."""
+    print("\n  --- elbow_direction re-anchor keeps current config ---")
+    ok = True
+    for arm in ARMS:
+        s = GeometricIKSolver("left" if arm == "L" else "right")
+        g = s.geom
+        rng = np.random.default_rng(41 if arm == "L" else 43)
+        worst_keep = 0.0
+        worst_dir = 0.0
+        checked = 0
+        for q in _sample_q(rng, s.lower_limits, s.upper_limits, 10):
+            T = s.fk(q)
+            d = s.elbow_direction(q)
+            # (a) direction == actual upper-arm (shoulder -> elbow) direction
+            E = _elbow_fk(q, g)
+            d_true = E - g.S
+            d_true = d_true / np.linalg.norm(d_true)
+            worst_dir = max(
+                worst_dir,
+                float(np.degrees(np.arccos(np.clip(np.dot(d, d_true), -1.0, 1.0)))),
+            )
+            # (b) solve_hard at the psi from this direction keeps q (zero snap)
+            psi = s.arm_angle_from_elbow_dir(T, d, min_sin=0.0)
+            if psi is None:
+                ok = False
+                print(f"  arm {arm}: arm_angle_from_elbow_dir None for q={q}")
+                continue
+            q_sol = s.solve_hard(T, psi, q_init=q)
+            if q_sol is None:
+                continue
+            worst_keep = max(worst_keep, float(np.max(np.abs(q_sol - q))))
+            checked += 1
+        ok_arm = checked > 0 and worst_dir < 0.2 and worst_keep < 0.02
+        ok &= ok_arm
+        print(
+            f"  arm {arm}: checked={checked}, worst dir err {worst_dir:.4f} deg, "
+            f"worst config move {worst_keep:.4f} rad -> {'PASS' if ok_arm else 'FAIL'}"
         )
     print(f"  Result: {'PASS' if ok else 'FAIL'}")
     return ok

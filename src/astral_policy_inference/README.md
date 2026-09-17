@@ -190,6 +190,23 @@ ros2 topic echo /left_arm/joint_commands --qos-reliability best_effort --qos-dep
 中途任何时刻失败都会重新 disarm 已武装的遥操节点，不会出现双写）。`g` 返回：若之前是策略 →
 按当前实况重新规划续跑；若是回放 → 从实际位姿重锚定 offset 继续剩余帧。
 
+**VR 键位（推理活跃时，2026-09-17 起）**：`controller_start_gate`（左手 gripClick）与
+`vr_collect_control`（右手 A）会订 `/policy_inference/state` 按 `activity` 路由——
+
+| 按键 | 推理活跃（policy/playback） | 推理 HUMAN | 其它 |
+|---|---|---|---|
+| 左 grip | **HUMAN 接管**（`/policy_inference/cmd`="takeover"） | /teleop/start（重标定，现状） | /teleop/start（现状） |
+| 右 A | /data_collect/control="start"（现状） | **释放**（`/policy_inference/cmd`="release"） | /data_collect/control="start"（现状） |
+
+**关键**：策略活跃时 grip **不再**发 `/teleop/start`——否则会重新武装遥操、与策略双写
+`joint_commands`。因此推理时想接管 = 直接按 grip；想交还 = 右 A。采集时语义不变。
+
+**接管时的肘部行为**：`~/reanchor` 现在同时把**臂角参考**重锚到当前配置（`astral_arm_teleop`
+2026-09-17），HUMAN 首拍不再有 0.26-0.32 rad 的肘部重构（"接管时肘突然换姿势"），随后
+人肘 EMA 平滑过渡。**排障**：若接管后 web 显示 HUMAN 有 ~1s 延迟，看 policy_node 终端
+`[takeover]` 三行时间戳（`send reanchor` → `all reanchor done` → `committed HUMAN`）定位是
+响应慢还是提交/拆引擎慢。
+
 **仲裁 / disarm 电平语义**：`/teleop/disarm` 是**电平闩锁**——`true` = 外部所有者（策略/Web 暂停）
 占用指令流，`false` = 放行。policy_node 进入 POLICY/PLAYBACK 发 `true`，进入 HUMAN 或停止回
 IDLE 发 `false`。arm/head 遥操与 web 都只在 `true` 时 disarm（`false` 不会误伤刚 re-anchor
