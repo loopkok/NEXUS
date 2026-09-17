@@ -83,6 +83,12 @@ astral_arm_teleop_right:
     # 遥操诊断 JSONL 日志（空=关）：loop/wrist/state/body/metrics 记录，kind 区分。
     # web 预设启动勾选「记录遥操日志」自动注入 /tmp/teleop_teleop_right.jsonl。
     teleop_log_file: ""
+    # 电机指令最小步长地板（mrad/拍，0=关）：电机死区 ~1mrad，geometric 慢速精确解
+    # 把指令压到死区下 → 电机不执行 → 一顿一顿。>0 时慢速中把 0<|dq|<floor 的关节步
+    # 抬到 floor（方向保持），让电机每拍有步长去跟。副作用=慢速微蠕；手停不触发
+    # （cmd_deadband_min_vel 门控）。可热改（ros2 param set）。真机 A/B：1.0→1.5。
+    cmd_deadband_mrad: 0.0
+    cmd_deadband_min_vel: 10.0   # mm/s；VR 目标速度低于此不抬（避免静止蠕）
 
     # 人臂肘先验（仅 geometric 求解器）：订阅 quest3/body_joints 的
     # {side}-arm-upper/-lower（Quest IOBT 推算的肩/肘），把人的大臂方向

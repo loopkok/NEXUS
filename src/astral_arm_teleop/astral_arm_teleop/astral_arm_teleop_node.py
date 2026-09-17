@@ -186,6 +186,13 @@ class AstralTeleopArmNode(Node):
         # 遥操诊断 JSONL 日志（kind=loop/wrist/state/body/metrics 记录）。
         # 空串 = 关闭（零开销）；非空 = 行缓冲追加写，写失败不影响控制流。
         self.declare_parameter("teleop_log_file", "")
+        # 电机指令最小步长地板（mrad/拍，0=关）：电机死区 ~1 mrad，慢速时
+        # geometric 精确解把指令压到死区下 → 电机不执行 → 一顿一顿。
+        # >0 时慢速运动（VR 速度 > cmd_deadband_min_vel）中把 0<|dq|<floor 的
+        # 关节步抬到 floor（方向保持），让电机每拍都有足够的步长去跟。
+        # 副作用：慢速时关节带恒定微动（轻微"蠕"），手停时应关闭（min_vel 门控）。
+        self.declare_parameter("cmd_deadband_mrad", 0.0)
+        self.declare_parameter("cmd_deadband_min_vel", 10.0)  # mm/s
         self.declare_parameter("publish_tune", True)
         # Human arm-angle prior from Quest body tracking (geometric solver
         # only): body_joints {side}-arm-upper/-lower give the human upper-arm
@@ -463,6 +470,9 @@ class AstralTeleopArmNode(Node):
         # 跟手/慢速跟踪指标状态：上一拍 vr 目标 + 窗口聚合缓存（供 kind=metrics 汇总）。
         self._prev_vr_tgt: Optional[np.ndarray] = None
         self._track_buf = deque(maxlen=400)  # ~4s @100Hz；metrics 窗口 2s
+        # 电机指令最小步长地板（见参数声明；热改走 _on_set_parameters）
+        self._cmd_db_mrad = float(self.get_parameter("cmd_deadband_mrad").value)
+        self._cmd_db_min_vel = float(self.get_parameter("cmd_deadband_min_vel").value)
         if self._tlog.enabled:
             self.get_logger().info(
                 f"[{self.side}] teleop jsonl log -> {self._tlog.path}"
@@ -513,6 +523,10 @@ class AstralTeleopArmNode(Node):
                     self.safety.workspace_radius = float(p.value)
                 elif name == "reach_margin":
                     self.reach_margin = float(p.value)
+                elif name == "cmd_deadband_mrad":
+                    self._cmd_db_mrad = float(p.value)
+                elif name == "cmd_deadband_min_vel":
+                    self._cmd_db_min_vel = float(p.value)
                 elif name == "data_timeout":
                     self.data_timeout = float(p.value)
                 elif name == "dry_run":
@@ -1287,6 +1301,17 @@ class AstralTeleopArmNode(Node):
         vr_age_ms = (now - self._last_vr_t) * 1000.0 if self._last_vr_t > 0 else None
 
         dp, dr = self.pose.process(dt)
+        # VR 目标速度（mm/s）：死区地板门控 + 慢/快打标用（rec 复用）
+        vr_tgt = self.robot_init_pos + self.pose.last_raw_delta_pos
+        if self._prev_vr_tgt is not None:
+            vr_vel = (
+                float(np.linalg.norm(vr_tgt - self._prev_vr_tgt))
+                / max(dt, 1e-3)
+                * 1000.0
+            )
+        else:
+            vr_vel = 0.0
+        self._prev_vr_tgt = vr_tgt.copy()
         T_tcp = self.pose.compute_target_pose(
             dp, dr, self.robot_init_pos, self.robot_init_rot
         )
@@ -1407,7 +1432,25 @@ class AstralTeleopArmNode(Node):
             ik_sat = 1 if sat > 0.008 else 0
             if self._print_latency and sat > 0.008:
                 self._lat.count("ik_sat")
+        prev_safe = self.safety.prev_q  # filter 前捕获（filter 内部会把 prev_q 更新为当前）
         safe, _info = self.safety.filter(sol, dt)
+        # 电机指令最小步长地板（0=关）：慢速时把 0<|dq|<floor 的关节步抬到 floor，
+        # 让电机每拍都有步长去跟（治"一顿一顿"；副作用=慢速微蠕，手停门控关闭）。
+        db_nudge = False
+        if (
+            self._cmd_db_mrad > 0.0
+            and vr_vel >= self._cmd_db_min_vel
+            and prev_safe is not None
+        ):
+            dq_safe = safe - prev_safe
+            floor = self._cmd_db_mrad * 1e-3
+            mask = (np.abs(dq_safe) > 1e-9) & (np.abs(dq_safe) < floor)
+            if np.any(mask):
+                safe = prev_safe + np.where(mask, np.sign(dq_safe) * floor, dq_safe)
+                self.safety.prev_q = safe.copy()
+                db_nudge = True
+                if self._print_latency:
+                    self._lat.count("db_nudge", int(np.sum(mask)))
         # IK/safety work in the flipped convention; convert back to hardware.
         self.q_cmd = self._flip_q(safe)
         if self._print_latency:
@@ -1419,18 +1462,10 @@ class AstralTeleopArmNode(Node):
             rec["ik_fail"] = 0
             rec["ik_sat"] = ik_sat
             # ---- 跟手/慢速跟踪指标（量化 solver 差异的核心字段）----
-            # vr_vel：VR 原始目标速度（mm/s），用于给慢/快帧打标
-            vr_tgt = self.robot_init_pos + self.pose.last_raw_delta_pos
-            if self._prev_vr_tgt is not None:
-                vr_vel = (
-                    float(np.linalg.norm(vr_tgt - self._prev_vr_tgt))
-                    / max(dt, 1e-3)
-                    * 1000.0
-                )
-            else:
-                vr_vel = None
-            self._prev_vr_tgt = vr_tgt.copy()
-            rec["vr_vel"] = None if vr_vel is None else round(vr_vel, 1)
+            # vr_vel：VR 原始目标速度（mm/s），用于给慢/快帧打标（在 process 后已算）
+            rec["vr_vel"] = round(vr_vel, 1)
+            # db_nudge：本拍是否触发指令最小步长地板（死区交互可观测）
+            rec["db_nudge"] = 1 if db_nudge else 0
             # pos_err/ori_err：命令 FK 与滤波目标的跟踪误差（跟手性核心）
             #   geometric 精确解析 → ori_err≈0；urdf_numerical 姿态权重 0.3 → 较大
             pos_err = float(np.linalg.norm(T_cmd[:3, 3] - T_tcp[:3, 3])) * 1000.0

@@ -2,6 +2,24 @@
 
 ## 2026-09-17
 
+**电机指令最小步长地板（`cmd_deadband_mrad`）+ 遥操 JSONL 跟手/慢速跟踪指标**——
+`astral_arm_teleop`。**现象**：geometric vs urdf_numerical 遥操对比（两份 JSONL），
+慢速移动 geometric 肉眼"一顿一顿"。**根因**：电机最小可靠步长 ~1 mrad（机械/固件死区，
+实机验证调 speed 增益无效）；geometric 精确解+最小关节速度优化，慢速时把指令压到死区下
+（匹配速度段实测：**24% 拍整臂 7 关节全 <1 mrad、单关节 51~69% <1 mrad**，中位步长
+0.55~0.97 mrad）→ 电机不执行 → 攒误差跳一下；urdf 的"浪费型"关节运动（123 vs 10 mrad/拍，
+12 倍）反而每拍超死区 → 平滑。**做法**：① 新增 `cmd_deadband_mrad`（mrad/拍，0=关）+
+`cmd_deadband_min_vel`（mm/s 门控，手停不蠕）：VR 目标速度达门限的运动中把
+`0<|dq|<floor` 的关节步抬到 floor（方向保持），让电机每拍有步长去跟；热改支持；loop 记录
+加 `db_nudge` 标志、Latency 计数。② 遥操 JSONL 加 solver 对比指标：`pos_err`/`ori_err`
+（命令 FK vs 滤波目标）、`psi_err`（臂角跟随误差）、`vr_vel`（慢/快打标）、metrics 加
+`track`（slow_frac + 慢/快段 pos/ori_err p95）。**验证**：节点 dry_run——floor=1.0 时非零
+关节步 413 个仅 1 个 <1mrad（0.2%）、最小步长正好 1.000、db_nudge 59/60 拍；floor=0（默认）
+行为不变（98% 子死区步、0 次 nudge）；test_teleop_log PASS。**副作用**（文档明示）：慢速带
+轻微恒定微动、TCP 可能略超目标速度；真机 A/B 从 1.0 起试。**遗留**：电机死区本身在机械/
+固件层，需联系厂商（调 speed 环无效已锁定）；数值求解器仍无臂角约束（肘乱跑）。
+
+
 **接管臂角改方案B（保持到操作者手臂真的动） + 右手 A 释放移到常驻 gate**——
 `astral_arm_teleop` × `astral_teleop`。**现象**（真机复测 09-17-11:06，5 次接管）：方案A
 （reanchor 重锚臂角到当前配置 + EMA 过渡）虽消除了首拍跳变（cmd==state，FK 验证一致），

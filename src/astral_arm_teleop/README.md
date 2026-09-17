@@ -268,7 +268,7 @@ Quest3 有线：`adb reverse tcp:8000 tcp:8000`。
 | kind | 触发 | 关键字段 |
 |------|------|---------|
 | `event` | 每次生命周期/接管事件 | `event`=armed/disarm/reanchor/start/fault、`disarm_reason`、`ok`、`timeout_s`（一条 jsonl 即可还原 HITL takeover 全流程） |
-| `loop` | 每 armed 控制拍 | `vr`/`filt`/`cmd` TCP 位、`q`/`q_state`、`psi_ref`、`vr_age_ms`/`ik_ms`/`loop_ms`、`ik_fail`/`ik_sat`/`hard_fallback`/`ws_clip`/`reach_clip`、**`pos_err`/`ori_err`**（命令 FK vs 滤波目标）、**`psi_err`**（臂角跟随误差，无人肘先验=null）、**`vr_vel`**（VR 目标速度 mm/s） |
+| `loop` | 每 armed 控制拍 | `vr`/`filt`/`cmd` TCP 位、`q`/`q_state`、`psi_ref`、`vr_age_ms`/`ik_ms`/`loop_ms`、`ik_fail`/`ik_sat`/`hard_fallback`/`ws_clip`/`reach_clip`、**`pos_err`/`ori_err`**（命令 FK vs 滤波目标）、**`psi_err`**（臂角跟随误差，无人肘先验=null）、**`vr_vel`**（VR 目标速度 mm/s）、**`db_nudge`**（本拍是否触发指令最小步长地板） |
 | `wrist` | 每腕位事件 | `pos`/`quat`/`age_ms`/`frame`（upstream 阶梯/到达率证据） |
 | `state` | 每实测关节事件 | `q`（命令→实体执行链） |
 | `body` | 每 body_joints | `elbow_dir`/`elbow_dir_ema`（臂角 psi 源） |
@@ -279,6 +279,20 @@ geometric 精确解析 → `pos_err`≈0、`ori_err`≈0、`psi_err`≈0（硬�
 姿态权重 0.3 → `ori_err` 明显更大、`psi_err`=null（不追人肘）、肘乱跑但位置跟得上。
 同一段遥操分别用两种 `solver_type` 各录一份，对比 `track` 的慢/快段 p95 即量化跟手性与
 慢速差异。
+
+### 电机指令最小步长地板（`cmd_deadband_mrad`）
+
+**背景**：电机最小可靠步长 ~1 mrad（机械/固件死区，实机验证调增益无效）。geometric 精确解
++ 最小关节速度优化，慢速时把指令压到死区下（实测慢速段 24% 拍整臂 <1 mrad、单关节
+51~69%）→ 电机不执行 → 一顿一顿；urdf 的"浪费型"关节运动反而每拍超死区 → 平滑。
+
+**参数**（可热改 `ros2 param set`）：
+- `cmd_deadband_mrad`（0=关）：>0 时，VR 目标速度 ≥ `cmd_deadband_min_vel` 的运动中，
+  把 `0<|dq|<floor` 的关节步抬到 floor（方向保持），让电机每拍都有步长去跟。
+- `cmd_deadband_min_vel`（默认 10 mm/s）：手停时不抬（避免静止微蠕）。
+
+**副作用**：慢速时关节带恒定微动（轻微"蠕"）、TCP 可能略超目标速度（电机被强迫每拍动）。
+真机 A/B 建议从 1.0 起试，观察慢速是否从"一顿一顿"变成"平滑微蠕"，再调 1.2/1.5 找手感。
 
 ```bash
 # CLI：log_dir 模式（推荐）——每次 launch 自动建 {log_dir}/{YYYYMMDD-HHMMSS}[_tag]/
