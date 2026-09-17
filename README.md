@@ -154,3 +154,11 @@ ros2 launch astral_data_collect data_collect.launch.py \
 | [`src/astral_policy_inference/README.md`](src/astral_policy_inference/README.md) | 策略部署 / 数据回放 / 人在环路（HITL） |
 | [`src/astral_policy_inference/CLAUDE.md`](src/astral_policy_inference/CLAUDE.md) | 推理包架构不变量 / 环境约束 / 已解决坑 / 测试验证清单 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本记录 |
+
+### 测试记录
+
+| 位置 | 内容 |
+|------|------|
+| [`src/astral_arm_teleop/doc/2026-09-17-ik-solver-comparison.md`](src/astral_arm_teleop/doc/2026-09-17-ik-solver-comparison.md) | **逆解求解器对比**（geometric vs urdf_numerical）：慢速"一顿一顿"根因 = 电机死区(~1mrad)×geometric 最小关节速度优化；含现象/方法/指标/量化结论 + `cmd_deadband_mrad` 修复 |
+| `astral_test_logs/`（sdk 根） | 大测试记录文件夹（独立于 git 仓库）：`2026-09-17_ik_solver_comparison/` 含遥操 JSONL 数据 + 可复用分析脚本 + README |
+| [`inference_test_logs/`](inference_test_logs/) | 推理/遥操测试日志（`SUMMARY.md` 索引） |

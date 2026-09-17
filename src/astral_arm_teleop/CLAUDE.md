@@ -2,6 +2,11 @@
 
 Quest3 腕部 → 双臂 IK → `/left_arm|/right_arm/joint_commands`。本文件面向新会话/新接手者：先读这里，再进 `README.md`（完整细节）和 `CHANGELOG.md`（按天演进史，含每个问题的症状→根因→修法）。
 
+> **求解器对比测试**（geometric vs urdf_numerical 慢速"一顿一顿"根因）详细记录见
+> `doc/2026-09-17-ik-solver-comparison.md`，数据/脚本在 `astral_test_logs/2026-09-17_ik_solver_comparison/`。
+> 一句话：电机死区(~1mrad)×geometric 最小关节速度优化 → 慢速指令压死区下 → 一顿一顿；
+> `cmd_deadband_mrad`（指令最小步长地板，0=关）可缓解。
+
 ## 当前状态（2026-09-03）
 
 - **默认求解器 = `geometric`**（免 DH 臂角闭式 IK），左右 yaml 与节点默认一致；

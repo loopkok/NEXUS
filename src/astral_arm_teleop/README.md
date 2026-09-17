@@ -294,6 +294,15 @@ geometric 精确解析 → `pos_err`≈0、`ori_err`≈0、`psi_err`≈0（硬�
 **副作用**：慢速时关节带恒定微动（轻微"蠕"）、TCP 可能略超目标速度（电机被强迫每拍动）。
 真机 A/B 建议从 1.0 起试，观察慢速是否从"一顿一顿"变成"平滑微蠕"，再调 1.2/1.5 找手感。
 
+### 求解器对比测试（geometric vs urdf_numerical）
+
+详细测试记录（现象/方法/指标/数据/量化结论）见
+`doc/2026-09-17-ik-solver-comparison.md`；测试数据与可复用分析脚本归档在
+`astral_test_logs/2026-09-17_ik_solver_comparison/`（sdk 根，独立于 git 仓库）。
+**一句话结论**：geometric 慢速"一顿一顿" = 电机死区(~1mrad)与 geometric"最小关节速度"
+优化的交互（慢速指令压在死区下、整臂全<1mrad 占 ~24-37%，urdf 仅 ~7-9%）；urdf 平滑但
+肘乱跑、位置误差 1.3mm。
+
 ```bash
 # CLI：log_dir 模式（推荐）——每次 launch 自动建 {log_dir}/{YYYYMMDD-HHMMSS}[_tag]/
 # 运行子目录并按侧拆 _left/_right：区分每次记录、持久化、不复用同一文件（旧 /tmp
