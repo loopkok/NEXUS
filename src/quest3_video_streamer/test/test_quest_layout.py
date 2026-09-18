@@ -35,19 +35,19 @@ def _params() -> dict:
     return raw["quest3_video_streamer"]["ros__parameters"]
 
 
-def test_yaml_d435i_does_not_cover_wrist_panels() -> None:
+def test_yaml_base_does_not_cover_wrist_panels() -> None:
     p = _params()
-    rs = p["d435i"]["layout"]
-    rs_hw = _half_w(float(p["d435i"]["fov_h_deg"]), float(rs["size_multiplier"]))
+    rs = p["base"]["layout"]
+    rs_hw = _half_w(float(p["base"]["fov_h_deg"]), float(rs["size_multiplier"]))
     rs_x = float(rs["position"][0])
-    for name in ("wrist_left", "wrist_right"):
+    for name in ("left_wrist", "right_wrist"):
         lay = p[name]["layout"]
         hw = _half_w(float(p[name]["fov_h_deg"]), float(lay["size_multiplier"]))
         wx = float(lay["position"][0])
         gap = _gap(rs_x, rs_hw, wx, hw)
         assert gap >= _CLEARANCE, (
-            f"{name} covered by d435i: gap={gap:.3f} m "
-            f"(d435i x={rs_x} hw={rs_hw:.3f}, {name} x={wx} hw={hw:.3f})"
+            f"{name} covered by base: gap={gap:.3f} m "
+            f"(base x={rs_x} hw={rs_hw:.3f}, {name} x={wx} hw={hw:.3f})"
         )
 
 

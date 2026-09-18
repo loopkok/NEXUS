@@ -21,8 +21,8 @@ quest3_video_streamer:
     auto_scan: true
 
     # cameras: auto_scan=false 时的固定相机名列表（顺序 = WebRTC track 顺序）。
-    #          也是 auto_scan 一台设备都没扫到时的回退。
-    cameras: ["wrist_left", "wrist_right"]
+    #          也是 auto_scan 一台设备都没扫到时的回退。语义名（与 label_aliases 一致）。
+    cameras: ["base", "left_wrist", "right_wrist"]
 
     # 每个相机块的字段：
     #   source      : "v4l2"（cv2 直连，低延迟）/ "ros"（订阅 sensor_msgs/Image）
@@ -52,31 +52,47 @@ quest3_video_streamer:
         distance: 1.8
         size_multiplier: 0.60
 
-    wrist_left:
+    left_wrist:
       source: "webcam"
       device: "/dev/video0"
       topic: ""
       preset: "720p30"
       fov_h_deg: 60.0
-      label: "wrist_left"
+      label: "left_wrist"
       force_mjpg: true
       layout:
         position: [-0.95, 0.32, 1.8]
         distance: 1.8
         size_multiplier: 0.28
 
-    wrist_right:
+    right_wrist:
       source: "webcam"
       device: "/dev/video2"
       topic: ""
       preset: "720p30"
       fov_h_deg: 60.0
-      label: "wrist_right"
+      label: "right_wrist"
       force_mjpg: true
       layout:
         position: [-0.95, -0.42, 1.8]
         distance: 1.8
         size_multiplier: 0.28
+
+    # base（realsense 彩色）。每个相机**一个合并块**：auto_scan=true 时 label_aliases 按
+    # 指纹钉 base 后，本块提供 preset/布局覆盖（device 被扫描值取代）；auto_scan=false 或
+    # 兜底时用固定 by-id 设备路径。
+    base:
+      source: "v4l2"
+      device: "/dev/v4l/by-id/usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index0"
+      topic: ""
+      preset: "1080p30"
+      fov_h_deg: 69.0
+      label: "base"
+      force_mjpg: false   # YUYV 彩色，非 MJPG
+      layout:
+        position: [0.50, 0.0, 1.8]
+        distance: 1.8
+        size_multiplier: 0.60
 
     # --- auto_scan 覆盖块：label = 节点名。换口后编号变了会走代码里按
     # fourcc 的默认（腕部左侧缩小上下叠，YUYV RealSense 靠右 size=0.60）。
@@ -113,36 +129,12 @@ quest3_video_streamer:
     #     不可靠，只能按端口钉；端口路径换口会变，但相机是固定角色的（左腕/右腕），那本来
     #     就要重配。
     label_aliases:
-      - "254843065994-video-index0=base"              # base：realsense by-id 序列号+彩色index0
-      - "platform-3610000.usb-usb-0:2.2:1.0=left_wrist"  # 左腕 USB：by-path 端口
-      - "platform-3610000.usb-usb-<右腕口>=right_wrist"  # ⚠ 右腕：待按 scan 填口位（全面启用）
-    left_wrist:
-      preset: "720p30"
-      fov_h_deg: 60.0
-      force_mjpg: true
-      layout:
-        position: [-0.95, 0.32, 1.8]
-        distance: 1.8
-        size_multiplier: 0.28
-
-    right_wrist:
-      preset: "720p30"
-      fov_h_deg: 60.0
-      force_mjpg: true
-      layout:
-        position: [-0.95, -0.42, 1.8]
-        distance: 1.8
-        size_multiplier: 0.28
-
-    # D435i 彩色节点（auto_scan 应选 YUYV，不是红外 GREY / 深度 Z16）。
-    base:
-      preset: "1080p30"
-      fov_h_deg: 69.0
-      force_mjpg: false
-      layout:
-        position: [0.50, 0.0, 1.8]
-        distance: 1.8
-        size_multiplier: 0.60
+      - "254843065994-video-index0=base"                      # base：realsense by-id 序列号+彩色index0
+      - "platform-3610000.usb-usb-0:2.2:1.0-video-index0=left_wrist"   # 左腕 USB：by-path 端口+index0
+      - "platform-3610000.usb-usb-0:1.4:1.0-video-index0=right_wrist"  # 右腕 USB：by-path 端口+index0
+    # 注意：两个 USB 相机 sysfs 名都是 "WN Camera"（且 video0 无 by-id）→ 只能用 by-path 钉；
+    # -video-index0 必须带（多节点相机不带 index 会命中错节点）。
+    # 每个相机的 preset/布局等覆盖已并入上方同名命名块（合并，无重复键）。
 
     # --- 公共参数 ---
     # WebSocket 信令服务器（Quest 连这里）。

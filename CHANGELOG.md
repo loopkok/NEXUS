@@ -57,8 +57,12 @@ pick_place_merged_repaired/_v2/_v3/_smooth、act dropped/smooth/repaired/_v2/_v3
 键）→ 补迁移（raw 变体各 400 处 + act 变体各 4 处），verify_aligned（源 vs repaired 零错位
 对抗）复跑 **ALL PASS**（2477 帧）。全套验证：openpi `create()` 直读迁移后真实数据解析
 camera_map OK、对抗配置 8 例、推理链路（节点 collect label vs serve 模型特征键 vs 模型
-input_features）三方匹配。**⚠ 待办**：右腕 alias 口位占位（`<右腕口>`）待实机 scan 填；
-右腕相机实插前建议 `data_collect.cameras` 先只留 [base, left_wrist]（3 路录到空右腕会被
+input_features）三方匹配。**后续补全**：右腕 alias 口位已按实机 scan 填（by-path
+`0:1.4:1.0-video-index0`）；两条 USB alias 补 `-video-index0`（多节点相机防误改兄弟节点，
+实测 index1 兄弟不被误改）；streamer `cameras` 兜底列表改 `[base, left_wrist, right_wrist]`
+（原来只有两个腕部、缺 base），块名统一语义名 + 合并重复键（原命名块与 auto_scan 覆盖块
+同名重复、device 被 PyYAML 吞掉 → 合并每相机一个块）。**⚠ 注意**：右腕相机实插前建议
+`data_collect.cameras` 先只留 [base, left_wrist]（3 路录到空右腕会被
 validate 隔离）。
 
 **相机换 USB 口后 realsense 内核编号漂移 → 启用 `label_aliases` 钉回 video8**——
@@ -1998,14 +2002,15 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   camera_image_size:=480 \
   engine_mode:=queue_async，同时还要专门起一个键盘节点来进行开始等操作，现在在数采那个web的tab的下面加一个推理的模块，数采模块在上面，在推理模块部分，可以配置GPU主机IP，端口，输入的图像尺寸，是否开启记录日志（把state和joint记录到文件中），以及用按钮来实现键盘的所有功能，同时UI做好看一点，做完所有功能后进行对抗性审查，确保功能正常且无隐藏bug
 
-nvidia@nvidia-desktop:~/loopkok/astral_ws/src/quest3_video_streamer$ ls -la /dev/v4l/by-id/
-total 0
-drwxr-xr-x 2 root root 160 Sep 18 11:51 .
-drwxr-xr-x 4 root root  80 Jan  1  1970 ..
-lrwxrwxrwx 1 root root  12 Sep 18 11:51 usb-Generic_USB_Camera_200901010001-video-index0 -> ../../video0
-lrwxrwxrwx 1 root root  12 Sep 18 11:51 usb-Generic_USB_Camera_200901010001-video-index1 -> ../../video1
-lrwxrwxrwx 1 root root  12 Sep 18 10:18 usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index0 -> ../../video6
-lrwxrwxrwx 1 root root  12 Sep 18 10:18 usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index1 -> ../../video3
-lrwxrwxrwx 1 root root  12 Sep 18 10:18 usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index2 -> ../../video4
-lrwxrwxrwx 1 root root  12 Sep 18 10:18 usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index3 -> ../../video5
-nvidia@nvidia-desktop:~/loopkok/astral_ws/src/quest3_video_streamer$ 
+nvidia@nvidia-desktop:~/loopkok/astral_ws/src/quest3_video_streamer$ python3 -m quest3_video_streamer.scan
+video0  (/dev/video0, MJPG):
+    platform-3610000.usb-usb-0:2.2:1.0-video-index0
+    WN Camera: WN Camera
+video2  (/dev/video2, MJPG):
+    usb-WN-260724-ZW_WN_Camera_01.00.00-video-index0
+    platform-3610000.usb-usb-0:1.4:1.0-video-index0
+    WN Camera: WN Camera
+video8  (/dev/video8, YUYV):
+    usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index0
+    platform-3610000.usb-usb-0:2.1:1.3-video-index0
+    Intel(R) RealSense(TM) Depth Ca
