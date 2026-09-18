@@ -2,6 +2,36 @@
 
 ## 2026-09-18
 
+**`repair_aligned.py` 相机名归一化——修复 camera 迁移遗留的 meta 不一致**——
+**背景**：当日相机 label 迁移（videoN→base/left_wrist）迁移了 raw camera_data.h5/aligned/
+v2.1/v3 的文件键名，但 **meta.json 冻结的 schema.cameras 仍是 video8/video0**（迁移脚本没改
+meta）→ 旧数据 raw 处于"文件=base/left_wrist、meta=video8/video0"的不一致态。跑
+`vla_process_openpi.sh` 时 validate F2 全段 fail（camera_data.h5 按 schema 名找不到
+video8/video0）→ 全部 quarantine，convert 报 "no aligned episodes"。
+**做法**：`repair_episode` 输出时把 meta.json 的 `schema.cameras` 归一化为源 aligned 实际相机
+组名（顺序=参考相机在前）——修复段自洽，validate F2 与下游 convert 都以实际组名为准。
+**验证**：pick_place_merged_repaired_v3 重跑 repair，100 段 meta 归一化
+（['video8','video0']→['base','left_wrist']）；validate 0 fail / 100 warn（W5 既有 WARN）；
+openpi v2.1 转换正常（key=base/left_wrist，与当前 openpi camera_map 一致）。
+**遗留**：`migrate_camera_labels.py` 未同步 meta.json schema.cameras——存量 raw 源段仍有该
+不一致（修复输出已自洽；后续建议 migrate 脚本补 meta 迁移，或重跑 repair 即得一致段）。
+
+**相机改名/加右腕后的脚本适配审计 + `verify_aligned.py` 修复 + openpi v2.1 修复版产物**——
+**动机**：相机 label 语义化（videoN→base/left_wrist/right_wrist，且新增右腕）后，要确认
+数据处理的"转换/修复/量化"脚本是否有硬编码相机名假设。**审计结论**：① convert_to_lerobot/
+_lerobot_v3/_act 全走 `schema.cameras`（meta）+ 动态组名，**无硬编码**；② repair_aligned 动态
+`_camera_groups` + meta 归一化，任意相机名/数量（2/3 路）都对；③ quantify_cmd_state 只读
+state/action/streams，**不碰相机**；④ **`verify_aligned.py` 硬编码 `f["left_wrist/images"]`**
+（只验左腕一路，改名/3 相机漏检或崩）→ **改为遍历全部相机组**动态探测，零错位对抗复跑
+ALL PASS（2477 帧）；⑤ 部署侧 run_act_e2e/correctness/benchmark、serve SLOT_MAP 仍 2 相机
+假设——属推理部署范畴，等 3 相机模型部署再适配（`pi05_astral_3cam` 配置已留）。
+**产物**：openpi v2.1 修复版 `pi/pick_place_merged_repaired_v3`（100 段 / 20883 帧 / 224，
+key=`observation.images.base/left_wrist`，与当前 openpi camera_map 匹配）——从
+`raw/pick_place_merged_repaired_v3`（natural 修复）转换，与 ACT v3 数据集同源一致。
+**后续**：openpi 训练前重算 norm stats（`compute_norm_stats.py --config-name pi05_astral_lora`）
++ 迁移到 RAM≥32GB 目标机软链。
+
+
 **相机 label 语义化重构：videoN → base/left_wrist/right_wrist，全流水线同步 + 旧数据迁移 + 右腕启用**——
 `quest3_video_streamer` × `astral_data_collect` × openpi × `astral_policy_inference`。**动机**：
 换口后 videoN 编号漂移（video8→video6）暴露 videoN 是"内核号"不是"角色"；label_aliases 已把设备

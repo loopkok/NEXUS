@@ -416,6 +416,24 @@ def repair_episode(ep_dir: str, out_ep_dir: str,
             p = os.path.join(ep_dir, fname)
             if os.path.exists(p):
                 shutil.copy2(p, os.path.join(out_ep_dir, fname))
+        # 相机名归一化：源 aligned 实际组名可能 ≠ 冻结 meta 的 cameras（用户改过相机名，
+        # 如 video8/video0 → base/left_wrist，旧 meta 冻结旧名）。把输出 meta 的
+        # schema.cameras 更新为实际组名（cams 顺序 = 源 aligned 组顺序，参考相机在前），
+        # 保证修复段自洽——validate F2 与下游 convert 都以实际组名为准。
+        meta_p = os.path.join(out_ep_dir, "meta.json")
+        if os.path.exists(meta_p) and len(cams) > 0:
+            try:
+                with open(meta_p, encoding="utf-8") as mf:
+                    _meta = json.load(mf)
+                _old = list(_meta["schema"].get("cameras", []))
+                if len(_old) == len(cams) and _old != list(cams):
+                    _meta["schema"]["cameras"] = list(cams)
+                    with open(meta_p, "w", encoding="utf-8") as mf:
+                        json.dump(_meta, mf, ensure_ascii=False, indent=2)
+                    print(f"  {os.path.basename(ep_dir)}: schema.cameras 归一化 "
+                          f"{_old} → {list(cams)}", file=sys.stderr)
+            except Exception:  # noqa: BLE001
+                pass
 
     speed_before = np.abs(np.diff(state, axis=0)).max(axis=1)
     speed_after = np.abs(np.diff(state_new, axis=0)).max(axis=1)
