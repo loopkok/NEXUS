@@ -1,42 +1,42 @@
 #!/usr/bin/env python3
-"""对齐数据完整修复：弧长匀速化重采样（选帧）——消除静止帧/卡顿/速度不均。
+"""对齐数据完整修复：两种模式——**natural 保时序摩擦移除**（默认）/ **uniformize 弧长匀速化**。
 
-动机：真机推理固定卡点 = 训练数据里操作员停顿/减速被模型复现。本脚本在
-**aligned_data.h5 层**用**弧长均匀选帧**：把「快-停-快」的轨迹按累计运动量（弧长）
-重新映射成**匀速**——静止帧在弧长空间不占长度→自然压缩，速度不均→均匀，时间戳→
-严格单调（validate 的 W2 gap 消失）。**选帧**（取"弧长最近的原始帧"）保证 state 与
-图像**严格同源**、零错位；插值会破坏这一点（图像只能取离散帧），故不用。
+动机：真机推理固定卡点/抖动 = 训练数据里操作员停顿/减速被模型复现，而慢速粘滑是
+静摩擦（speed 环产不出扭矩）导致的"停-跳"伪影。本脚本在 **aligned_data.h5 层**用
+**选帧**处理。**选帧**（子集）保证 state 与图像**严格同源**、零错位；插值会破坏
+这一点，故不用。时间戳 → 严格单调（validate 的 W2 gap 消失）。
+
+--mode natural（默认，推荐）：**保时序摩擦移除**——删静摩擦"卡住"帧（全臂停住、
+  夹爪没在动、非意图停顿、连续 ≥ min_hold 帧），其余帧**原样保留**，每个保留帧 →
+  一个输出帧，**速度 = 自然速度**（慢速精密保持慢、快速保持快）。**不做速度统一**。
+  夹爪闭合/释放过渡 ±5 帧也保留（抓取上下文不丢，不会"猛合猛放"）；意图停顿
+  （--keep-intent）时长 1:1 保留。回放表现：像操作者本人、不脱节、不加速。
+
+--mode uniformize（可选，工程化提速的数据烘焙）：**弧长匀速化**——臂运动段按
+  --speed-ref 重定时为统一速度，训练"更快/匀速执行"的模型。**夹爪与意图停顿受保护**
+  （1:1 保留，不再像旧 v2 那样压没 → 猛合）。speed-ref=0 自动取 session 臂维弧长均值
+  （总时长不变）；更高值更快、更低更慢。
 
 处理对象：session 下 episode*/aligned_data.h5（已对齐的数据）。输出新 session 的
 aligned_data.h5（+ 原样复制 robot/camera/meta，供后续 vla_process 直接 convert——
 align 检测到 aligned 已存在会跳过）。
 
-方法（弧长匀速化选帧）：
-  每帧弧长 = Σ_j|Δstate_j|，**仅臂关节维参与**（夹爪/末端 ratio 无量纲，与 rad 混算
-  会污染速度参考——实测占全维弧长 15%、把 speed-ref 抬 16%）；目标每帧弧长 =
-  --speed-ref（默认 session 臂维弧长**均值** = 总弧长/总帧数：重采样后帧数≈原始、
-  总时长不变，只把静止/停滞帧的弧长匀到运动段——丝滑但**不加速**；旧默认 p90
-  ≈1.9x 均值会整体提速并放大每帧跳变，实测每帧最大跳变 p50 0.019→0.043、>0.05 rad
-  占比 16%→40%，故弃用）；每个重采样点取"弧长最近的原始帧"，静止段弧长≈0 被压缩、
-  帧间位移≈speed-ref（速度近似均匀）；连续重复帧（快速帧弧长跨度>网格间距时的采样
-  伪影）去重，避免在快跳后制造假停顿。
-
-  --keep-intent（意图感知，可选）：默认把所有停顿一视同仁地压缩；加此开关后，用 raw
-  *_cmd 流分型停顿——操作者**有意停顿**（cmd 同步停住，如抓握保持/放置等待）保留其
-  时长（每帧推进 speed_ref → 停顿帧 1:1 进输出），只压缩**摩擦型停顿**（cmd 在动、
-  state 被静摩擦卡住）。cmd/state 时间戳语义不同，分型前经互相关对齐（带方差/相关度
-  守卫）。无 *_cmd 流的 episode 自动退化为全压缩。
-
 用法:
+  # natural（默认）：
   /usr/bin/python3 astral_ws/scripts/repair_aligned.py \
       --session ~/astral_data/raw/pick_place_merged \
       --out-session ~/astral_data/raw/pick_place_merged_repaired \
-      [--speed-ref 0.0] [--fps 30] [--keep-intent] [--dry-run]
+      [--fps 30] [--flat-v 0.02] [--min-hold 2] [--keep-intent] [--dry-run]
+  # uniformize（训练更快执行；速度由 --speed-ref 控）：
+  ... 同参数 + --mode uniformize [--speed-ref 0.05]
 
 参数:
-  --speed-ref rad/帧         目标每帧弧长（默认 0=自动取臂维弧长均值，保留总时长不加速）
+  --mode natural|uniformize   保时序（默认）或 弧长匀速化
+  --speed-ref rad/帧          仅 uniformize：目标每帧弧长（0=自动取臂维均值）
   --fps                      输出时间戳网格（默认 30）
-  --keep-intent              意图感知：保留操作者有意停顿的时长，只压缩摩擦型停顿
+  --flat-v rad/s             判定"停住"的臂速度阈值（默认 0.02；越低只删越彻底的停顿）
+  --min-hold 帧              连续 ≥ 该帧数的摩擦停顿才删（默认 2；更短当噪声保留）
+  --keep-intent              意图感知：保留操作者有意停顿的时长，只删摩擦型停顿
   --dry-run                  只报告不写文件
 退出码 0=成功。
 """
@@ -59,24 +59,25 @@ from quantify_cmd_state import _cross_lag  # noqa: E402
 CAM_KEYS = None  # 运行时探测 aligned 里的 camera 组名（video0/video8/...）
 
 
-def arm_mask_from_meta(ep_dir: str, n_dim: int) -> np.ndarray | None:
-    """返回臂维掩码（True=臂关节，参与弧长/速度判定）。
+def _block_masks(ep_dir: str, n_dim: int) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """返回 (臂维掩码, 末端掩码)。臂维参与停顿判定；末端(夹爪/wuji)在动则帧保留。
 
-    读 meta.json 的 schema.state_blocks：name 含 "arm" 的块参与（left_arm/right_arm），
-    ee/waist/head 排除（gripper 的 ratio 无量纲，与 rad 混算污染速度参考）。
-    无 meta/schema 时回退 None=全维（历史行为）。
+    读 meta.json 的 schema.state_blocks：name 含 "arm" → 臂；含 "ee" → 末端（gripper
+    的 ratio 无量纲，不参与停顿判定，但其变化必须保留——夹爪闭合/释放不能压掉）。
+    无 meta/schema 时回退 (None, None)=臂全维、无末端保护（历史行为）。
     """
     try:
         with open(os.path.join(ep_dir, "meta.json"), encoding="utf-8") as f:
             meta = json.load(f)
-        mask = []
+        arm, ee = [], []
         for b in meta["schema"]["state_blocks"]:
-            mask += ["arm" in b["name"]] * b["dim"]
-        if len(mask) == n_dim:
-            return np.asarray(mask, dtype=bool)
+            arm += ["arm" in b["name"]] * b["dim"]
+            ee += ["ee" in b["name"]] * b["dim"]
+        if len(arm) == n_dim:
+            return np.asarray(arm, dtype=bool), np.asarray(ee, dtype=bool)
     except Exception:  # noqa: BLE001
         pass
-    return None
+    return None, None
 
 
 def _camera_groups(f) -> list[str]:
@@ -150,49 +151,66 @@ def _intent_hold_mask(state: np.ndarray, ts: np.ndarray,
 
 def resample_frames(state: np.ndarray, quality: np.ndarray,
                     cam_images: dict, cam_offsets: dict, cam_ts: dict,
-                    speed_ref: float, fps: int, state_ts0: float = 0.0,
+                    fps: int, state_ts0: float = 0.0,
                     arm_mask: np.ndarray | None = None,
-                    intent_hold_mask: np.ndarray | None = None):
-    """弧长均匀重采样（**选帧**，零错位）：按累计运动量均匀取**原始帧**。
+                    ee_mask: np.ndarray | None = None,
+                    intent_hold_mask: np.ndarray | None = None,
+                    flat_v: float = 0.02, min_hold: int = 2):
+    """摩擦停顿移除（**保时序**，选帧零错位）：删掉静摩擦"卡住"的帧，其余保留。
 
-    不用关节插值——插值必然造成"关节 vs 图像"错位（关节值在弧长空间插值、图像只能
-    取离散原始帧，两者最多差半帧弧长）。这里每个重采样点取"弧长最近的原始帧"，
-    state/action 与图像**严格同源**（同一原始帧），零错位；同时静止段弧长≈0 被压缩、
-    帧间位移≈speed_ref（速度近似均匀）。代价：快慢不均（快速帧是原始的单大步、慢速
-    帧原始离散），但绝无 state-图像错位、也无伪影重复帧（连续重复已去重）。
+    与旧"弧长均匀化"的本质区别：**不做速度统一**。每个保留的原始帧 → 一个输出帧，
+    速度 = 自然速度（慢速精密保持慢、快速保持快）；只删**摩擦型停顿**——全臂停住
+    （max|Δarm|/dt < flat_v）且全末端没在动（夹爪闭合/释放的帧保留）、非意图停顿、
+    且连续 ≥ min_hold 帧。这样：
+      * 慢速段不再被提速（旧均匀化把 p10 速度 0.003→0.012，4x，回放"整体加快"）；
+      * 夹爪闭合/释放帧 + 周围抓取停顿保留 → 不再"猛合猛放"；
+      * 意图停顿（keep-intent）完整保留其时长。
 
-    弧长只算 arm_mask 的臂维（默认全维兼容）。speed_ref<=0 或 S_total<=0 → 返回 None
-    （纯静止/退化 episode，调用方原样复制）。
-
-    intent_hold_mask（--keep-intent）：操作者**有意停顿**帧（cmd 同步停住）——这些帧
-    的"时长"必须保留（模型要学"在这里停住"），所以度量里每帧推进 speed_ref（= 输出
-    一帧），停顿帧数 1:1 进输出；摩擦型停顿（cmd 在动、state 被静摩擦卡住）不在此
-    掩码内，弧长≈0 照常被压缩。去重时豁免意图停顿帧（其连续重复 = 时长的正确表示）。
+    选帧（子集）保证 state/图像严格同源、零错位。保留帧 < 2 的退化 episode 返回 None
+    （调用方原样复制）。
     """
     st = state[:, arm_mask] if arm_mask is not None else state
-    d = np.abs(np.diff(st, axis=0)).sum(axis=1)          # (N-1,) 臂维每帧弧长
-    if intent_hold_mask is not None and speed_ref > 0:
-        # 意图停顿段内的步（i→i+1 都在掩码内）推进 speed_ref，保留其时长
-        inside = intent_hold_mask[1:] & intent_hold_mask[:-1]
-        d = np.where(inside, speed_ref, d)
-    S = np.concatenate([[0.0], np.cumsum(d)])               # (N,) 累计弧长
-    S_total = S[-1]
-    if speed_ref <= 0 or S_total <= 0:
+    ee = state[:, ee_mask] if (ee_mask is not None and np.any(ee_mask)) else None
+    n = len(state)
+    if n < 3:
         return None
-    N_new = max(2, int(round(S_total / speed_ref)))
-    s_grid = np.linspace(0.0, S_total, N_new)
-    # 弧长最近原始帧（argmin；精确对齐到原始帧，零错位）
-    idx = np.array([int(np.argmin(np.abs(S - g))) for g in s_grid])
-    # 去重：快速帧弧长跨度 > 网格间距时，多个网格点就近映射到同一原始帧 → 连续重复帧。
-    # 这是纯采样伪影（状态/图像全同、无信息），留着会在每个快跳后制造假"停顿"帧
-    # （实测默认均值速度下 30% 帧重复）。去重只删无信息副本，零错位不变。
-    # 意图停顿帧豁免：其连续重复是"停顿时长"的正确表示，不删。
-    if len(idx) > 1:
-        keep = np.concatenate([[True], idx[1:] != idx[:-1]])
-        if intent_hold_mask is not None:
-            keep = keep | intent_hold_mask[idx]
-        idx = idx[keep]
-    N_new = len(idx)
+    dt = 1.0 / fps
+    arm_stuck = np.abs(np.diff(st, axis=0)).max(axis=1) / dt < flat_v
+    if ee is not None:
+        ee_moving = np.abs(np.diff(ee, axis=0)).max(axis=1) / dt >= flat_v
+        # 夹爪活动保护窗：过渡（闭合/释放）前后 ±5 帧也保留——夹爪 ratio 是指令回显，
+        # 过渡本身只 1-2 帧，但抓取保持/释放的上下文（操作者停臂让夹爪完成动作）必须留，
+        # 否则回放表现为"猛合猛放"。意图分类没抓到的抓取停顿靠这里兜底。
+        if ee_moving.any():
+            prot = np.zeros(len(ee_moving), dtype=bool)
+            for k in np.where(ee_moving)[0]:
+                prot[max(0, k - 5):min(len(ee_moving), k + 6)] = True
+            ee_moving = prot
+        friction = arm_stuck & ~ee_moving
+    else:
+        friction = arm_stuck
+    if intent_hold_mask is not None:
+        inside = intent_hold_mask[1:] & intent_hold_mask[:-1]
+        friction = friction & ~inside
+    # 摩擦段 < min_hold 帧 → 视为噪声不删
+    i, L = 0, len(friction)
+    while i < L:
+        if friction[i]:
+            j = i
+            while j < L and friction[j]:
+                j += 1
+            if j - i < min_hold:
+                friction[i:j] = False
+            i = j
+        else:
+            i += 1
+    # 帧级保留：帧 0 恒保留；帧 f≥1 保留当且仅当步 f-1 非摩擦
+    keep = np.ones(n, dtype=bool)
+    if n > 1:
+        keep[1:] = ~friction
+    idx = np.where(keep)[0]
+    if len(idx) < 2:
+        return None
 
     state_new = state[idx]                                  # 原始帧值（非插值）
     quality_new = quality[idx]
@@ -200,17 +218,123 @@ def resample_frames(state: np.ndarray, quality: np.ndarray,
     off_new = {c: cam_offsets[c][idx] for c in cam_offsets}
     ts_cam_new = {c: cam_ts[c][idx] for c in cam_ts}
 
-    # 匀速时间戳（帧间隔 = 1/fps 秒；严格单调）
-    timestamps_new = float(state_ts0) + np.arange(N_new) / fps
+    # 均匀时间戳（帧间隔 = 1/fps 秒；严格单调）
+    timestamps_new = float(state_ts0) + np.arange(len(idx)) / fps
     # next-state action
     action_new = np.vstack([state_new[1:], state_new[-1]])
 
     return state_new, action_new, quality_new, timestamps_new, idx, cam_new, off_new, ts_cam_new
 
 
+def session_speed_ref(session: str, eps: list, arm_mask: np.ndarray | None) -> float:
+    """session 全局 arm 弧长均值（uniformize 模式的自动 speed-ref）。
+
+    均值 = 总弧长/总帧数：均匀化后总帧数≈原始（总时长不变）。要更快/更匀速可显式
+    给更高的 --speed-ref。
+    """
+    ds = []
+    for ep in eps:
+        p = os.path.join(session, ep, "aligned_data.h5")
+        if not os.path.exists(p):
+            continue
+        try:
+            with h5py.File(p, "r") as f:
+                st = np.asarray(f["observation/state"], dtype=np.float64)
+                if arm_mask is not None:
+                    st = st[:, arm_mask]
+            if len(st) < 3:
+                continue
+            d = np.abs(np.diff(st, axis=0)).sum(axis=1)
+            ds.append(d)
+        except Exception:  # noqa: BLE001
+            continue
+    if not ds:
+        return 0.0
+    all_d = np.concatenate(ds)
+    return float(all_d.mean())
+
+
+def resample_frames_uniform(state: np.ndarray, quality: np.ndarray,
+                            cam_images: dict, cam_offsets: dict, cam_ts: dict,
+                            speed_ref: float, fps: int, state_ts0: float = 0.0,
+                            arm_mask: np.ndarray | None = None,
+                            ee_mask: np.ndarray | None = None,
+                            intent_hold_mask: np.ndarray | None = None,
+                            flat_v: float = 0.02, min_hold: int = 2):
+    """弧长匀速化（旧 v2 修好版）：臂按 --speed-ref 重定时，夹爪/意图停顿保护不压没。
+
+    与 natural（保时序）的本质区别：**臂运动段按 speed-ref 统一重定时**——所有段都
+    变成均匀速度，总帧数 ≈ 总弧长/speed-ref。适用：训练"更快/匀速执行"的模型
+    （工程化提速的**数据烘焙**方案）。与旧 v2 的三处修复：
+      * **夹爪保护**：夹爪闭合/释放过渡 ±5 帧按 1:1 保留（旧 v2 压没 → 猛合猛放）；
+      * **意图停顿保护**：--keep-intent 的停顿帧 1:1 保留时长；
+      * **摩擦移除**：摩擦型停顿帧照常删（d=0）。
+
+    选帧保证 state/图像零错位。退化（speed_ref<=0 或总弧长 0）返回 None。
+    """
+    st = state[:, arm_mask] if arm_mask is not None else state
+    ee = state[:, ee_mask] if (ee_mask is not None and np.any(ee_mask)) else None
+    n = len(state)
+    if n < 3 or speed_ref <= 0:
+        return None
+    dt = 1.0 / fps
+    arm_arc = np.abs(np.diff(st, axis=0)).sum(axis=1)
+    arm_stuck = np.abs(np.diff(st, axis=0)).max(axis=1) / dt < flat_v
+    protected = np.zeros(len(arm_arc), dtype=bool)
+    if ee is not None:
+        ee_moving = np.abs(np.diff(ee, axis=0)).max(axis=1) / dt >= flat_v
+        if ee_moving.any():
+            prot = np.zeros(len(ee_moving), dtype=bool)
+            for k in np.where(ee_moving)[0]:
+                prot[max(0, k - 5):min(len(ee_moving), k + 6)] = True
+            ee_moving = prot
+        protected |= ee_moving
+    if intent_hold_mask is not None:
+        inside = intent_hold_mask[1:] & intent_hold_mask[:-1]
+        protected |= inside
+    friction = arm_stuck & ~protected
+    i, L = 0, len(friction)
+    while i < L:
+        if friction[i]:
+            j = i
+            while j < L and friction[j]:
+                j += 1
+            if j - i < min_hold:
+                friction[i:j] = False
+            i = j
+        else:
+            i += 1
+    # 度量：臂弧长；保护帧至少 1 输出帧（=speed_ref）；摩擦帧 0
+    d = np.where(protected, np.maximum(arm_arc, speed_ref), arm_arc)
+    d = np.where(friction, 0.0, d)
+    S_total = d.sum()
+    if S_total <= 0:
+        return None
+    N_new = max(2, int(round(S_total / speed_ref)))
+    S = np.concatenate([[0.0], np.cumsum(d)])
+    s_grid = np.linspace(0.0, S_total, N_new)
+    idx = np.array([int(np.argmin(np.abs(S - g))) for g in s_grid])
+    # 快速帧伪影去重（意图停顿帧豁免——其重复 = 时长正确表示）
+    if len(idx) > 1:
+        keep = np.concatenate([[True], idx[1:] != idx[:-1]])
+        if intent_hold_mask is not None:
+            keep = keep | intent_hold_mask[idx]
+        idx = idx[keep]
+    state_new = state[idx]
+    quality_new = quality[idx]
+    cam_new = {c: cam_images[c][idx] for c in cam_images}
+    off_new = {c: cam_offsets[c][idx] for c in cam_offsets}
+    ts_cam_new = {c: cam_ts[c][idx] for c in cam_ts}
+    timestamps_new = float(state_ts0) + np.arange(len(idx)) / fps
+    action_new = np.vstack([state_new[1:], state_new[-1]])
+    return state_new, action_new, quality_new, timestamps_new, idx, cam_new, off_new, ts_cam_new
+
+
 def repair_episode(ep_dir: str, out_ep_dir: str,
-                   speed_ref: float, fps: int, dry_run: bool,
-                   keep_intent: bool = False) -> dict:
+                   fps: int, dry_run: bool,
+                   keep_intent: bool = False, flat_v: float = 0.02,
+                   min_hold: int = 2, mode: str = "natural",
+                   speed_ref: float = 0.0) -> dict:
     src = os.path.join(ep_dir, "aligned_data.h5")
     if not os.path.exists(src):
         return {"episode": os.path.basename(ep_dir), "error": "无 aligned_data.h5"}
@@ -227,7 +351,7 @@ def repair_episode(ep_dir: str, out_ep_dir: str,
         cam_offsets = {c: np.asarray(f[f"{c}/src_offsets"]) if f"{c}/src_offsets" in f[c] else np.zeros(len(cam_images[c]), dtype=np.int64) for c in cams}
         cam_ts = {c: np.asarray(f[f"{c}/src_timestamps"]) if f"{c}/src_timestamps" in f[c] else np.zeros(len(cam_images[c])) for c in cams}
 
-    arm_mask = arm_mask_from_meta(ep_dir, state.shape[1])  # 弧长只用臂维
+    arm_mask, ee_mask = _block_masks(ep_dir, state.shape[1])  # 臂维参与停顿判定, ee(夹爪)动则保留
 
     # --keep-intent：用 raw cmd 分型意图停顿（cmd 同步停住=有意停，保留时长）；无 cmd 流则跳过
     intent_mask = None
@@ -248,8 +372,14 @@ def repair_episode(ep_dir: str, out_ep_dir: str,
         else:
             intent_mask = _intent_hold_mask(state, ts_all, cmd[0], cmd[1], arm_mask)
 
-    r = resample_frames(state, quality, cam_images, cam_offsets, cam_ts,
-                        speed_ref, fps, state_ts0, arm_mask, intent_mask)
+    if mode == "uniformize":
+        r = resample_frames_uniform(state, quality, cam_images, cam_offsets, cam_ts,
+                                    speed_ref, fps, state_ts0, arm_mask, ee_mask,
+                                    intent_mask, flat_v, min_hold)
+    else:
+        r = resample_frames(state, quality, cam_images, cam_offsets, cam_ts,
+                            fps, state_ts0, arm_mask, ee_mask, intent_mask,
+                            flat_v, min_hold)
     if r is None:  # 纯静止/退化 episode：无法重采样，原样复制
         if not dry_run:
             for fname in ("aligned_data.h5", "robot_data.h5", "camera_data.h5", "meta.json"):
@@ -301,38 +431,8 @@ def repair_episode(ep_dir: str, out_ep_dir: str,
     }
 
 
-def session_speed_ref(session: str, eps: list, arm_mask: np.ndarray | None) -> float:
-    """session 全局 speed_ref：所有 episode 臂维每帧弧长合并后的**均值**。
-
-    选均值而非 p90：均值 = 总弧长/总帧数，重采样后总帧数≈原始（总时长不变），
-    只把静止/停滞帧的弧长匀到运动段——丝滑但**不加速**；旧默认 p90（≈1.9x 均值）
-    会把整段数据提速、放大每帧跳变（实测每帧最大跳变 p50 0.019→0.043、
-    >0.05 rad 占比 16%→40%）。各段统一速度尺度，避免模型学到不一致的节奏。
-    """
-    ds = []
-    for ep in eps:
-        p = os.path.join(session, ep, "aligned_data.h5")
-        if not os.path.exists(p):
-            continue
-        try:
-            with h5py.File(p, "r") as f:
-                st = np.asarray(f["observation/state"], dtype=np.float64)
-                if arm_mask is not None:
-                    st = st[:, arm_mask]
-            if len(st) < 3:
-                continue
-            d = np.abs(np.diff(st, axis=0)).sum(axis=1)
-            ds.append(d)
-        except Exception:  # noqa: BLE001
-            continue
-    if not ds:
-        return 0.0
-    all_d = np.concatenate(ds)
-    return float(all_d.mean())
-
-
 def _self_test() -> int:
-    """合成数据自测意图感知重采样：意图停顿保留时长、摩擦停顿压缩、零错位保持。"""
+    """合成数据自测：保时序摩擦移除——摩擦停删、夹爪动保留、意图停保留、速度不统一。"""
     hz, T = 30.0, 5.0
     n = int(T * hz)
     t = np.arange(n) / hz
@@ -354,39 +454,57 @@ def _self_test() -> int:
         return best
 
     vel = 0.04                                   # 每步位移 rad/步（≈1.2 rad/s，>> flat_v=0.02）
-    cmd = vel * np.arange(n)                     # 匀速斜坡（每步 +vel，弧长=vel=speed_ref）
+    cmd = vel * np.arange(n)                     # 匀速斜坡
     cmd[(t >= 1.0) & (t < 1.5)] = cmd[int(1.0 * hz)]      # 意图停顿：cmd 也停 0.5s
-    state = cmd.copy()
-    i0, i1 = int(3.0 * hz), int(3.6 * hz)                 # 摩擦停顿：cmd 动、state 卡 0.6s
-    state[i0:i1] = state[i0]
-    st8 = np.stack([state, np.zeros(n)], axis=1)          # 8 维（1 臂关节 + 1 夹爪恒 0）
-    arm = np.array([True, False])
-    speed_ref = vel
+    arm_state = cmd.copy()
+    i0, i1 = int(3.0 * hz), int(3.6 * hz)                 # 摩擦停顿：cmd 动、arm 卡 0.6s
+    arm_state[i0:i1] = arm_state[i0]
+    gripper = np.zeros(n)
+    gc0, gc1 = int(2.0 * hz), int(2.2 * hz)               # 夹爪闭合：arm 停但 gripper 动 0.2s
+    arm_state[gc0:gc1] = arm_state[gc0]
+    gripper[gc0:gc1] = 1.0
+    st8 = np.stack([arm_state, gripper], axis=1)          # 8 维（1 臂 + 1 夹爪）
+    arm, ee = np.array([True, False]), np.array([False, True])
 
-    # 分型：意图段 1.0-1.5s 应标 True，摩擦段 3.0-3.6s 不应标 True
     intent = _intent_hold_mask(st8, t, cmd[:, None], t, arm, flat_v=0.02, min_pause=0.1)
     check("意图停顿被识别", intent[int(1.0 * hz):int(1.5 * hz)].mean() > 0.8,
-          f"意图段覆盖={intent[int(1.0*hz):int(1.5*hz)].mean():.2f}")
+          f"覆盖={intent[int(1.0*hz):int(1.5*hz)].mean():.2f}")
     check("摩擦停顿不当意图", intent[int(3.0 * hz):int(3.6 * hz)].mean() < 0.2,
-          f"摩擦段覆盖={intent[int(3.0*hz):int(3.6*hz)].mean():.2f}")
+          f"覆盖={intent[int(3.0*hz):int(3.6*hz)].mean():.2f}")
 
-    # keep-intent：意图停顿保留 ~0.5s*hz=15 帧恒值段；摩擦段被压
     r = resample_frames(st8, np.zeros(n, np.uint8), {}, {}, {},
-                        speed_ref, hz, 0.0, arm, intent)
-    stn = r[0]
+                        hz, 0.0, arm, ee, intent)
+    stn, idx = r[0], r[4]
+    # 1) 摩擦段(3.0-3.6s, 帧90-107)被删：输出仅留 1 帧（到达位）
+    kept_friction = sum(1 for k in idx if 90 <= k < 108)
+    check("摩擦停顿删除(18→≤2帧)", kept_friction <= 2, f"保留={kept_friction}")
+    # 2) 夹爪闭合段(2.0-2.2s, 帧60-65)保留：gripper 动 → 帧全留
+    kept_grip = sum(1 for k in idx if 60 <= k < 66)
+    check("夹爪闭合帧保留(6帧)", kept_grip >= 5, f"保留={kept_grip}")
+    # 3) 意图段(1.0-1.5s)保留时长：输出恒值 run ≈ 15 帧
     check("意图停顿保留时长(~15帧)", longest_run(stn[:, 0]) >= 12,
-          f"最长恒值run={longest_run(stn[:, 0])} 帧")
-    check("摩擦停顿被压缩(帧数减少)", len(stn) < n * 0.98, f"{len(stn)}/{n}")
+          f"最长恒值run={longest_run(stn[:, 0])}")
+    # 4) 速度不统一：运动段 1:1 保留（0-1.0s 的 30 个斜坡帧几乎全留）
+    kept_ramp = sum(1 for k in idx if k < 30)
+    check("运动段保时序(30→≥28帧)", kept_ramp >= 28, f"保留={kept_ramp}")
+    # 5) 零错位
     z = all((np.abs(st8 - row).max(axis=1) <= 1e-9).any() for row in stn)
     check("零错位(state∈原始帧)", z)
 
-    # 对照：无意图感知 → 意图段也被压（最长恒值 run 显著变短、输出更短）
-    r2 = resample_frames(st8, np.zeros(n, np.uint8), {}, {}, {},
-                         speed_ref, hz, 0.0, arm, None)
-    st2 = r2[0]
-    check("对照：无 keep-intent → 停顿也被压", longest_run(st2[:, 0]) < 6,
-          f"最长恒值run={longest_run(st2[:, 0])}")
-    check("对照：输出更短（意图段也被压）", len(st2) < len(stn), f"{len(st2)}/{len(stn)}")
+    # --- uniformize 模式（修好版 v2）：摩擦删、夹爪/意图保护、臂匀速化 ---
+    ru = resample_frames_uniform(st8, np.zeros(n, np.uint8), {}, {}, {},
+                                 vel, hz, 0.0, arm, ee, intent)
+    stu, idxu = ru[0], ru[4]
+    kept_friction_u = sum(1 for k in idxu if 90 <= k < 108)
+    check("uniformize: 摩擦段删除(≤2帧)", kept_friction_u <= 2, f"保留={kept_friction_u}")
+    kept_grip_u = sum(1 for k in idxu if 60 <= k < 66)
+    check("uniformize: 夹爪闭合保留(≥5帧)", kept_grip_u >= 5, f"保留={kept_grip_u}")
+    check("uniformize: 意图停顿保留", longest_run(stu[:, 0]) >= 12,
+          f"run={longest_run(stu[:, 0])}")
+    kept_ramp_u = sum(1 for k in idxu if k < 30)
+    check("uniformize: 匀速斜坡保帧(≥28)", kept_ramp_u >= 28, f"保留={kept_ramp_u}")
+    zu = all((np.abs(st8 - row).max(axis=1) <= 1e-9).any() for row in stu)
+    check("uniformize: 零错位", zu)
     return 0 if ok else 1
 
 
@@ -394,12 +512,20 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--session", help="含 episode*/aligned_data.h5 的 session")
     ap.add_argument("--out-session", help="输出新 session 目录")
+    ap.add_argument("--mode", choices=["natural", "uniformize"], default="natural",
+                    help="natural=保时序摩擦移除（默认，速度=自然，推荐）；"
+                         "uniformize=弧长匀速化（臂按 --speed-ref 重定时，训练更快执行用，夹爪受保护）")
     ap.add_argument("--speed-ref", type=float, default=0.0,
-                    help="目标每帧弧长 rad/帧（0=自动取 session 臂维弧长均值，保留总时长不加速；想更快给 p70~p90 量级，如 0.07）")
+                    help="仅 uniformize 模式：目标每帧弧长 rad/帧（0=自动取 session 臂维弧长均值；"
+                         "想更快给更高值如 0.07，慢给更低如 0.03）")
     ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--flat-v", type=float, default=0.02,
+                    help="判定'停住'的臂速度阈值 rad/s（默认 0.02；越低只删越彻底的停顿）")
+    ap.add_argument("--min-hold", type=int, default=2,
+                    help="连续 ≥ 该帧数(默认2)的摩擦停顿才删（更短当噪声保留）")
     ap.add_argument("--keep-intent", action="store_true",
                     help="意图感知：用 raw *_cmd 流分型停顿，操作者有意停顿（cmd 同步停）保留其"
-                         "时长，只压缩摩擦型停顿（cmd 在动 state 被静摩擦卡住）")
+                         "时长，只删摩擦型停顿（cmd 在动 state 被静摩擦卡住）")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--self-test", action="store_true", help="合成数据自测")
     args = ap.parse_args()
@@ -419,29 +545,33 @@ def main() -> int:
     if not eps:
         print("无 episode", file=sys.stderr)
         return 1
-    # 臂维掩码（弧长只用臂关节；无 meta 则全维）
-    arm_mask = None
-    for ep0 in eps:
-        ap = os.path.join(args.session, ep0, "aligned_data.h5")
-        if os.path.exists(ap):
-            with h5py.File(ap) as f:
-                n_dim = f["observation/state"].shape[1]
-            arm_mask = arm_mask_from_meta(os.path.join(args.session, ep0), n_dim)
-            break
-    # 全局 speed_ref（若未显式指定）：所有 episode 臂维弧长均值，统一速度尺度、不加速
-    if args.speed_ref <= 0:
-        args.speed_ref = session_speed_ref(args.session, eps, arm_mask)
     out_root = args.session if args.dry_run else args.out_session
     if not args.dry_run:
         os.makedirs(out_root, exist_ok=True)
 
-    print(f"修复: 弧长匀速化选帧 speed_ref={'自动(臂维均值=%.4f)' % args.speed_ref if args.speed_ref > 0 else args.speed_ref} "
+    # uniformize 模式：speed-ref 未显式给 → 自动取 session 臂维弧长均值（总时长不变）
+    if args.mode == "uniformize" and args.speed_ref <= 0:
+        arm_mask0 = None
+        for ep0 in eps:
+            ap_ = os.path.join(args.session, ep0, "aligned_data.h5")
+            if os.path.exists(ap_):
+                with h5py.File(ap_) as f:
+                    n_dim = f["observation/state"].shape[1]
+                am, _ = _block_masks(os.path.join(args.session, ep0), n_dim)
+                arm_mask0 = am
+                break
+        args.speed_ref = session_speed_ref(args.session, eps, arm_mask0)
+
+    mode_name = "保时序摩擦移除" if args.mode == "natural" else "弧长匀速化"
+    print(f"修复: {mode_name} flat_v={args.flat_v} min_hold={args.min_hold} "
+          f"{'speed_ref=' + ('%.4f(自动)' % args.speed_ref if args.mode == 'uniformize' else '')} "
           f"{'意图感知(保留有意停顿)' if args.keep_intent else ''} "
           f"{'[DRY-RUN]' if args.dry_run else ''}")
     tot0 = tot1 = 0
     for ep in eps:
         st = repair_episode(os.path.join(args.session, ep), os.path.join(out_root, ep),
-                            args.speed_ref, args.fps, args.dry_run, args.keep_intent)
+                            args.fps, args.dry_run, args.keep_intent,
+                            args.flat_v, args.min_hold, args.mode, args.speed_ref)
         tot0 += st.get("frames", 0); tot1 += st.get("kept", 0)
         if "error" in st:
             print(f"  {ep}: {st['error']}")

@@ -304,7 +304,7 @@ HF_LEROBOT_HOME=~/lerobot_home lerobot-train \
 
 | 脚本 | 处理层 | 方法 | 效果 |
 |---|---|---|---|
-| `repair_aligned.py` | aligned_data.h5 | **弧长均匀选帧**（按累计运动量重采样，`--speed-ref` 控压缩比；**选帧非插值 = 零图像-关节错位**；弧长只算臂维、连续重复帧去重；`--keep-intent` 用 raw cmd 分型，保留操作者有意停顿时长、只压缩摩擦型停顿） | pick_place_merged **-27% 帧**、平段 11.3%→0.6%（keep-intent 则 -25%、平段 5.3%=保留的意图停顿）、每帧跳变不放大、时间戳均匀（validate W2 gap 100→0） |
+| `repair_aligned.py` | aligned_data.h5 | **`--mode natural`（默认）= 保时序摩擦移除**：只删摩擦型停顿帧（全臂+夹爪都停、非意图、连续≥2帧），其余帧 1:1 保留、**速度=自然速度**；夹爪过渡 ±5 帧保护、`--keep-intent` 保留有意停顿时长；**`--mode uniformize`（可选）= 弧长匀速化**（臂按 `--speed-ref` 重定时，供"更快执行"训练，夹爪/意图同样保护） | natural：**-2.1% 帧**、臂速度逐位不变（不加速）、夹爪时序全保、平段 5.3%→0.5%、零错位；uniformize（自动均值）：-13%（更快） |
 
 修完 `vla_process_act.sh`（align 检测 aligned 存在即跳过）→ `act_train.sh` 重新训练 → 真机
 对比卡点是否消失。`--speed-ref` 调速度/压缩比（默认臂维弧长均值=保留总时长不加速；想更快给
