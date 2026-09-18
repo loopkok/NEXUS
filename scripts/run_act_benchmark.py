@@ -56,8 +56,8 @@ def main() -> int:
     cam = args.camera_size
     obs = ObsBatch(
         state=rng.normal(0, 0.5, 8),
-        images={"video8": rng.integers(0, 256, (cam, cam, 3), np.uint8),
-                "video0": rng.integers(0, 256, (cam, cam, 3), np.uint8)},
+        images={"base": rng.integers(0, 256, (cam, cam, 3), np.uint8),
+                "left_wrist": rng.integers(0, 256, (cam, cam, 3), np.uint8)},
         prompt="benchmark",
     )
     if args.jpeg:
@@ -65,16 +65,16 @@ def main() -> int:
 
         payload = {
             "observation/state": obs.state.astype(np.float32),
-            "observation/camera/base_0_rgb": encode_jpeg(obs.images["video8"]),
-            "observation/camera/left_wrist_0_rgb": encode_jpeg(obs.images["video0"]),
+            "observation/camera/base_0_rgb": encode_jpeg(obs.images["base"]),
+            "observation/camera/left_wrist_0_rgb": encode_jpeg(obs.images["left_wrist"]),
             "prompt": obs.prompt,
             "image_format": "jpeg",
         }
     else:
         payload = {
             "observation/state": obs.state.astype(np.float32),
-            "observation/camera/base_0_rgb": obs.images["video8"],
-            "observation/camera/left_wrist_0_rgb": obs.images["video0"],
+            "observation/camera/base_0_rgb": obs.images["base"],
+            "observation/camera/left_wrist_0_rgb": obs.images["left_wrist"],
             "prompt": obs.prompt,
         }
     nbytes = sum(
@@ -87,7 +87,7 @@ def main() -> int:
     # ---- 握手耗时 ----
     bk = RemoteBackend(
         host=args.host, port=args.port, action_dim=8,
-        slot_keys={"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"},
+        slot_keys={"base_0_rgb": "base", "left_wrist_0_rgb": "left_wrist"},
         jpeg_transport=args.jpeg,
     )
     t_h = time.perf_counter()

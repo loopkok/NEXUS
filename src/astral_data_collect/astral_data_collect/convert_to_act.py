@@ -60,7 +60,7 @@ def _probe_native_shapes(session_dir: str) -> dict[str, tuple[int, int]]:
     """探测 raw 各相机原生分辨率（解第一帧 JPEG）→ {cam: (w, h)}。
 
     仅原生模式（image_size=0）使用：ACT 要求全部相机同 shape，若各相机原生
-    尺寸不一（如 video8=1080p、video0=720p），必须 letterbox 统一。
+    尺寸不一（如 base=1080p、left_wrist=720p），必须 letterbox 统一。
     """
     import cv2
     import h5py

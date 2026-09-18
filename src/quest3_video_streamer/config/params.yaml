@@ -96,17 +96,27 @@ quest3_video_streamer:
     # by-id 路径在机器人上 `ls /dev/v4l/by-id/` 查看（D435i 有多个节点，选彩色那个）。
     # 若更想钉物理口位而非相机个体，用 /dev/v4l/by-path/ 同理。
 
-    # 【label_aliases：auto_scan 的稳定名映射】保持 auto_scan: true，加：
-    #   label_aliases:
-    #     - "Intel_R._RealSense=video8"     # 子串匹配 by-id/by-path 链接名或 sysfs 名
-    #     - "1080P_Camera=video0"
+    # 【label_aliases：auto_scan 的稳定名映射】保持 auto_scan: true。
     # 语义：扫描完成后按设备指纹（优先 by-id → by-path → sysfs，子串匹配）
     # 改写 label；先列先赢，未命中的设备保留 videoN 名。目标名撞上扫描里
     # 另一台设备的内核名会被拒绝；与"匹配设备自己的当前名"相同则是合法
     # no-op（固化现状）。规则没匹配到任何设备会在节点日志里告警——通常是
     # 指纹写错，或相机没插。改写后 data_collect.cameras / openpi camera_map
     # 里的 video8/video0 永远不用跟着内核编号变。
-    video0:
+    #
+    # 2026-09-18 启用（realsense 换口后内核编号 video8→video6）。**混合策略**：
+    #   * realsense（base）→ **by-id 序列号**：序列号唯一可靠，跟随设备——换口/内核重排
+    #     都还是它；只有换一台不同序列号的 realsense 才需改这行（届时按新 scan 填序列号）。
+    #     D435i 多节点：末尾 -video-index0 精确钉彩色（IR/深度是 index1-3），避免命中先扫到的非彩色。
+    #   * USB 相机（左腕等）→ **by-path 物理口位**：廉价 USB 相机 by-id 序列号是假的
+    #     （Generic_USB_Camera_200901010001 所有同款一样，再插同款只显示后插那台）→ 序列号
+    #     不可靠，只能按端口钉；端口路径换口会变，但相机是固定角色的（左腕/右腕），那本来
+    #     就要重配。
+    label_aliases:
+      - "254843065994-video-index0=base"              # base：realsense by-id 序列号+彩色index0
+      - "platform-3610000.usb-usb-0:2.2:1.0=left_wrist"  # 左腕 USB：by-path 端口
+      - "platform-3610000.usb-usb-<右腕口>=right_wrist"  # ⚠ 右腕：待按 scan 填口位（全面启用）
+    left_wrist:
       preset: "720p30"
       fov_h_deg: 60.0
       force_mjpg: true
@@ -115,7 +125,7 @@ quest3_video_streamer:
         distance: 1.8
         size_multiplier: 0.28
 
-    video2:
+    right_wrist:
       preset: "720p30"
       fov_h_deg: 60.0
       force_mjpg: true
@@ -125,7 +135,7 @@ quest3_video_streamer:
         size_multiplier: 0.28
 
     # D435i 彩色节点（auto_scan 应选 YUYV，不是红外 GREY / 深度 Z16）。
-    video8:
+    base:
       preset: "1080p30"
       fov_h_deg: 69.0
       force_mjpg: false

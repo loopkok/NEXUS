@@ -181,8 +181,11 @@ def main() -> None:
     parser.add_argument("--default-prompt", default="")
     parser.add_argument(
         "--slot-map",
+        # 值 = **模型 input_features 里的图像键**（观察传到 observation.images.<值>），
+        # 不是 collect label。旧模型（video8/video0 训的）= video8/video0；新模型
+        # （语义名 base/left_wrist 训的）= base/left_wrist。键=传输槽名，须与节点 camera_map 键一致。
         default='{"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"}',
-        help="JSON: model slot -> collect camera label（须与节点 camera_map 一致）",
+        help="JSON: model slot -> model feature image key（须与模型 input_features 一致）",
     )
     args = parser.parse_args()
     try:

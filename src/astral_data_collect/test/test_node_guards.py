@@ -86,11 +86,11 @@ def test_cameras_comma_string_parsed(tmp_path, ros_context):
         parameter_overrides=[
             Parameter("save_root", value=str(tmp_path)),
             Parameter("session", value="s"),
-            Parameter("cameras", value="video8,video0, video2"),
+            Parameter("cameras", value="base,left_wrist, right_wrist"),
         ]
     )
     try:
-        assert node._schema.cameras == ["video8", "video0", "video2"]
+        assert node._schema.cameras == ["base", "left_wrist", "right_wrist"]
     finally:
         node.destroy_node()
 

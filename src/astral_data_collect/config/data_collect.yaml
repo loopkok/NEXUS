@@ -26,19 +26,15 @@ data_collect:
     include_head: false
 
     # 相机 label 列表（对应 /quest3_video_streamer/collect/{label}）。
-    # 第一个相机 = 对齐参考时钟（episode 有效区间由其首尾帧界定），d435i 主视角在前。
-    # label 必须与 streamer 实际生效值一致——
-    #   auto_scan: false（固定 cameras 列表）→ label 是块名（d435i / wrist_left ...）
-    #   auto_scan: true（自动扫描）          → label 是节点名（video0 / video2 ...），
-    #                                          直接把 d435i 那路的 videoN 写第一个即可
-    # ⚠ videoN 编号不稳定（重启/重插/换 USB 口会重排）：auto_scan 模式下每次开录前
-    #   在 web「系统」tab 视频卡片核对 d435i（sysfs 名含 RealSense）的实际 label，
+    # 第一个相机 = 对齐参考时钟（episode 有效区间由其首尾帧界定），base 主视角在前。
+    # label 必须与 streamer 实际生效值一致——streamer 的 label_aliases 按硬件指纹把
+    # 设备钉成语义名：base=realsense 主视角 / left_wrist=左腕 / right_wrist=右腕，
+    # 与内核 videoN 编号解耦（换口/重插编号漂移不影响这里）。
+    # ⚠ 每次开录前在 web「系统」tab 视频卡片核对 base（sysfs 名含 RealSense）确实有图，
     #   或 ros2 topic echo --once /quest3_video_streamer/gate_state 看 sysfs_name。
-    # 相机选择：只录两路（video8=d435i 主视角 + video0=左腕）时删掉 video2 即可；
-    #   video2 本就未映射进 openpi（默认 camera_map 只用 video8→base、video0→左腕，
-    #   右腕槽零填充），去掉它不改变 pi0.5 看到的输入，只让 ACT 少一路图（2→3 路随意）。
-    #   第一个相机 = 对齐参考时钟，保持 d435i 那路在首位。
-    cameras: ["video8", "video0"] # ["video8", "video0", "video2"] | ["d435i", "wrist_left", "wrist_right"]
+    # 相机选择：三路全录 = ["base", "left_wrist", "right_wrist"]；只录两路删 right_wrist。
+    # 第一个相机 = 对齐参考时钟，保持 base 那路在首位。
+    cameras: ["base", "left_wrist", "right_wrist"]
     camera_topic_prefix: "/quest3_video_streamer/collect"
 
     # 数据集帧率（对齐网格与 LeRobot fps；LeRobot 要求整数）

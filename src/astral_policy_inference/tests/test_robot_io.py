@@ -24,7 +24,7 @@ def schema(**kw):
         end_effector_right="none",
         include_waist=False,
         include_head=False,
-        cameras=["video8", "video0", "video2"],
+        cameras=["base", "left_wrist", "right_wrist"],
         dataset_fps=30,
     )
     base.update(kw)
@@ -157,8 +157,8 @@ class TestImageHelpers(unittest.TestCase):
         self.assertIsNone(decode_jpeg_rgb(b"not a jpeg"))
 
     def test_split_camera_map_keeps_slot_to_label(self):
-        rows = split_camera_map({"base_0_rgb": "video8"}, 224)
-        self.assertEqual(rows, [("base_0_rgb", "video8", 224)])
+        rows = split_camera_map({"base_0_rgb": "base"}, 224)
+        self.assertEqual(rows, [("base_0_rgb", "base", 224)])
 
 
 if __name__ == "__main__":

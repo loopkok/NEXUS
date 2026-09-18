@@ -23,7 +23,7 @@ from astral_policy_inference.backend import (
 )
 
 ACT_DIM = 8
-CAM_MAP = {"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"}
+CAM_MAP = {"base_0_rgb": "base", "left_wrist_0_rgb": "left_wrist"}
 
 
 class FakeClient:
@@ -63,7 +63,7 @@ class TestPayloadMapping(unittest.TestCase):
         bk.open()
         obs = ObsBatch(
             state=np.arange(ACT_DIM, dtype=np.float64),
-            images={"video8": np.zeros((8, 8, 3), np.uint8)},
+            images={"base": np.zeros((8, 8, 3), np.uint8)},
             prompt="pick up",
         )
         out = bk.infer(obs)
@@ -247,7 +247,7 @@ class TestJpegTransport(unittest.TestCase):
         bk.open()
         rng = np.random.default_rng(0)
         img = rng.integers(0, 256, (64, 64, 3), np.uint8)
-        bk.infer(ObsBatch(state=np.zeros(ACT_DIM), images={"video8": img}, prompt=""))
+        bk.infer(ObsBatch(state=np.zeros(ACT_DIM), images={"base": img}, prompt=""))
         payload = client.payloads[0]
         self.assertEqual(payload["image_format"], "jpeg")
         v = payload["observation/camera/base_0_rgb"]
@@ -262,7 +262,7 @@ class TestJpegTransport(unittest.TestCase):
         bk = self._jpeg_backend(client, on=False)
         bk.open()
         img = np.zeros((8, 8, 3), np.uint8)
-        bk.infer(ObsBatch(state=np.zeros(ACT_DIM), images={"video8": img}, prompt=""))
+        bk.infer(ObsBatch(state=np.zeros(ACT_DIM), images={"base": img}, prompt=""))
         payload = client.payloads[0]
         self.assertNotIn("image_format", payload)
         v = payload["observation/camera/base_0_rgb"]

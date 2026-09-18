@@ -77,8 +77,8 @@
 quest3_video_streamer:
   ros__parameters:
     auto_scan: true   # 默认：自动扫描主机可采集的 /dev/video*（按物理设备去重，
-                      # label = video0/video2/...，面板一行网格自动排布）。
-                      # 覆盖某一路：加同名块，如 video0: {preset: "1080p30"}
+                      # label = left_wrist/right_wrist/...，面板一行网格自动排布）。
+                      # 覆盖某一路：加同名块，如 left_wrist: {preset: "1080p30"}
                       # false = 用下面 cameras 列表 + 每相机块（固定配置）
 
     cameras: ["wrist_left", "wrist_right"]   # auto_scan=false 的固定列表；
@@ -112,7 +112,7 @@ quest3_video_streamer:
 
 > **D435i**：同一摄像头会露出深度 / 红外 / 彩色多个 `/dev/video*`。auto_scan
 > 按 USB 设备去重，只推 **YUYV/MJPG/RGB** 彩色节点，丢掉 GREY 红外和 Z16 深度。
-> 启动日志 `auto_scan built … (video8, /dev/video8, YUYV, …)` 里应看到 YUYV 而不是 GREY。
+> 启动日志 `auto_scan built … (base, /dev/video8, YUYV, …)` 里应看到 YUYV 而不是 GREY。
 > 仍不对时用 `auto_scan: false` + 显式 `d435i` 块指定彩色节点。
 
 > **换口/重插后 label 防漂移（label_aliases）**：auto_scan 的 label 是内核
@@ -122,13 +122,13 @@ quest3_video_streamer:
 >
 > ```yaml
 > label_aliases:
->   - "Intel_R._RealSense=video8"   # 子串匹配设备的 by-id/by-path 链接名或 sysfs 名
->   - "1080P_Camera=video0"
+>   - "Intel_R._RealSense=base"   # 子串匹配设备的 by-id/by-path 链接名或 sysfs 名
+>   - "1080P_Camera=left_wrist"
 > ```
 >
 > 扫描完成后按指纹（优先 by-id → by-path → sysfs，子串匹配）改写 label：
 > 先列先赢；没命中的设备保留 videoN 名。改写发生在覆盖块查找之前，同名块
-> （如 `video8.preset`）随之自动生效。规则没匹配到任何设备、目标名撞上其他
+> （如 `base.preset`）随之自动生效。规则没匹配到任何设备、目标名撞上其他
 > 设备的内核名等情况都会在启动日志告警——开录前看一眼日志确认三条别名都命中。
 > 指纹列表在机器人上跑 `python3 -m quest3_video_streamer.scan` 直接打印
 > （每路设备列出 by-id/by-path/sysfs 全部指纹，抄子串进别名表即可；
@@ -388,7 +388,7 @@ Quest 端：在 astral-tracking app 里填 PC 的信令地址（WiFi 或 `adb re
 - `astral_web_monitor`：按 gate_state 相机列表动态订阅 preview 话题；新增 `GET /api/v1/video/feed/{label}`（MJPEG）与 `GET /api/v1/video/snapshot/{label}`（单帧）；视频卡片新增「实时画面」勾选相机的实时预览（浏览器 `<img>` 原生解 MJPEG）。
 
 ### v0.5 — 自动扫描 + 懒打开（web 免配置可选）
-- **`auto_scan`（默认 true）**：新增 `scan.py`，启动时枚举 `/dev/video*`（ioctl `VIDIOC_QUERYCAP` 查 `V4L2_CAP_VIDEO_CAPTURE`，按物理设备 sysfs 父级去重，跳过 metadata 节点），label = 节点名（`video0`…），面板一行网格自动排布；同名 yaml 块（如 `video0.preset`）可覆盖单路字段；一台都没扫到时回退 `cameras` 列表。D435i 多节点取第一个不一定是彩色——用显式块。
+- **`auto_scan`（默认 true）**：新增 `scan.py`，启动时枚举 `/dev/video*`（ioctl `VIDIOC_QUERYCAP` 查 `V4L2_CAP_VIDEO_CAPTURE`，按物理设备 sysfs 父级去重，跳过 metadata 节点），label = 节点名（`left_wrist`…），面板一行网格自动排布；同名 yaml 块（如 `left_wrist.preset`）可覆盖单路字段；一台都没扫到时回退 `cameras` 列表。D435i 多节点取第一个不一定是彩色——用显式块。
 - **懒打开 + 失败黑帧**：sender 不再启动时打开全部相机；每轨在首个未静音帧才 `source.start()`，打开/读帧失败退化为黑帧 + 1s 退避重试，不再拖垮整个 sender。
 - **`~/gate_state` 携带相机信息**：JSON 增加 `cameras: [{label, device, source, preset, sysfs_name}]`，web 端不再需要解析本包 yaml。
 - **`cameras` CLI 覆盖联动**：`multi_camera.launch.py cameras:=...` 同时把 `auto_scan` 置 false。

@@ -18,11 +18,13 @@ policy_node:
     end_effector_right: "none"
     include_waist: false
     include_head: false
-    cameras: ["video8", "video0"]   # 与数采 schema 一致（video2 已不录）
+    cameras: ["base", "left_wrist"]   # 与数采 schema 一致（语义名：streamer label_aliases 钉的）
     # 模型槽位 → 相机 label（label 与 quest3_video_streamer collect tap 一致）
     # rclpy 无 struct 参数，故用 JSON 字符串（空格随 json.loads 解析无碍）
-    camera_map: '{"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"}'
-    #   right_wrist_0_rgb 缺省 → openpi server 自动零填充（单腕惯例）
+    camera_map: '{"base_0_rgb": "base", "left_wrist_0_rgb": "left_wrist"}'
+    #   ⚠ 当前部署的是 2 相机模型，故只发 2 槽；right_wrist_0_rgb 缺省 → serve 端零填充。
+    #   待 3 相机模型（pi05_astral_*_3cam）部署后，cameras 加 right_wrist、camera_map 加
+    #   "right_wrist_0_rgb": "right_wrist"。
     dataset_fps: 30           # 策略/回放节奏（= 采集对齐 fps）
 
     # ---------------- policy / backend / engine --------------------------------

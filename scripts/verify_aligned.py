@@ -19,10 +19,10 @@ def check(name: str) -> bool:
             continue
         with h5py.File(sp) as f:
             st0 = np.asarray(f["observation/state"])
-            im0 = [bytes(x) for x in f["video0/images"]]
+            im0 = [bytes(x) for x in f["left_wrist/images"]]
         with h5py.File(op) as f:
             st1 = np.asarray(f["observation/state"])
-            im1 = [bytes(x) for x in f["video0/images"]]
+            im1 = [bytes(x) for x in f["left_wrist/images"]]
             ac1 = np.asarray(f["action"])
             ts = np.asarray(f["timestamps"])
         n += len(st1)

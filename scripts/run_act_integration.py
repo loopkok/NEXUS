@@ -47,8 +47,8 @@ def build_obs(dim: int, cam_size: int, rng: np.random.Generator) -> ObsBatch:
     return ObsBatch(
         state=state,
         images={
-            "video8": rng.integers(0, 256, (cam_size, cam_size, 3), dtype=np.uint8),
-            "video0": rng.integers(0, 256, (cam_size, cam_size, 3), dtype=np.uint8),
+            "base": rng.integers(0, 256, (cam_size, cam_size, 3), dtype=np.uint8),
+            "left_wrist": rng.integers(0, 256, (cam_size, cam_size, 3), dtype=np.uint8),
         },
         prompt=DEFAULT_TASK,
     )
@@ -70,7 +70,7 @@ def main() -> int:
     back = InprocBackend(
         checkpoint_dir=args.checkpoint_dir,
         action_dim=args.action_dim,
-        image_keys={"video8": "video8", "video0": "video0"},
+        image_keys={"base": "base", "left_wrist": "left_wrist"},
         device=args.device,
         default_prompt=DEFAULT_TASK,
     )
@@ -97,7 +97,7 @@ def main() -> int:
     back2 = InprocBackend(
         checkpoint_dir=args.checkpoint_dir,
         action_dim=args.action_dim,
-        image_keys={"video8": "video8", "video0": "video0"},
+        image_keys={"base": "base", "left_wrist": "left_wrist"},
         device=args.device,
         default_prompt=DEFAULT_TASK,
     )

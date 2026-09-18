@@ -35,8 +35,8 @@ def params(**kw):
         end_effector_right="none",
         include_waist=False,
         include_head=False,
-        cameras=["video8"],
-        camera_map='{"cam0": "video8"}',
+        cameras=["base"],
+        camera_map='{"cam0": "base"}',
         dataset_fps=FPS,
         control_interp=1,
         backend_type="stub",
@@ -80,7 +80,7 @@ def make_h5_with_schema(frames=12, fps=FPS):
             end_effector_right="gripper",
             include_waist=False,
             include_head=False,
-            cameras=["video8"],
+            cameras=["base"],
             dataset_fps=fps,
         )
         f.attrs["fps"] = fps

@@ -22,7 +22,7 @@ from conftest import write_raw_episode
 def _schema():
     return CollectSchema(
         arms=["left"], end_effector_left="gripper", end_effector_right="none",
-        cameras=["video8", "video0", "video2"], dataset_fps=30,
+        cameras=["base", "left_wrist", "right_wrist"], dataset_fps=30,
     )
 
 
@@ -48,9 +48,9 @@ def test_convert_act_pipeline_passes_structural_check(tmp_path):
     for p in (
         "meta/info.json", "meta/stats.json", "meta/tasks.parquet",
         "data/chunk-000/file-000.parquet",
-        "videos/observation.images.video8/chunk-000/file-000.mp4",
-        "videos/observation.images.video0/chunk-000/file-000.mp4",
-        "videos/observation.images.video2/chunk-000/file-000.mp4",
+        "videos/observation.images.base/chunk-000/file-000.mp4",
+        "videos/observation.images.left_wrist/chunk-000/file-000.mp4",
+        "videos/observation.images.right_wrist/chunk-000/file-000.mp4",
     ):
         assert os.path.exists(os.path.join(out, p)), f"缺 {p}"
     # 结构级自检通过
@@ -141,11 +141,11 @@ def test_native_mode_rejects_mismatched_camera_shapes(tmp_path):
 
     raw = str(tmp_path / "raw")
     _make_raw_session(raw, n=2)
-    # 把 video0 的图像改成 32x32，video8 保持 64x48 → 原生尺寸不一致
+    # 把 left_wrist 的图像改成 32x32，base 保持 64x48 → 原生尺寸不一致
     for ep in os.listdir(raw):
         h5 = os.path.join(raw, ep, "camera_data.h5")
         with h5py.File(h5, "a") as f:
-            ds = f["video0"]["images"]
+            ds = f["left_wrist"]["images"]
             small = np.frombuffer(make_jpeg(color=(90, 90, 90), w=32, h=32), dtype=np.uint8)
             for i in range(len(ds)):
                 ds[i] = small

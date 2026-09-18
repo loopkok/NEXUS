@@ -1,5 +1,54 @@
 # Changelog（astral_ws）
 
+## 2026-09-18
+
+**相机 label 语义化重构：videoN → base/left_wrist/right_wrist，全流水线同步 + 旧数据迁移 + 右腕启用**——
+`quest3_video_streamer` × `astral_data_collect` × openpi × `astral_policy_inference`。**动机**：
+换口后 videoN 编号漂移（video8→video6）暴露 videoN 是"内核号"不是"角色"；label_aliases 已把设备
+钉成稳定语义名（by-id/by-path），干脆把 label 本身改成位置名。**做法**（三处决策）：
+① label 改名：streamer params `label_aliases` 目标 + 覆盖块 → `base`（realsense 彩色，by-id
+序列号+index0）/`left_wrist`（by-path 端口）/`right_wrist`；data_collect/policy_inference/
+openpi 的 cameras、camera_map、图像列名同步（模型槽 `base_0_rgb`/`left_wrist_0_rgb` 是 pi0.5
+固定输入，**不动**，只改它们指向的 label）；② 右腕全面启用：data_collect cameras 加
+right_wrist，openpi 新增 `pi05_astral_3cam`/`pi05_astral_lora_3cam`（camera_map 3 槽）供新数据，
+旧 2 槽配置（pi05_astral/pi05_astral_lora）保留供旧数据（右腕槽零填充 mask=False）；推理侧
+policy_inference 当前 2 槽（匹配已部署的 2 相机模型），3 相机模型部署后再加 right_wrist；
+③ 旧数据迁移：`scripts/migrate_camera_labels.py`（video8/video0/video2 → base/left_wrist/
+right_wrist，处理 raw camera_data.h5 + aligned_data.h5 + v2.1/v3 的 info.json features + videos
+目录，parquet 无图像列不用动），**实测 408 处改名**（raw 100 episode × 2 h5 + pi + act）。
+**验证**：openpi 4 配置加载 camera_map 正确（2 槽/3 槽）；全套件绿——policy_inference 108、
+streamer 16、convert_to_act 8、node_guards 15、**adversarial 8**（schema↔openpi 金标准）；
+迁移后抽查 raw/pi/act 键名全对。**对抗审查（同日）发现并修复 2 处**：① `serve_policy.env`
+的 `SLOT_MAP` 值被误改成 collect label（base/left_wrist）——serve 把图喂到
+`observation.images.<值>` 键，值必须是**模型 `input_features` 图像键**（旧 ACT 模型=
+video8/video0），已改回 `{base_0_rgb: video8, left_wrist_0_rgb: video0}` + serve.py
+`--slot-map` 默认值同步 + 迁移文档 §5 记录该区分；② 数据**变体目录未迁移**（
+pick_place_merged_repaired/_v2/_v3/_smooth、act dropped/smooth/repaired/_v2/_v3 仍 videoN
+键）→ 补迁移（raw 变体各 400 处 + act 变体各 4 处），verify_aligned（源 vs repaired 零错位
+对抗）复跑 **ALL PASS**（2477 帧）。全套验证：openpi `create()` 直读迁移后真实数据解析
+camera_map OK、对抗配置 8 例、推理链路（节点 collect label vs serve 模型特征键 vs 模型
+input_features）三方匹配。**⚠ 待办**：右腕 alias 口位占位（`<右腕口>`）待实机 scan 填；
+右腕相机实插前建议 `data_collect.cameras` 先只留 [base, left_wrist]（3 路录到空右腕会被
+validate 隔离）。
+
+**相机换 USB 口后 realsense 内核编号漂移 → 启用 `label_aliases` 钉回 video8**——
+`quest3_video_streamer`。**症状**：realsense（base 相机）换口后 `/dev/videoN` 重排，
+彩色节点从 video8 变 video6（`ls /dev/video*` + `python3 -m quest3_video_streamer.scan`
+实测：video6 YUYV=realsense 彩色、video0 MJPG=左腕；D435i 4 个 by-id 节点 index0=彩色/
+index1-3=IR/深度）。若不处理：采集 `collect/video8` 无源 → base 图像缺失；openpi 训练
+`camera_map` 指向不存在的 `observation.images.video8` 列 → `unknown_cams` 校验直接抛错；
+推理 `collect/video8` 无帧 → serve 端 base 槽位零填充（退化）。**修法**：启用 params.yaml `label_aliases`，**混合策略**——realsense 走 by-id、USB 相机走
+by-path：`"254843065994-video-index0=video8"`（realsense 序列号唯一可靠、跟随设备，换口/内核
+重排都还是它；末尾 `-video-index0` 精确钉彩色，不误中 D435i 的 IR/深度 index1-3）+ 
+`"platform-3610000.usb-usb-0:2.2:1.0=video0"`（左腕 USB 相机：廉价相机 by-id 序列号是假的
+[Generic_USB_Camera_200901010001 所有同款一样、再插同款只显示后插那台]→ 序列号不可靠只能按
+物理口位钉）。**验证**：YAML 解析 OK；模拟 `apply_label_aliases`——realsense video6→video8 ✓、
+IR/深度不误改 ✓、左腕 video0 保持 ✓、**新插同款 USB 相机（同假序列号、别的口）不被改名** ✓。
+生效后 data_collect.yaml / policy_inference.yaml / openpi config.py 的 video8 引用**全部零改动**。
+**部署**：重启 streamer；日志 `label_aliases: alias ... matched ...` 是命中提示非错误；web 视频
+卡片应显示 video8=realsense。⚠ 非 symlink 构建需重新 `colcon build`。**换 realsense 机体**：
+改第一条规则里的序列号（按新 scan 填）。
+
 ## 2026-09-17
 
 **`repair_aligned.py` v3 重写（保时序摩擦移除，默认）+ `--mode uniformize`（修好版 v2）**——
@@ -1918,3 +1967,15 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   port:=8001 \
   camera_image_size:=480 \
   engine_mode:=queue_async，同时还要专门起一个键盘节点来进行开始等操作，现在在数采那个web的tab的下面加一个推理的模块，数采模块在上面，在推理模块部分，可以配置GPU主机IP，端口，输入的图像尺寸，是否开启记录日志（把state和joint记录到文件中），以及用按钮来实现键盘的所有功能，同时UI做好看一点，做完所有功能后进行对抗性审查，确保功能正常且无隐藏bug
+
+nvidia@nvidia-desktop:~/loopkok/astral_ws/src/quest3_video_streamer$ ls -la /dev/v4l/by-id/
+total 0
+drwxr-xr-x 2 root root 160 Sep 18 11:51 .
+drwxr-xr-x 4 root root  80 Jan  1  1970 ..
+lrwxrwxrwx 1 root root  12 Sep 18 11:51 usb-Generic_USB_Camera_200901010001-video-index0 -> ../../video0
+lrwxrwxrwx 1 root root  12 Sep 18 11:51 usb-Generic_USB_Camera_200901010001-video-index1 -> ../../video1
+lrwxrwxrwx 1 root root  12 Sep 18 10:18 usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index0 -> ../../video6
+lrwxrwxrwx 1 root root  12 Sep 18 10:18 usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index1 -> ../../video3
+lrwxrwxrwx 1 root root  12 Sep 18 10:18 usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index2 -> ../../video4
+lrwxrwxrwx 1 root root  12 Sep 18 10:18 usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index3 -> ../../video5
+nvidia@nvidia-desktop:~/loopkok/astral_ws/src/quest3_video_streamer$ 

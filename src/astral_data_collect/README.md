@@ -223,7 +223,7 @@ python3 -m astral_data_collect.convert_to_act \
 ```
 
 分辨率可选 224/480/720/原生：原生（0）会先探测各相机原生尺寸，不一致即报错
-（ACT 要求全部相机同 shape，如 video8=1080p、video0=720p 需 letterbox 统一）。
+（ACT 要求全部相机同 shape，如 base=1080p、left_wrist=720p 需 letterbox 统一）。
 
 链路 = 对齐 → v2.1（临时中间产物）→ v3 → **自检**：
 - **结构级**（脚本内强制，不过即退出）：`stats.json` 含 `observation.images.{每路}` +

@@ -203,10 +203,10 @@ class PolicyNode(Node):
             "end_effector_right": "none",
             "include_waist": False,
             "include_head": False,
-            "cameras": ["video8", "video0", "video2"],
+            "cameras": ["base", "left_wrist"],
             # JSON-encoded {model_camera_name: quest3_collect_label} map
             "camera_map": (
-                '{"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"}'
+                '{"base_0_rgb": "base", "left_wrist_0_rgb": "left_wrist"}'
             ),
             "dataset_fps": 30,
             # backend / engine
@@ -320,7 +320,7 @@ class PolicyNode(Node):
         except json.JSONDecodeError as exc:
             raise ValueError(
                 "camera_map must be JSON text, e.g. "
-                '{"base_0_rgb": "video8"}'
+                '{"base_0_rgb": "base"}'
             ) from exc
         if not isinstance(data, dict):
             raise ValueError("camera_map JSON must be an object of string pairs")

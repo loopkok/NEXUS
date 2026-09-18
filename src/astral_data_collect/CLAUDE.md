@@ -9,7 +9,7 @@
 ## 当前状态（2026-09-03）
 
 - **当前采集配置 = 单左臂 + 左夹爪**（`config/data_collect.yaml`，双臂注释保留），
-  8 维 state（7 关节 + 闭合比），相机 `["video8", "video0"]`（不录 video2；openpi camera_map 本就只用 video8+video0）；
+  8 维 state（7 关节 + 闭合比），相机 `["base", "left_wrist"]`（不录 right_wrist；openpi camera_map 本就只用 base+left_wrist）；
 - 默认 `action_source: next_state`（`action[t] = state[t+1]`，绝对关节角）——
   openpi 训练侧再转 delta（见下游约定，别在采集侧改）；
 - 图像**转换期 letterbox 到 224×224**（等比+黑边，复刻 openpi `resize_with_pad` 几何），
@@ -127,7 +127,7 @@ EMA 滤不净（遥操日志实测 VR 零速占比 36%、cmd 高频抖动 ~10mm/
 **第 3 层：控制面与目录（单人采集不打断节奏）**
 VR 手柄控制录制（A=start/B=stop&save/摇杆=discard，上升沿+状态门控，纯决策模块离线单测）、
 session 运行期切换（换目录不重启节点，仅 IDLE、目录名安全校验）、三目录约定（raw/pi/act 各进
-各的）+ 剔 video2（openpi camera_map 本就只用 video8+video0）。**目的**：让"录到好数据"这件事
+各的）+ 剔 right_wrist（openpi camera_map 本就只用 base+left_wrist）。**目的**：让"录到好数据"这件事
 本身顺手、不易出错。
 
 **第 4 层：转换自检（坏段隔离 + ACT 两级自检）**
@@ -160,7 +160,7 @@ session 运行期切换（换目录不重启节点，仅 IDLE、目录名安全�
   （软链即可）。pinned lerobot 0.1.0 只认 `HF_LEROBOT_HOME`，设旧名
   `LEROBOT_HOME` 会直接 raise。
 - 相机槽位映射在 openpi `LeRobotAstralDataConfig.camera_map`（默认
-  video8→base_0_rgb，video0→left_wrist_0_rgb，右腕槽零填充 mask=False）。
+  base→base_0_rgb，left_wrist→left_wrist_0_rgb，右腕槽零填充 mask=False）。
   改 cameras 列表/换 label 名 → openpi camera_map 一行联动。
 - 空 task 段靠 openpi `default_prompt` 兜底（仅冒烟可用）；正式训练的数据
   **每段必须填 task**（web 卡片或热键 t）。

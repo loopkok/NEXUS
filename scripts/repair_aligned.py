@@ -56,7 +56,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from quantify_cmd_state import _cross_lag  # noqa: E402
 
 
-CAM_KEYS = None  # 运行时探测 aligned 里的 camera 组名（video0/video8/...）
+CAM_KEYS = None  # 运行时探测 aligned 里的 camera 组名（left_wrist/base/...）
 
 
 def _block_masks(ep_dir: str, n_dim: int) -> tuple[np.ndarray | None, np.ndarray | None]:

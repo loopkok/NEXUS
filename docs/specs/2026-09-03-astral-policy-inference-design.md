@@ -57,7 +57,7 @@ astral_ws/src/astral_policy_inference/
   - 末端 gripper `{side}_ee` ← 跟踪 `/{side}_gripper/command`（Float64 闭合比 0..1；HITL 交还后自动同步人捏的值）。
   - 末端 wuji（可选）`{side}_ee` ← `/{side}_hand/joint_states` 20 维。
   - 腰/头 ← `/astral/joint_states` 18 维 body 切片（`BODY_WAIST_SLICE`/`BODY_HEAD_SLICE`）；头在仿真无 body 时回退 `/head/joint_states`（对齐 align 的可用性选择逻辑）。
-  - 相机 ← `/quest3_video_streamer/collect/{label}`（`sensor_msgs/CompressedImage`，JPEG），解码 + `resize_with_pad` 到槽位尺寸。`camera_map` 参数映射模型槽→相机 label，默认 `base_0_rgb←video8`、`left_wrist_0_rgb←video0`。
+  - 相机 ← `/quest3_video_streamer/collect/{label}`（`sensor_msgs/CompressedImage`，JPEG），解码 + `resize_with_pad` 到槽位尺寸。`camera_map` 参数映射模型槽→相机 label，默认 `base_0_rgb←base`、`left_wrist_0_rgb←left_wrist`（右腕槽 3 相机模型启用后可加 `right_wrist_0_rgb←right_wrist`）。
 - 动作写：
   - `{side}_arm` → `/{side}_arm/joint_commands`（JointState.position[7]；BEST_EFFORT depth=1，与 teleop QoS 一致）。
   - gripper `{side}_ee` → `/{side}_gripper/command`（Float64 闭合比）。

@@ -9,7 +9,7 @@
 本脚本：
   1.（可选 --check-server）用真实的 RemoteBackend 直连 serve.py 做一次推理往返，
      快速定位「节点连不上」是 server 问题还是节点配置问题；
-  2. 发布合成观测（关节 + 夹爪比值 + video8/video0 的 480×480 JPEG），
+  2. 发布合成观测（关节 + 夹爪比值 + base/left_wrist 的 480×480 JPEG），
      发 policy 命令，验证真实 ACT 驱动指令流 → pause 夹持 → resume 重规划 → stop。
 
 用法（py3.10 + ROS，用 ros2 conda env python 或 /usr/bin/python3，需 cv2/PIL 之一）：
@@ -75,14 +75,14 @@ def check_server(host: str, port: int, jpeg: bool = False) -> None:
     rng = np.random.default_rng(7)
     bk = RemoteBackend(
         host=host, port=port, action_dim=8,
-        slot_keys={"base_0_rgb": "video8", "left_wrist_0_rgb": "video0"},
+        slot_keys={"base_0_rgb": "base", "left_wrist_0_rgb": "left_wrist"},
         jpeg_transport=jpeg,
     )
     bk.open()
     obs = ObsBatch(
         state=rng.normal(0, 0.5, 8),
-        images={"video8": rng.integers(0, 256, (480, 480, 3), np.uint8),
-                "video0": rng.integers(0, 256, (480, 480, 3), np.uint8)},
+        images={"base": rng.integers(0, 256, (480, 480, 3), np.uint8),
+                "left_wrist": rng.integers(0, 256, (480, 480, 3), np.uint8)},
         prompt="round trip",
     )
     out = np.asarray(bk.infer(obs))
@@ -101,7 +101,7 @@ class Driver(Node):
         self.img_pubs = {
             label: self.create_publisher(
                 CompressedImage, f"/quest3_video_streamer/collect/{label}", SENSOR)
-            for label in ("video8", "video0")
+            for label in ("base", "left_wrist")
         }
         self.jpg = make_jpeg()
         self.cmd_seen: list[np.ndarray] = []

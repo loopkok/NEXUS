@@ -51,22 +51,22 @@ def test_yaml_d435i_does_not_cover_wrist_panels() -> None:
         )
 
 
-def test_yaml_video8_auto_scan_block_matches_d435i() -> None:
+def test_yaml_base_auto_scan_block_matches_d435i() -> None:
     p = _params()
     d435i = p["d435i"]["layout"]
-    video8 = p["video8"]["layout"]
-    assert video8["position"] == d435i["position"]
-    assert video8["size_multiplier"] == d435i["size_multiplier"]
+    base = p["base"]["layout"]
+    assert base["position"] == d435i["position"]
+    assert base["size_multiplier"] == d435i["size_multiplier"]
 
 
 def test_scan_defaults_d435i_does_not_cover_wrists() -> None:
     rs_dev = {
         "fourcc": "YUYV",
-        "label": "video8",
+        "label": "base",
         "sysfs_name": "Intel(R) RealSense(TM) Depth Camera 435i RGB",
     }
-    w0 = {"fourcc": "MJPG", "label": "video0", "sysfs_name": "USB Camera"}
-    w2 = {"fourcc": "MJPG", "label": "video2", "sysfs_name": "USB Camera"}
+    w0 = {"fourcc": "MJPG", "label": "left_wrist", "sysfs_name": "USB Camera"}
+    w2 = {"fourcc": "MJPG", "label": "right_wrist", "sysfs_name": "USB Camera"}
     found = [w0, w2, rs_dev]
     rs = _scan_role_defaults(rs_dev, found)
     rs_hw = _half_w(float(rs["fov_h_deg"]), float(rs["size_multiplier"]))

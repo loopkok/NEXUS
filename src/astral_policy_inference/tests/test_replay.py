@@ -85,7 +85,7 @@ class TestLoading(unittest.TestCase):
     def test_load_aligned_h5(self):
         schema = CollectSchema(
             arms=["left"], end_effector_left="gripper",
-            cameras=["video8"], dataset_fps=30,
+            cameras=["base"], dataset_fps=30,
         )
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "aligned_data.h5")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """真实数据推理正确性验证（py3.12 lerobot 环境，无 ROS）。
 
-从 ACT v3 数据集读真实 episode 的观测（observation.state + video8/video0 图像），
+从 ACT v3 数据集读真实 episode 的观测（observation.state + base/left_wrist 图像），
 喂给训练好的 ACT checkpoint，把模型预测的绝对动作与录制的 action 逐帧对比。
 
 验证点：
@@ -58,7 +58,7 @@ def load_episode(dataset_dir: str, episode_index: int, max_frames: int = 80, str
     # 视频文件按 chunk 合并了多段；episode 内帧号 t → 视频绝对帧号 = from_timestamp*fps + t
     video_files = {}
     video_offsets = {}
-    for cam in ("video8", "video0"):
+    for cam in ("base", "left_wrist"):
         vchunk = int(episodes[f"videos/observation.images.{cam}/chunk_index"][episode_index])
         vfile = int(episodes[f"videos/observation.images.{cam}/file_index"][episode_index])
         from_ts = float(episodes[f"videos/observation.images.{cam}/from_timestamp"][episode_index])
@@ -119,7 +119,7 @@ def main() -> int:
     back = InprocBackend(
         checkpoint_dir=args.checkpoint_dir,
         action_dim=args.action_dim,
-        image_keys={"video8": "video8", "video0": "video0"},
+        image_keys={"base": "base", "left_wrist": "left_wrist"},
         default_prompt=task or DEFAULT_TASK,
     )
     back.open()
