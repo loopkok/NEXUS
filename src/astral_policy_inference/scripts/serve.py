@@ -96,6 +96,18 @@ def _build_pi05_policy(args):
             "(run in VLA/openpi uv venv with PYTHONPATH=openpi/src): "
             f"{exc}"
         ) from exc
+    # 持久化 XLA 编译缓存（与训练侧同一目录，见 scripts/train.py）：换进程 / 换
+    # checkpoint 重启 serve 时，首轮推理可从磁盘复用已编译图，不必每次重编 2-5 分钟。
+    try:
+        import pathlib as _pathlib
+
+        import jax
+
+        jax.config.update(
+            "jax_compilation_cache_dir", str(_pathlib.Path("~/.cache/jax").expanduser())
+        )
+    except Exception:  # pragma: no cover - 缓存只是加速，失败不影响 serve
+        pass
     train_config = _config.get_config(args.policy_config)
     policy = policy_config.create_trained_policy(
         train_config,
@@ -115,6 +127,24 @@ def _infer_pi05(policy, request: dict) -> dict:
     if timing:
         response["server_timing"] = timing
     return response
+
+
+def _warmup_policy(policy, state_dim: int, camera_map: dict[str, str]) -> None:
+    """进程内预热：pi05 首轮推理要 XLA 编译（2-5 分钟），启动时先做一次 dummy
+    infer 把编译做掉，真机连上后第一个 chunk 不用干等。"""
+    import time
+
+    import numpy as np
+
+    req: dict = {
+        "observation/state": np.zeros(state_dim, dtype=np.float32),
+        "prompt": "warmup",
+    }
+    for slot in camera_map:
+        req[f"observation/camera/{slot}"] = np.zeros((224, 224, 3), dtype=np.uint8)
+    t0 = time.monotonic()
+    policy.infer(req)
+    print(f"serve[pi05]: warmup done in {time.monotonic() - t0:.1f}s", flush=True)
 
 
 # ------------------------------------------------------------ 协议层
@@ -178,6 +208,12 @@ def main() -> None:
     parser.add_argument("--action-dim", type=int, default=8, help="act 用")
     parser.add_argument("--policy-config", default="pi05_astral", help="pi05 用：openpi 训练配置名")
     parser.add_argument("--device", default=None, help="act 用：torch device")
+    parser.add_argument(
+        "--warmup",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="pi05 用：加载模型后先做一次 dummy 推理预热 XLA 编译（默认开；--no-warmup 关）",
+    )
     parser.add_argument("--default-prompt", default="")
     parser.add_argument(
         "--slot-map",
@@ -195,7 +231,14 @@ def main() -> None:
 
     print(f"serve[{args.model}]: loading checkpoint {args.checkpoint_dir} ...", flush=True)
     if args.model == "pi05":
+        from openpi.training import config as _config
+
+        train_config = _config.get_config(args.policy_config)
         policy = _build_pi05_policy(args)
+        if args.warmup:
+            _warmup_policy(
+                policy, args.action_dim, getattr(train_config.data, "camera_map", {})
+            )
         infer_fn = lambda req: _infer_pi05(policy, req)  # noqa: E731
         reset_fn = lambda: getattr(policy, "reset", lambda: None)()  # noqa: E731
     else:
