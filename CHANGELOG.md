@@ -2,6 +2,34 @@
 
 ## 2026-09-20
 
+**streamer `_device_to_index` 修复 + `_scan_spec` 不再用块 device 覆盖扫描值——修
+auto_scan 起崩（`ValueError: invalid literal for int() with base 10`）**——
+`quest3_video_streamer/streamer_node.py`。**动机**：base alias 改 by-path 后，重启 streamer
+在 `_build_sources→_scan_spec→_device_to_index` 崩（错误值就是块里的 by-id/by-path 路径）。
+**根因**：① `_scan_spec` 在 auto_scan 分支用 `_get_param(f"{label}.device", dev["device"])`
+让 yaml 块 device（by-path/by-id）**覆盖**扫描到的 `/dev/videoN`，违背"device 被扫描值取代"
+不变量；② `_device_to_index` 只认 `/dev/videoN` 或纯数字，遇到 v4l 符号路径直接 `int()` 崩。
+**做法**：`_scan_spec` 改用 `dev["device"]`（auto_scan 一律用扫描到的 /dev/videoN，块 device
+仅固定配置/兜底用）；`_device_to_index` 加 v4l symlink realpath 解析 + `-video-indexN` 后缀
+退化，纯数字/`/dev/videoN` 行为不变。**验证**：新增 `DeviceToIndexTests` 6 例（devnode/纯
+int/by-path 后缀/by-id 后缀/realpath 命中/非法抛错），test_label_aliases + test_quest_layout
+22 passed。**部署**：机器人侧同步后 colcon build + 重启 streamer。
+
+**base（realsense）alias 改 by-path 物理口位——修 ACT 推理"收不到 base 图、跑不了"**——
+`quest3_video_streamer/config/params.yaml`。**动机**：web 启动推理节点后 `collect/base` 0 帧、
+`gate_state configured` 只有 left_wrist/video6，节点只剩单路图 → 旧 ACT 少一路输入跑不了。
+**根因**：base 的 label_alias 用 **by-id 序列号** `254843065994-video-index0`，但 D435i 是
+复合 USB 设备（彩色+IR+depth 多接口），内核编 by-id 时 **index 串位**——实测 by-id 的
+video-index0 落到 `0:2.1:1.0` 的深度节点（`v4l2-ctl` 实锤 Z16 depth，非彩色），而真正的
+彩色（YUYV，`0:2.1:1.3`，/dev/video6）在 by-id 里**没有条目** → 序列号 alias 钉不上彩色，
+realsense 以内核名 video6 裸奔。**做法**：base 的 alias + base 块 device 改用 by-path
+`platform-3610000.usb-usb-0:2.1:1.3-video-index0`（彩色口位），与左右腕 USB 相机同策略；
+left_wrist/right_wrist 块 device 同步改 by-path（原 /dev/video0/video2 硬编码），right_wrist
+口位实机 scan 填 `0:1.3:1.0`（原占位 0:1.4 错）；docs/camera-label-semanticization.md §1/§7
+同步。**验证**：test_quest_layout 3 passed；yaml 解析 cameras=[base,left_wrist,right_wrist]、
+三块 device 均为 by-path。**部署**：机器人侧 git pull + colcon build quest3_video_streamer +
+重启 streamer → gate_state 应含 base。
+
 **驱动层诊断 JSONL 日志（`driver_log_file`，抓"电机抽一下"）**——`astral_robot_control`。
 **动机**：遥操/没遥操时臂/夹爪/头偶发"突然动一下"（含头电机抽），需要驱动层数据定位
 "谁先跳"（上游坏指令 vs driver 陈旧重发 vs 板卡/机械）。遥操 JSONL 只记录臂命令，

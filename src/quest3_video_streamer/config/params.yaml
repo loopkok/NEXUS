@@ -54,7 +54,7 @@ quest3_video_streamer:
 
     left_wrist:
       source: "webcam"
-      device: "/dev/video0"
+      device: "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.2:1.0-video-index0"
       topic: ""
       preset: "720p30"
       fov_h_deg: 60.0
@@ -67,7 +67,7 @@ quest3_video_streamer:
 
     right_wrist:
       source: "webcam"
-      device: "/dev/video2"
+      device: "/dev/v4l/by-path/platform-3610000.usb-usb-0:1.3:1.0-video-index0"
       topic: ""
       preset: "720p30"
       fov_h_deg: 60.0
@@ -80,10 +80,11 @@ quest3_video_streamer:
 
     # base（realsense 彩色）。每个相机**一个合并块**：auto_scan=true 时 label_aliases 按
     # 指纹钉 base 后，本块提供 preset/布局覆盖（device 被扫描值取代）；auto_scan=false 或
-    # 兜底时用固定 by-id 设备路径。
+    # 兜底时用固定 by-path 设备路径（by-id 对复合 D435i 不可靠——index 串位指向深度节点，
+    # 彩色节点无 by-id 条目，见下方 label_aliases 注释）。
     base:
       source: "v4l2"
-      device: "/dev/v4l/by-id/usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index0"
+      device: "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.3-video-index0"
       topic: ""
       preset: "1080p30"
       fov_h_deg: 69.0
@@ -121,17 +122,20 @@ quest3_video_streamer:
     # 里的 video8/video0 永远不用跟着内核编号变。
     #
     # 2026-09-18 启用（realsense 换口后内核编号 video8→video6）。**混合策略**：
-    #   * realsense（base）→ **by-id 序列号**：序列号唯一可靠，跟随设备——换口/内核重排
-    #     都还是它；只有换一台不同序列号的 realsense 才需改这行（届时按新 scan 填序列号）。
-    #     D435i 多节点：末尾 -video-index0 精确钉彩色（IR/深度是 index1-3），避免命中先扫到的非彩色。
+    #   * realsense（base）→ **by-path 物理口位**（2026-09-20 从 by-id 序列号改来，见下）：
+    #     D435i 是复合 USB 设备（彩色+IR+depth 多接口），内核把多接口节点编成 by-id 时
+    #     **index 会串位**——实测 by-id 的 video-index0 落到 0:2.1:1.0 的深度节点（scan 用
+    #     不了的 /dev/video2），而真正的彩色（YUYV，0:2.1:1.3）在 by-id 里**没有条目**。
+    #     结果 by-id 序列号 alias 钉不上彩色 → realsense 以内核名裸奔。by-id 序列号对这种
+    #     复合相机不可靠，只能按口位钉；换口后按实机 scan 重填这行。
     #   * USB 相机（左腕等）→ **by-path 物理口位**：廉价 USB 相机 by-id 序列号是假的
     #     （Generic_USB_Camera_200901010001 所有同款一样，再插同款只显示后插那台）→ 序列号
     #     不可靠，只能按端口钉；端口路径换口会变，但相机是固定角色的（左腕/右腕），那本来
     #     就要重配。
     label_aliases:
-      - "254843065994-video-index0=base"                      # base：realsense by-id 序列号+彩色index0
+      - "platform-3610000.usb-usb-0:2.1:1.3-video-index0=base"  # base：realsense 彩色（YUYV），by-path 口位+index0
       - "platform-3610000.usb-usb-0:2.2:1.0-video-index0=left_wrist"   # 左腕 USB：by-path 端口+index0
-      - "platform-3610000.usb-usb-0:1.4:1.0-video-index0=right_wrist"  # 右腕 USB：by-path 端口+index0
+      - "platform-3610000.usb-usb-0:1.3:1.0-video-index0=right_wrist"  # 右腕 USB：by-path 端口+index0（2026-09-20 实机 scan 填）
     # 注意：两个 USB 相机 sysfs 名都是 "WN Camera"（且 video0 无 by-id）→ 只能用 by-path 钉；
     # -video-index0 必须带（多节点相机不带 index 会命中错节点）。
     # 每个相机的 preset/布局等覆盖已并入上方同名命名块（合并，无重复键）。

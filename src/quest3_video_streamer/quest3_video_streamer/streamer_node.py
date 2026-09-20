@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import threading
 from typing import Any
 
@@ -80,11 +81,28 @@ def _build_one_source(node: Node, spec: dict[str, Any]) -> VideoSourceAdapter:
 
 
 def _device_to_index(device: Any) -> int:
-    """Accept '/dev/videoN' or an int and return the int index for cv2."""
+    """Accept '/dev/videoN', a v4l by-id/by-path symlink, or an int and return
+    the int index for cv2. 2026-09-20: resolve /dev/v4l/by-* symlinks — the
+    label blocks now pin devices by stable fingerprint (by-path), and feeding
+    those raw into int() crashed auto_scan (`ValueError: invalid literal`)."""
+    import re
+
     s = str(device)
     if s.startswith("/dev/video"):
         return int(s.replace("/dev/video", ""))
-    return int(s)
+    if s.startswith("/dev/v4l/"):
+        # by-id / by-path symlink -> real device node, then index
+        resolved = os.path.realpath(s)
+        if resolved.startswith("/dev/video"):
+            return int(resolved.replace("/dev/video", ""))
+        # Fall through: some hosts lack /dev/v4l symlinks, treat suffix index
+        # (…-video-index0) as the node number when it's the only hint.
+    m = re.search(r"video-index(\d+)$", s)
+    if m:
+        return int(m.group(1))
+    if s.isdigit():
+        return int(s)
+    raise ValueError(f"cannot map device {device!r} to a video index")
 
 
 def _build_sources(
@@ -230,7 +248,8 @@ def _scan_spec(
     force_mjpg = bool(
         _get_param(node, f"{label}.force_mjpg", bool(dev.get("force_mjpg", role["force_mjpg"])))
     )
-    device = str(_get_param(node, f"{label}.device", dev["device"]))
+    device = str(dev["device"])  # auto_scan 一律用扫描到的 /dev/videoN（块 device 只作
+    # 固定配置/兜底用；覆盖会让 by-path/by-id 路径进 _device_to_index 崩，见 2026-09-20）
     pos = _get_param(node, f"{label}.layout.position", None)
     distance = float(_get_param(node, f"{label}.layout.distance", 1.8))
     size_mult = float(

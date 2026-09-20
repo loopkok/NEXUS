@@ -9,11 +9,14 @@
 ```
 base         realsense D435i 主视角（第三视角，对齐参考，首位）
 left_wrist   左腕 USB 相机
-right_wrist  右腕 USB 相机（2026-09-18 起启用；右腕 alias 口位待实机 scan 填）
+right_wrist  右腕 USB 相机（2026-09-18 起启用；口位 0:1.3:1.0 已于 2026-09-20 实机 scan 填）
 ```
 
 - `quest3_video_streamer` 的 `label_aliases`（params.yaml）按**硬件指纹**把设备钉成语义名：
-  - realsense → **by-id 序列号 + `-video-index0`**（D435i 多节点，index0=彩色，换口不漂移；换机改序列号）；
+  - realsense → **by-path 物理口位 + `-video-index0`**（2026-09-20 从 by-id 改来）。D435i 是
+    复合 USB 设备（彩色+IR+depth 多接口），内核编 by-id 时 **index 串位**：实测 by-id 的
+    video-index0 落到 0:2.1:1.0 的深度节点（scan 用不了），而真正的彩色（YUYV，0:2.1:1.3）
+    在 by-id 里无条目 → by-id 序列号对复合相机不可靠，只能按口位钉；换口后按实机 scan 重填；
   - 左/右腕 USB → **by-path 物理口位**（廉价相机 by-id 序列号是假的，只能按端口钉）。
 - 因此 `data_collect.yaml` / `policy_inference.yaml` / openpi `config.py` 里的 label
   **永不需要跟随内核 videoN 编号变**。换口/重插/换机只需改 streamer 的 alias 规则。
@@ -92,9 +95,9 @@ colcon build --packages-select quest3_video_streamer astral_data_collect astral_
 
 ```yaml
 label_aliases:
-  - "254843065994-video-index0=base"            # realsense：换机改序列号
-  - "platform-3610000.usb-usb-0:2.2:1.0=left_wrist"   # 左腕：换口改 by-path
-  - "platform-3610000.usb-usb-<右腕口>=right_wrist"    # ⚠ 右腕口位待实机 scan 填
+  - "platform-3610000.usb-usb-0:2.1:1.3-video-index0=base"  # realsense：换口改 by-path（彩色口位）
+  - "platform-3610000.usb-usb-0:2.2:1.0-video-index0=left_wrist"   # 左腕：换口改 by-path
+  - "platform-3610000.usb-usb-0:1.3:1.0-video-index0=right_wrist"  # 右腕：换口改 by-path（实机 scan 填）
 ```
 
 改完重启 streamer 即可；下游 data_collect / openpi / policy_inference 的 label 引用零改动。

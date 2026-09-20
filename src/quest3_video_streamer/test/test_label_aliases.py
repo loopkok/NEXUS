@@ -11,6 +11,52 @@ from unittest import mock
 sys.path.insert(0, "src")
 
 from quest3_video_streamer import scan as scan_mod
+from quest3_video_streamer import streamer_node as sn
+
+
+class DeviceToIndexTests(unittest.TestCase):
+    """_device_to_index：auto_scan 时块 device 可能是 by-path/by-id 路径，
+    必须还原成 video 索引（2026-09-20 崩：by-path 进 int() ValueError）。"""
+
+    def test_video_devnode(self):
+        self.assertEqual(sn._device_to_index("/dev/video6"), 6)
+        self.assertEqual(sn._device_to_index("/dev/video0"), 0)
+
+    def test_plain_int(self):
+        self.assertEqual(sn._device_to_index(6), 6)
+        self.assertEqual(sn._device_to_index("6"), 6)
+
+    def test_by_path_suffix(self):
+        # 无 /dev/v4l symlink 的主机：退化用 -video-indexN 后缀
+        self.assertEqual(
+            sn._device_to_index(
+                "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.3-video-index0"
+            ),
+            0,
+        )
+
+    def test_by_id_suffix(self):
+        self.assertEqual(
+            sn._device_to_index(
+                "/dev/v4l/by-id/usb-Intel_R_RealSense_TM_Depth_Camera_435i_254843065994-video-index0"
+            ),
+            0,
+        )
+
+    def test_resolves_symlink_when_present(self):
+        # by-path symlink 存在时走 realpath → /dev/videoN
+        with mock.patch("quest3_video_streamer.streamer_node.os.path.realpath",
+                        return_value="/dev/video6"):
+            self.assertEqual(
+                sn._device_to_index(
+                    "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.3-video-index0"
+                ),
+                6,
+            )
+
+    def test_garbage_raises(self):
+        with self.assertRaises(ValueError):
+            sn._device_to_index("not-a-device")
 
 
 def _dev(label, fingerprints, fourcc="YUYV", score=100):
