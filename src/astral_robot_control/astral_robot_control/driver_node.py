@@ -71,6 +71,7 @@ from astral_robot_control.joint_layout import (
     pack_named_positions,
     split_full_q,
 )
+from astral_robot_control.driver_log import DriverJsonlLog, spike_mrad
 
 
 def _sensor_data_qos() -> QoSProfile:
@@ -102,6 +103,11 @@ class AstralRobotDriverNode(Node):
         self.declare_parameter("command_timeout_s", 1.5)
         self.declare_parameter("state_publish_rate", 50.0)
         self.declare_parameter("control_rate", 50.0)
+        # 驱动层诊断 JSONL 日志（空=关）：cmd/send/state/srv/spike 记录，抓
+        # "电机抽一下"（谁先跳、是否陈旧重发/服务重播种触发）。见 driver_log.py。
+        self.declare_parameter("driver_log_file", "")
+        # 命令单拍跳变告警阈值（mrad）：send/state 每拍 |dq| 超此值落一条 spike。
+        self.declare_parameter("driver_spike_mrad", 30.0)
 
         # --- topic namespaces (override if needed) ---
         self.declare_parameter("left_arm_ns", LEFT_ARM_NS)
@@ -249,6 +255,21 @@ class AstralRobotDriverNode(Node):
         self._use_full_priority = False
         self._grip_rad: dict = {"left": None, "right": None}
 
+        # 驱动层诊断 JSONL 日志（空=关）+ 突跳检测状态
+        self._dlog = DriverJsonlLog(
+            str(self.get_parameter("driver_log_file").value or "")
+        )
+        self._spike_thresh = float(self.get_parameter("driver_spike_mrad").value)
+        self._last_sent_left = None
+        self._last_sent_right = None
+        self._last_sent_head = None
+        self._last_state_q = None
+        if self._dlog.enabled:
+            self.get_logger().info(
+                f"[driver] jsonl log -> {self._dlog.path} "
+                f"(spike>{self._spike_thresh:.0f}mrad)"
+            )
+
         self._robot = None
         self._connect_sdk()
 
@@ -338,9 +359,24 @@ class AstralRobotDriverNode(Node):
                     self.get_logger().warn(f"disconnect: {exc}")
                 self._robot = None
         finally:
+            if getattr(self, "_dlog", None) is not None:
+                self._dlog.close()
             return super().destroy_node()
 
     # ------------------------------------------------------------------ cmds
+    def _log_cmd(self, topic: str, q: List[float]) -> None:
+        """kind=cmd：记录谁往哪发了一条什么指令（排"上游谁发坏指令"）。"""
+        if not self._dlog.enabled:
+            return
+        self._dlog.write(
+            {
+                "kind": "cmd",
+                "t": time.time(),
+                "topic": topic,
+                "q": [float(v) for v in q],
+            }
+        )
+
     def _on_left_cmd(self, msg: JointState) -> None:
         q = pack_named_positions(msg.name, msg.position, LEFT_ARM_JOINT_NAMES)
         if len(q) != NUM_ARM_JOINTS:
@@ -353,6 +389,7 @@ class AstralRobotDriverNode(Node):
             self._left_cmd = q
             self._left_cmd_t = time.monotonic()
             self._use_full_priority = False
+        self._log_cmd(self._left_cmd_topic, q)
 
     def _on_right_cmd(self, msg: JointState) -> None:
         q = pack_named_positions(msg.name, msg.position, RIGHT_ARM_JOINT_NAMES)
@@ -366,6 +403,7 @@ class AstralRobotDriverNode(Node):
             self._right_cmd = q
             self._right_cmd_t = time.monotonic()
             self._use_full_priority = False
+        self._log_cmd(self._right_cmd_topic, q)
 
     def _on_full_cmd(self, msg: JointState) -> None:
         q = pack_named_positions(msg.name, msg.position, ROBOT_JOINT_NAMES)
@@ -379,6 +417,7 @@ class AstralRobotDriverNode(Node):
             self._full_cmd = q
             self._full_cmd_t = time.monotonic()
             self._use_full_priority = True
+        self._log_cmd(self._full_cmd_topic, q)
 
     def _on_head_cmd(self, msg: JointState) -> None:
         q = pack_named_positions(msg.name, msg.position, HEAD_JOINT_NAMES)
@@ -391,10 +430,20 @@ class AstralRobotDriverNode(Node):
         with self._lock:
             self._head_cmd = q
             self._head_cmd_t = time.monotonic()
+        self._log_cmd(self._head_cmd_topic, q)
 
     def _set_grip_rad(self, side: str, rad: float) -> None:
         with self._lock:
             self._grip_rad[side] = float(rad)
+        if self._dlog.enabled:
+            self._dlog.write(
+                {
+                    "kind": "cmd",
+                    "t": time.time(),
+                    "topic": f"{side}_gripper",
+                    "q": [float(rad)],
+                }
+            )
 
     def _on_grip_js(self, side: str, msg: JointState) -> None:
         # 机械夹爪：话题名 left_gripper/right_gripper → CMD 0x97/0x98
@@ -474,6 +523,7 @@ class AstralRobotDriverNode(Node):
         once motion mode returns to POSITION, or it overrides the explicit target
         (zero / hold) and the arm snaps back to the pre-damping pose.
         """
+        self._log_srv("cache_clear")
         with self._lock:
             self._left_cmd = None
             self._right_cmd = None
@@ -502,6 +552,10 @@ class AstralRobotDriverNode(Node):
         if q is None:
             return
         left, right, _waist, _head = split_full_q(q)
+        self._log_srv("seed_from_current", detail=json.dumps(
+            {"left": [round(float(x), 4) for x in left],
+             "right": [round(float(x), 4) for x in right]}
+        ))
         try:
             self._robot.move_arm_js(left, right)
         except Exception as exc:  # noqa: BLE001
@@ -509,6 +563,60 @@ class AstralRobotDriverNode(Node):
                 f"seed target from current failed: {exc}",
                 throttle_duration_sec=2.0,
             )
+
+    def _log_send(
+        self,
+        left: Optional[List[float]],
+        right: Optional[List[float]],
+        head: Optional[List[float]],
+        grip: Optional[dict],
+        left_fresh: bool = False,
+        right_fresh: bool = False,
+    ) -> None:
+        """kind=send + spike：记录本拍实际下发内容，命令单拍跳变超阈值落 spike。
+
+        谁先跳的判断依据：cmd（上游到达）→ send（driver 发板卡）→ state（实测）。
+        若 send 突跳而无对应 cmd 到达 = driver 陈旧重发/内部产生；state 突跳而 send
+        无 = 板卡/机械。
+        """
+        if not self._dlog.enabled:
+            return
+        rec = {
+            "kind": "send",
+            "t": time.time(),
+            "left": None if left is None else [round(float(v), 4) for v in left],
+            "right": None if right is None else [round(float(v), 4) for v in right],
+            "head": None if head is None else [round(float(v), 4) for v in head],
+            "grip": None if grip is None else {k: round(float(v), 4) for k, v in grip.items() if v is not None},
+            "left_fresh": bool(left_fresh),
+            "right_fresh": bool(right_fresh),
+        }
+        self._dlog.write(rec)
+        th = self._spike_thresh
+        for name, q, prev in (
+            ("left", left, self._last_sent_left),
+            ("right", right, self._last_sent_right),
+            ("head", head, self._last_sent_head),
+        ):
+            sp = spike_mrad(q, prev, th) if q is not None else 0.0
+            if sp > 0.0:
+                self._dlog.write(
+                    {
+                        "kind": "spike",
+                        "t": time.time(),
+                        "scope": "cmd",
+                        "part": name,
+                        "jump_mrad": round(sp, 1),
+                        "before": None if prev is None else [round(float(v), 4) for v in prev],
+                        "after": None if q is None else [round(float(v), 4) for v in q],
+                    }
+                )
+        if left is not None:
+            self._last_sent_left = list(left)
+        if right is not None:
+            self._last_sent_right = list(right)
+        if head is not None:
+            self._last_sent_head = list(head)
 
     def _on_control_timer(self) -> None:
         now = time.monotonic()
@@ -520,11 +628,14 @@ class AstralRobotDriverNode(Node):
             right = None if self._right_cmd is None else list(self._right_cmd)
             left_t = self._left_cmd_t
             right_t = self._right_cmd_t
+            head = None if self._head_cmd is None else list(self._head_cmd)
+            grip = dict(self._grip_rad)
 
         if use_full and full is not None:
             if self.command_timeout_s <= 0 or (now - full_t) <= self.command_timeout_s:
                 self._send_full(full)
             self._send_grippers()
+            self._log_send(left, right, head, grip, left is not None, right is not None)
             return
 
         # Arm-only path: need at least one fresh side. 缺侧**不补零**下发——
@@ -555,6 +666,14 @@ class AstralRobotDriverNode(Node):
 
         self._send_head()
         self._send_grippers()
+        self._log_send(
+            left if left_fresh else None,
+            right if right_fresh else None,
+            head,
+            grip,
+            left_fresh,
+            right_fresh,
+        )
 
     def _send_arms(self, left: List[float], right: List[float]) -> None:
         if self.dry_run:
@@ -685,8 +804,45 @@ class AstralRobotDriverNode(Node):
         ]
         self._pub_right_grip.publish(msg_gr)
 
+        # jsonl：实测关节（物理臂）+ 实测突跳检测
+        if self._dlog.enabled:
+            self._dlog.write(
+                {
+                    "kind": "state",
+                    "t": time.time(),
+                    "q": [round(float(v), 4) for v in q],
+                }
+            )
+            sp = spike_mrad(np.asarray(q, dtype=float), self._last_state_q, self._spike_thresh)
+            if sp > 0.0:
+                self._dlog.write(
+                    {
+                        "kind": "spike",
+                        "t": time.time(),
+                        "scope": "state",
+                        "jump_mrad": round(sp, 1),
+                        "before": (
+                            None if self._last_state_q is None
+                            else [round(float(v), 4) for v in self._last_state_q]
+                        ),
+                        "after": [round(float(v), 4) for v in q],
+                    }
+                )
+            self._last_state_q = list(q)
+
     # ------------------------------------------------------------------ srvs
+    def _log_srv(self, srv: str, detail: str = "") -> None:
+        """kind=srv：服务调用意图 + 关键动作（cache 清/重播种/运动模式切换）。
+        这些是"没遥操也抽"的高危事件——与 spike 时间对齐即可定位。
+        """
+        if not self._dlog.enabled:
+            return
+        self._dlog.write(
+            {"kind": "srv", "t": time.time(), "srv": srv, "detail": detail}
+        )
+
     def _srv_ready(self, _req, res):
+        self._log_srv("ready")
         if self.dry_run:
             res.success = True
             res.message = "dry_run: skipped one_click_ready"
@@ -728,6 +884,7 @@ class AstralRobotDriverNode(Node):
         上常不置位（SDK demo 同款"未确认仍继续"），只要板端在线（obs 帧在流）
         就算下发成功——命令已送达，是否观测到电源位不影响实际已上电。
         """
+        self._log_srv("enable")
         if self.dry_run:
             res.success = True
             res.message = "dry_run: skipped enable"
@@ -772,6 +929,7 @@ class AstralRobotDriverNode(Node):
         return res
 
     def _srv_home(self, _req, res):
+        self._log_srv("home")
         if self.dry_run:
             res.success = True
             res.message = "dry_run: skipped home"
@@ -808,6 +966,7 @@ class AstralRobotDriverNode(Node):
         return res
 
     def _srv_estop(self, _req, res):
+        self._log_srv("estop")
         if self.dry_run:
             res.success = True
             res.message = "dry_run: skipped estop"
@@ -834,6 +993,7 @@ class AstralRobotDriverNode(Node):
         典型用法：遥操停止后臂保持在遥操末位姿，点此按钮后可手动把臂拖回 home。
         需机器人已上电（work+enable）；若已下电需先 ~/ready。
         """
+        self._log_srv("damping")
         if self.dry_run:
             res.success = True
             res.message = "dry_run: skipped damping"
@@ -859,6 +1019,7 @@ class AstralRobotDriverNode(Node):
 
         典型用法：阻尼释放拖回 home 后点此按钮，臂在当前位置保持（不再可拖拽）。
         """
+        self._log_srv("position")
         if self.dry_run:
             res.success = True
             res.message = "dry_run: skipped position"

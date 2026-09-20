@@ -54,6 +54,12 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 description="call one_click_ready on startup",
             ),
+            DeclareLaunchArgument(
+                "driver_log_file",
+                default_value="",
+                description="empty → off. Non-empty JSONL path for the driver "
+                "diagnostics log (cmd/send/state/srv/spike records) — 抓电机抽",
+            ),
             Node(
                 package="astral_robot_control",
                 executable="astral_robot_driver",
@@ -74,6 +80,7 @@ def generate_launch_description() -> LaunchDescription:
                         "auto_ready": ParameterValue(
                             LaunchConfiguration("auto_ready"), value_type=bool
                         ),
+                        "driver_log_file": LaunchConfiguration("driver_log_file"),
                     },
                 ],
             ),

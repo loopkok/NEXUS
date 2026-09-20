@@ -1,5 +1,34 @@
 # Changelog（astral_ws）
 
+## 2026-09-20
+
+**驱动层诊断 JSONL 日志（`driver_log_file`，抓"电机抽一下"）**——`astral_robot_control`。
+**动机**：遥操/没遥操时臂/夹爪/头偶发"突然动一下"（含头电机抽），需要驱动层数据定位
+"谁先跳"（上游坏指令 vs driver 陈旧重发 vs 板卡/机械）。遥操 JSONL 只记录臂命令，
+覆盖不到夹爪/头/非遥操时段。**做法**：driver 节点新参数 `driver_log_file`（空=关）+ 
+`driver_spike_mrad`（默认 30），照遥操/推理模式写 JSONL，`kind` 区分——
+`cmd`（每个到达的 joint_commands 臂/全/头/夹爪，排上游）、`send`（每控制拍实际下发+
+fresh 标志，排陈旧重发）、`state`（实测关节）、`srv`（6 服务 + cache_clear +
+seed_from_current，运动模式切换/重播种=抽动高危点）、`spike`（命令/实测单拍跳变超阈值
+落一条，含跳前跳后值）。**launch 透传**：`astral_drivers`/`dual_arm`/`full_teleop` 加
+`driver_log_file`；**log_dir 模式自动派生 `{run_dir}/driver.jsonl`**——web 勾选「记录遥操
+日志」即自动带上驱动层日志（web 无需改）。新 `test_driver_log.py`（DriverJsonlLog +
+spike_mrad 纯单测）。**验证**：节点 dry_run 冒烟——喂慢速小步+一次 0.3rad 突跳，
+cmd×6/send×6/state×1/srv×1/spike×1，spike 正确捕获 298mrad（含 before/after）。**用法**：
+`ros2 launch astral_robot_control astral_drivers.launch.py driver_log_file:=/tmp/driver.jsonl`
+或 web 勾选记录遥操日志。定位方法：spike 时间对齐 cmd/send/srv。
+
+
+**serve.py pi05 分支加进程内 XLA 预热 + 磁盘编译缓存**——`astral_policy_inference`。
+**动机**：pi05 首轮推理要 XLA 编译（2-5 分钟），此前在 serve 进程外单独 warmup 无法加速
+serve 本身（编译结果随进程退出丢失）；换 checkpoint/重启 serve 每次都重编。**做法**：①
+`_warmup_policy`（加载模型后 dummy infer 做掉编译，`--warmup` 默认开 / `--no-warmup` 关）；
+② `jax_compilation_cache_dir` 指到 `~/.cache/jax`（与训练侧同目录，跨进程复用已编译图）。
+**验证**：语法 + fake-policy 单测（state_dim=8、2 相机槽、推理 1 次）；训练主机真实
+checkpoint `create_trained_policy` + infer 通过（warmup ok）。部署要求不变：pi05 serve 需
+≥32GB RAM 机器（采集机 15GB 装不下），`POLICY_CONFIG` 必须=训练配置名（LoRA 用
+`pi05_astral_lora`），`camera_image_size`=224。
+
 ## 2026-09-18
 
 **`repair_aligned.py` 相机名归一化——修复 camera 迁移遗留的 meta 不一致**——

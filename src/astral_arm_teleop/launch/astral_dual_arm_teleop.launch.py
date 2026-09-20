@@ -91,10 +91,14 @@ def _launch_setup(context, *args, **kwargs):
     # （不再重复写同一个 /tmp 文件、重启即丢）。显式 teleop_log_file 优先于 log_dir。
     tlog = _opt(context, "teleop_log_file")
     log_dir = _opt(context, "log_dir")
+    driver_log = _opt(context, "driver_log_file")
     if not tlog and log_dir:
         run_dir = run_log_dir(log_dir, _opt(context, "log_tag"))
         if run_dir:
             tlog = os.path.join(run_dir, "teleop_teleop.jsonl")
+            # 驱动层日志同运行目录（抓"电机抽"：cmd/send/state/srv/spike）
+            if not driver_log:
+                driver_log = os.path.join(run_dir, "driver.jsonl")
 
     mocap_extra = {"arm_side": arm_side}
     protocol = _opt(context, "protocol")
@@ -168,6 +172,7 @@ def _launch_setup(context, *args, **kwargs):
             launch_arguments={
                 "dry_run": LaunchConfiguration("dry_run"),
                 "control_board_ip": LaunchConfiguration("control_board_ip"),
+                "driver_log_file": driver_log,
             }.items(),
         )
     )
@@ -233,6 +238,15 @@ def generate_launch_description() -> LaunchDescription:
                     "empty → off (or log_dir). Non-empty shared base path → per-side "
                     "JSONL diagnostics log (loop/wrist/state/body/metrics records), "
                     "e.g. /tmp/teleop_teleop.jsonl → ..._left/_right.jsonl."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "driver_log_file",
+                default_value="",
+                description=(
+                    "empty → off (or log_dir). Non-empty JSONL path for the driver "
+                    "diagnostics log (cmd/send/state/srv/spike records — 抓电机抽). "
+                    "log_dir mode derives {run_dir}/driver.jsonl automatically."
                 ),
             ),
             DeclareLaunchArgument(

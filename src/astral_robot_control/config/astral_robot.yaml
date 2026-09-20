@@ -43,6 +43,11 @@ astral_robot_driver:
     dry_run: false
     enable_full_body_cmd: true
     command_timeout_s: 1.5
+    # 驱动层诊断 JSONL 日志（空=关）：cmd/send/state/srv/spike 记录，抓"电机抽一下"
+    # （谁先跳、是否陈旧重发/服务重播种触发）。web 勾选「记录遥操日志」时经
+    # log_dir 自动落 {run_dir}/driver.jsonl；也可显式 driver_log_file:= 指定。
+    driver_log_file: ""
+    driver_spike_mrad: 30.0  # 命令/实测单拍跳变超此值(mrad)落一条 spike
     left_arm_ns: "left_arm"
     right_arm_ns: "right_arm"
     astral_ns: "astral"

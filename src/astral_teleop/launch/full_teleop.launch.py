@@ -195,6 +195,7 @@ def _setup(context, *args, **kwargs):
             "teleop_log_file": _opt(context, "teleop_log_file"),
             "log_dir": _opt(context, "log_dir"),
             "log_tag": _opt(context, "log_tag"),
+            "driver_log_file": _opt(context, "driver_log_file"),
         }.items(),
     )
 
@@ -403,6 +404,15 @@ def generate_launch_description() -> LaunchDescription:
                     "empty → off. Non-empty shared base path → per-side JSONL "
                     "diagnostics log (loop/wrist/state/body/metrics records), "
                     "e.g. /tmp/teleop_teleop.jsonl → ..._left/_right.jsonl."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "driver_log_file",
+                default_value="",
+                description=(
+                    "empty → off (or log_dir). Non-empty JSONL path for the driver "
+                    "diagnostics log (cmd/send/state/srv/spike records — 抓电机抽). "
+                    "log_dir mode derives {run_dir}/driver.jsonl automatically."
                 ),
             ),
             DeclareLaunchArgument(

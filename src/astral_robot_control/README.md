@@ -108,6 +108,24 @@ ros2 topic echo /left_arm/joint_states --once
 
 见 `config/astral_robot.yaml`。常用：`control_board_ip`、`local_port`、`dry_run`、`auto_ready`、`obs_hz` / `ctrl_hz`（板卡 SESSION）、`control_rate` / `state_publish_rate`（ROS 定时器；建议与板卡同档）。yaml 默认 **100 Hz**（遥操 IK 150 Hz；UDP 稳可再升到 150）。`lpf_enable` / `lpf_alpha` 经 SDK `set_lpf` 写 SESSION 目标低通（connect / `~/ready` 后下发；`one_click_ready` 进 WORK 可能重置，故每次 ready 会重写）。夹爪开合角度在此配置：`left/right_gripper_open_rad`（当前 **2.5** 实测全开 / `closed_rad` 0.0 合拢；若开到最大又弹回说明超机械行程，回调 ~2.0）——遥操侧（pinch/trigger）只发 0..1 闭合比，rad 以此处为唯一权威。上电瞬态说明：`one_click_ready` 会把夹爪归零(0)，遥操第一条指令随即开到 open_rad，看起来像"启动抽一下"，属正常。
 
+## 驱动层诊断日志（`driver_log_file`）
+
+排"电机抽一下"（遥操/没遥操时臂/夹爪/头偶发突动）用。参数 `driver_log_file`（空=关）+ `driver_spike_mrad`（默认 30）。JSONL `kind` 区分：
+
+| kind | 触发 | 用途 |
+|---|---|---|
+| `cmd` | 每个到达的 joint_commands（臂/全/头/夹爪） | 排"上游谁发坏指令" |
+| `send` | 每控制拍实际下发 + fresh 标志 | 排"driver 陈旧重发" |
+| `state` | 每实测关节发布 | 物理臂实际位置 |
+| `srv` | 6 服务 + cache_clear + seed_from_current | 运动模式切换/重播种=抽动高危点 |
+| `spike` | 命令/实测单拍跳变 > 阈值 | 电机"抽一下"直接记录（含跳前/跳后值） |
+
+```bash
+ros2 launch astral_robot_control astral_drivers.launch.py driver_log_file:=/tmp/driver.jsonl
+# web 勾选「记录遥操日志」→ log_dir 模式自动落 {run_dir}/driver.jsonl
+# 定位：spike 时间对齐 cmd（上游到）/ send（driver 发）/ srv（服务调用）
+```
+
 ## 与遥操
 
 全链路见 [`astral_arm_teleop`](../astral_arm_teleop/README.md)：
