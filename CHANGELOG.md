@@ -57,6 +57,12 @@ checkpoint `create_trained_policy` + infer 通过（warmup ok）。部署要求�
 ≥32GB RAM 机器（采集机 15GB 装不下），`POLICY_CONFIG` 必须=训练配置名（LoRA 用
 `pi05_astral_lora`），`camera_image_size`=224。
 
+**serve.py 加 `--capture-dir` 诊断捕获**——把每次 pi05 推理的输入图像（base/left_wrist，
+每 30 次存 ~1Hz）与 state/prompt（meta.json）+ 输出首行动作（actions.jsonl）落盘。**动机**：
+pi05 真机推理"末端抓向侧边"（肩关节 j1 z=-3.0 / j2 z=+2.3 显著偏出示范抓取分布），模型
+离线复现示范 MAE 0.0028 正常、serve 配置正确——需要实时输入帧对比训练帧定位视图不匹配。
+**验证**：fake-policy 单测（每 30 次存图、actions 全量、格式正确）。已 scp 到训练主机。
+
 ## 2026-09-18
 
 **`repair_aligned.py` 相机名归一化——修复 camera 迁移遗留的 meta 不一致**——

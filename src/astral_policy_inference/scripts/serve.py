@@ -47,6 +47,53 @@ from astral_policy_inference.image_codec import normalize_request_images
 
 _CONNECTIONS = 0  # 连接计数：观测断线/重连频率
 
+# ---- pi05 诊断捕获：把每次推理的输入(图像/state/prompt)与输出首行动作落盘 ----
+_CAPTURE_DIR = None  # 非空时启用（--capture-dir）
+_CAPTURE_N = 0
+
+
+def _maybe_capture(request: dict, response: dict) -> None:
+    """每 30 次推理存一次输入图像/state（~1Hz），每次存首行动作到 actions.jsonl。"""
+    global _CAPTURE_DIR, _CAPTURE_N
+    if not _CAPTURE_DIR:
+        return
+    _CAPTURE_N += 1
+    n = _CAPTURE_N
+    if n % 30 == 1:
+        import json
+        import os
+
+        import numpy as np
+
+        for slot in ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb"):
+            img = request.get(f"observation/camera/{slot}")
+            if img is not None:
+                np.save(
+                    os.path.join(_CAPTURE_DIR, f"req{n:06d}_{slot}.npy"),
+                    np.asarray(img),
+                )
+        with open(os.path.join(_CAPTURE_DIR, f"req{n:06d}_meta.json"), "w") as f:
+            json.dump(
+                {
+                    "req": n,
+                    "state": [float(x) for x in request.get("observation/state", [])],
+                    "prompt": request.get("prompt", ""),
+                },
+                f,
+            )
+    actions = response.get("actions")
+    if actions is not None:
+        import json
+        import os
+
+        import numpy as np
+
+        with open(os.path.join(_CAPTURE_DIR, "actions.jsonl"), "a") as f:
+            f.write(
+                json.dumps({"req": n, "action0": [float(x) for x in np.asarray(actions)[0]]})
+                + "\n"
+            )
+
 
 # ------------------------------------------------------------ 推理适配
 
@@ -126,6 +173,7 @@ def _infer_pi05(policy, request: dict) -> dict:
     timing = resp.get("policy_timing")
     if timing:
         response["server_timing"] = timing
+    _maybe_capture(request, response)
     return response
 
 
@@ -214,6 +262,11 @@ def main() -> None:
         default=True,
         help="pi05 用：加载模型后先做一次 dummy 推理预热 XLA 编译（默认开；--no-warmup 关）",
     )
+    parser.add_argument(
+        "--capture-dir",
+        default="",
+        help="pi05 诊断：把每次推理的输入图像(state/图像)与输出首行动作落盘到该目录（每 30 次存图）",
+    )
     parser.add_argument("--default-prompt", default="")
     parser.add_argument(
         "--slot-map",
@@ -228,6 +281,14 @@ def main() -> None:
         args.slot_map = {str(k): str(v) for k, v in json.loads(args.slot_map).items()}
     except json.JSONDecodeError as exc:
         parser.error(f"--slot-map must be JSON object: {exc}")
+
+    if args.capture_dir:
+        import os
+
+        global _CAPTURE_DIR
+        _CAPTURE_DIR = args.capture_dir
+        os.makedirs(_CAPTURE_DIR, exist_ok=True)
+        print(f"serve: 诊断捕获开启 → {_CAPTURE_DIR}", flush=True)
 
     print(f"serve[{args.model}]: loading checkpoint {args.checkpoint_dir} ...", flush=True)
     if args.model == "pi05":
