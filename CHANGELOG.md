@@ -2,6 +2,16 @@
 
 ## 2026-09-21
 
+**修复 Web 启动推理节点后“开始策略”偶发无反应的 DDS 发现竞态**——
+`astral_web_monitor`。**根因**：`/policy_inference/cmd` 有意采用 VOLATILE QoS，但 Web 在启动节点后
+立即单次 publish，不等待订阅者发现，并无条件向前端返回成功；若用户点得早，命令会静默丢失。
+**做法**：保持 VOLATILE（禁止旧 `policy` 在节点重启后被重放而自动运动），发送前最多等待 2 秒
+直到 publisher 发现订阅者；超时返回 503 而非假成功；前端在 `/policy_inference/state` 离线时禁用
+策略控制按钮。新增 2 例测试覆盖“发现后只发一次”和“无订阅者不发送/返回失败”。同时分析
+`inference_test_logs/inference/tetsA`：POLICY 的 211 tick 中 58 次均因 `image:left_wrist` stale
+被 gate 拒绝，joint/base 全程 fresh、engine 未耗尽；本轮卡顿及最终自动暂停已定责到左腕图像流
+间歇与 `image_required=true` 的组合，而不是 GPU 推理速度。
+
 **推理控制卡顿增加逐 tick 可归因日志 `pi_control.jsonl`**——`astral_policy_inference/node.py`
 + launch/config/tests/README。**动机**：现有 `pi_cmds.jsonl` 只记录新 target，无法区分 0.1～0.9s
 指令空档究竟是 joint state 超过 `obs_timeout_s`、`_state_ok()` 静默拒绝、ROS timer/callback

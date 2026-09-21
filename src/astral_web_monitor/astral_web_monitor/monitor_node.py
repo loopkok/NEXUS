@@ -401,8 +401,22 @@ class MonitorNode(Node):
                 self._pi_state = data
                 self._pi_state_ts = time.time()
 
-    def publish_pi_cmd(self, cmd: str) -> None:
+    def publish_pi_cmd(
+        self, cmd: str, timeout_s: float = 2.0, poll_s: float = 0.02
+    ) -> bool:
+        """Publish a volatile policy command only after DDS finds a subscriber.
+
+        A one-shot command published immediately after the web lane starts the
+        policy node is otherwise silently lost: command QoS must remain volatile
+        so a stale ``policy`` command cannot auto-start motion after a restart.
+        """
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while self._pub_pi_cmd.get_subscription_count() < 1:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(max(0.001, poll_s))
         self._pub_pi_cmd.publish(String(data=cmd))
+        return True
 
     def publish_pi_task(self, text: str) -> None:
         self._pub_pi_task.publish(String(data=text))

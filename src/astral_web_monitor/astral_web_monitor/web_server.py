@@ -837,7 +837,15 @@ async def infer_cmd(req: InferCmdRequest) -> ApiEnvelope:
             status_code=400,
             detail=f"未知推理命令 {cmd!r}，可选 {config.PI_COMMANDS}（或 playback:<源>）",
         )
-    node.publish_pi_cmd(cmd)
+    published = await asyncio.to_thread(node.publish_pi_cmd, cmd)
+    if not published:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "推理命令未发送：2 秒内未发现 /policy_inference/cmd 订阅者；"
+                "请等待推理节点状态显示在线后重试"
+            ),
+        )
     return ApiEnvelope(ok=True, message=f"已发送推理命令: {cmd}")
 
 

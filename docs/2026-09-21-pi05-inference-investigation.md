@@ -328,6 +328,34 @@ mute_cameras: "[]"
 本轮首先回答卡顿来自 `state_rejected`、timer/executor 延迟、callback 内部阻塞，还是
 `resend_last`，并作为相机实验的行为基线。
 
+#### A 轮结果：`inference_test_logs/inference/tetsA`
+
+本轮三份日志已经能够定责。策略从 `IDLE` 进入 `POLICY` 后运行约 7.38 秒，共经历 211 个
+控制 tick：153 次正常发出新 target，58 次 `state_rejected`。58 次拒绝的 `missing` 全部是
+`image:left_wrist`；base 图和 joint state 在全部 211 个 tick 中均为 fresh。左腕图像至少出现
+三段超过 `obs_timeout_s=1.0` 的间歇，第一次约在策略开始后 0.97 秒越过门限，最后一次从约
+6.39 秒持续到本轮结束，并触发超过 `obs_stale_stop_s` 后自动进入 `POLICY_PAUSED`。
+
+因此，本轮肉眼观察到的间歇/卡顿主要不是模型推理或 action queue 见底，而是左腕相机流呈
+突发式到达，配合 `image_required=true` 使控制 tick 被 freshness gate 拒绝。证据如下：
+
+- `joint`：211/211 fresh；`base`：211/211 fresh；`left_wrist`：153 fresh、58 stale；
+- engine 在结束时仍有约 47 行 remaining，策略阶段没有 `engine_no_row`；
+- 服务端 infer 约 6.7 ms，7 个 plan 均正常完成；
+- timer 间隔 p50 约 33.9 ms、p95 约 46.4 ms；仅策略首 tick 有一次约 182.5 ms callback，
+  会造成一次启动顿挫，但解释不了反复停顿和最终自动暂停；
+- 日志中的 427 次 `resend_last` 均发生在自动暂停之后，原因是 `policy_paused`，不是策略运行时
+  队列耗尽。
+
+本轮还暴露了独立的 Web 控制竞态：Web 启动推理节点后立即点击“开始策略”时，节点可保持
+`IDLE` 约 30 秒；终端向同一话题发送命令后才进入 `POLICY`。原 Web 实现对 VOLATILE 命令只
+发布一次，未等待 DDS 发现订阅者，却立即向页面返回成功，和该现象完全一致。现已保持
+VOLATILE 安全语义（避免重启后重放旧 `policy` 自动运动），改为发送前最多等待 2 秒发现订阅者；
+未发现则返回 503，前端在推理状态离线时禁用控制按钮。
+
+这份日志只能判断控制连续性，不能单凭 action/state JSONL 判断抓取落点是否改善；方向性抓偏
+仍需结合录像与下面 B 轮相同初态实验。
+
 ### B：只屏蔽左腕
 
 除下面一行外不得改变其他条件：
@@ -338,6 +366,10 @@ mute_cameras: '["left_wrist"]'
 
 建议 `log_tag=pi05_prefetch25_baseonly_diag`。此时客户端不发送左腕 key；GPU OpenPI 服务端已部署
 缺槽兼容，实际输入为 left-wrist 零图且 `image_mask=False`，base 槽仍为 `True`。
+
+除视觉消融外，这一轮也会绕过已在 A 轮确认的左腕 freshness gate。若 base 流保持 fresh，
+`state_rejected missing=[image:left_wrist]` 应降为 0；因此 B 轮应同时观察运动连续性和抓取方向，
+不要把“不卡了”和“视觉定位变准了”混成同一个结论。
 
 ### 判定
 

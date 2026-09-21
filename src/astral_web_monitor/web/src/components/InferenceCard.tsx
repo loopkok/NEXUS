@@ -234,13 +234,13 @@ export function InferenceCard({ infer, launch }: Props) {
         </div>
       </div>
       <div style={rowStyle}>
-        <button style={btn('#22c55e')} onClick={() => void sendCmd('policy')}>开始策略 (s)</button>
-        <button style={btn('#3b82f6')} onClick={() => void sendPlayback()}>回放 (y)</button>
-        <button style={btn('#f59e0b')} onClick={() => void sendCmd('pause')}>暂停 (空格)</button>
-        <button style={btn('#22c55e')} onClick={() => void sendCmd('resume')}>恢复 (n)</button>
-        <button style={btn('#f59e0b')} onClick={() => void sendCmd('takeover')}>接管 HUMAN (h)</button>
-        <button style={btn('#3b82f6')} onClick={() => void sendCmd('release')}>释放 (g)</button>
-        <button style={dangerBtn} onClick={() => void sendCmd('stop')}>停止 (x)</button>
+        <button disabled={!online} style={btn('#22c55e')} onClick={() => void sendCmd('policy')}>开始策略 (s)</button>
+        <button disabled={!online} style={btn('#3b82f6')} onClick={() => void sendPlayback()}>回放 (y)</button>
+        <button disabled={!online} style={btn('#f59e0b')} onClick={() => void sendCmd('pause')}>暂停 (空格)</button>
+        <button disabled={!online} style={btn('#22c55e')} onClick={() => void sendCmd('resume')}>恢复 (n)</button>
+        <button disabled={!online} style={btn('#f59e0b')} onClick={() => void sendCmd('takeover')}>接管 HUMAN (h)</button>
+        <button disabled={!online} style={btn('#3b82f6')} onClick={() => void sendCmd('release')}>释放 (g)</button>
+        <button disabled={!online} style={dangerBtn} onClick={() => void sendCmd('stop')}>停止 (x)</button>
       </div>
 
       {/* 实时状态 */}
