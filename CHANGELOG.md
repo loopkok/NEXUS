@@ -1,5 +1,31 @@
 # Changelog（astral_ws）
 
+## 2026-09-21
+
+**推理控制卡顿增加逐 tick 可归因日志 `pi_control.jsonl`**——`astral_policy_inference/node.py`
++ launch/config/tests/README。**动机**：现有 `pi_cmds.jsonl` 只记录新 target，无法区分 0.1～0.9s
+指令空档究竟是 joint state 超过 `obs_timeout_s`、`_state_ok()` 静默拒绝、ROS timer/callback
+阻塞，还是 `_resend_last()` 保持旧指令。**实现**：① 新增 `control_diagnostics_log_file`，每个
+控制 tick 记录 `tick_interval_ms`、超期量 `tick_late_ms`、`callback_ms`、最终 `action/events`、
+各 state/image 源的 age/status、门限、FSM 状态、相机帧数和 engine pops/plans/remaining；
+② state gate 拒绝写 `state_rejected + missing`，feed obs 异常不再完全不可见；③ 所有
+`_resend_last(reason)` 标明 `policy_paused`/`playback_paused`/`engine_no_row`/`playback_end_hold`；
+④ `pi_cmds.jsonl` 增加 `send_kind`、`hold_reason`、`control_seq`，并把 resend 的实际发布也记录；
+⑤ `log_dir` 自动生成第三个 `pi_control.jsonl`。新增回归覆盖 stale state 与 paused resend，且
+保留原指令流/绘图格式兼容。
+
+**`mute_cameras` 完成 pi0/pi05 端到端 `image_mask=False` 相机消融**——
+`astral_policy_inference/node.py` + `VLA/openpi/src/openpi/policies/astral_policy.py`。**动机**：把腕部图
+改成全黑但保留 key 会令 OpenPI 设置 `image_mask=True`，仍是训练分布外输入，不能等价验证
+base-only。**做法**：① 节点对静音 label 跳过 freshness 门并从 `ObsBatch.images` 删除，
+`RemoteBackend` 因而不发送对应 camera key；② OpenPI `AstralInputs` 按请求实际存在的 key 构建
+`parsed`，对缺失固定槽补 `zeros_like(base)` 且 mask=False；若所有相机都缺失则明确报错；③ 当前
+yaml 已准备为 A/B 第一轮 `mute_cameras: "[]"`，第二轮仅改为 `'["left_wrist"]'`。**验证**：客户端缺腕不阻断且 wire key 省略；服务端
+3 例覆盖缺腕 mask=False、正常双相机 mask=True、全相机缺失拒绝。已同步到 GPU 主机
+`lukang@192.168.1.249:~/loopkok/VLA/openpi_astral`，远端实测 mask 为 `{base: true,
+left_wrist: false, right_wrist: false}`；旧文件备份为 `astral_policy.py.bak-20260921-1625`。
+部署时 29999 服务未运行且 8001 端口空闲，下次按原脚本启动即加载新实现。
+
 ## 2026-09-20
 
 **streamer `_device_to_index` 修复 + `_scan_spec` 不再用块 device 覆盖扫描值——修

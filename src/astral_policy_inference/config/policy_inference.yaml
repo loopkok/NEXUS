@@ -62,14 +62,17 @@ policy_node:
     #   = 40 → 每 10 步融合（当前设置：重规划更勤、观测更新鲜、重叠 40 行更平滑，
     #          代价是推理频率 1.2Hz→3Hz，直连网线下无压力）
     # 0 = 自动 (action_chunk//2)。仅 queue_async 生效（rtc 用 rtc_* 参数）。
-    async_prefetch_ahead: 5
-    control_interp: 3         # 控制率 = dataset_fps × N（2=60Hz 插值下发，把 30Hz 大步拆半；
+    async_prefetch_ahead: 25
+    control_interp: 1         # 控制率 = dataset_fps × N（2=60Hz 插值下发，把 30Hz 大步拆半；
                               #   1=每策略步发一次）。真机快动作"卡一下"用 2 拆小。
     # 绝对动作语义守卫：chunk 首行在 |state|>1.0 的维上离当前 state 超过该值即拒绝
     # （检测后端把 delta 当绝对返回，如 openpi server 漏 AbsoluteActions）。<=0 关闭。
     abs_action_min_scale: 0.5
     # ⚠️ 必须与模型 preprocessor 输入一致（本机 pickup_act_480 = 480；默认 224 会 shape 崩）
     camera_image_size: 224    # collect JPEG 解码后 letterbox 边长（与转换期一致）
+    # pi0/pi05 相机消融：这些 collect label 不发送；服务端对对应固定槽补零并设置
+    # image_mask=False。例：["left_wrist"]；空 = 全部相机原样发送。
+    mute_cameras: "[]"       # A/B 第一轮基线；第二轮只改成 '["left_wrist"]'
     default_prompt: ""        # policy 缺省语言指令（运行中可用 /policy_inference/task 改）
     # 指标调试：非空时把 state JSON（含 latency_ms/engine/exec_events，1Hz + 状态变化）
     # 追加写入该文件，并在节点终端打印一行摘要。真机排障推荐：/tmp/pi_metrics.jsonl
@@ -77,6 +80,9 @@ policy_node:
     # 关节指令流：非空时每次实际下发（30Hz）把带时间戳的各话题指令值（JointState 位置 /
     # 夹爪比值）追加写该文件（JSON 行）。分析卡顿的指令步长/节奏用，推荐：/tmp/pi_cmds.jsonl
     joint_stream_log_file: ""
+    # 控制定时器逐 tick 诊断：调度间隔/回调耗时、state/image 龄期、state gate 拒绝原因、
+    # resend_last 原因和 engine 队列快照。log_dir 模式会自动写 pi_control.jsonl。
+    control_diagnostics_log_file: ""
 
     # ---------------- replay（真机回放） ---------------------------------------
     replay_source: ""         # LeRobot v2.1 数据集目录 或 aligned_data.h5 文件

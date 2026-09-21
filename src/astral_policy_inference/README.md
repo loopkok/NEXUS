@@ -113,6 +113,12 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   camera_image_size:=480
 ```
 
+**pi0/pi05 消融诊断：`mute_cameras`（yaml，JSON 数组）**——指定 collect label 不进入推理请求，
+例如 `mute_cameras: '["left_wrist"]'` 会让客户端只发送 base。配套 OpenPI `AstralInputs` 对本次
+缺失但配置中存在的固定槽补零，并设置 `image_mask=False`；这不同于 mask 为真的全黑 OOD 图像。
+被静音相机也会从 `_state_ok` 的 images_missing 中排除，`image_required` 不会误挡。空 `[]` =
+全部相机原样发送。GPU 服务端必须同步包含此兼容逻辑的 `openpi/policies/astral_policy.py` 并重启。
+
 - `camera_image_size` 必须与模型 preprocessor 输入一致（本机 pickup_act_480=480；默认 224 崩）；
 - 后端一次返回**完整 chunk**（方案 A），引擎按 50 行分块/预取，默认 `queue_async` 即 30Hz、
   图像上传每 chunk 一次（网络 -96%）、节点 loop ~1.3ms；
@@ -137,8 +143,9 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 - 序列化用包内 vendored `protocol`（`__ndarray__`），client/serve/node 三端一致。
 
 **真机指标自动记录**：推荐 `log_dir:=<root> log_tag:=<事件>`——每次 launch 自动建
-`{log_dir}/{YYYYMMDD-HHMMSS}[_tag]/` 运行目录，把 `pi_metrics.jsonl`（指标）+ `pi_cmds.jsonl`
-（指令流）一起落进去：区分每次记录、持久化到测试归档（不复用同一 /tmp 文件、重启即丢）。
+`{log_dir}/{YYYYMMDD-HHMMSS}[_tag]/` 运行目录，把 `pi_metrics.jsonl`（指标）+
+`pi_cmds.jsonl`（实际下发指令）+ `pi_control.jsonl`（逐控制 tick 诊断）一起落进去：
+区分每次记录、持久化到测试归档（不复用同一 /tmp 文件、重启即丢）。
 也可用精确路径：`metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点
 每次发布 state（1Hz + 状态变化）把带时间戳的 JSON（含 `latency_ms.loop/obs_age`、engine
 `pops/plans/last_plan_ms/server_timing/remaining`、`exec_events`）追加写该文件，并在终端打印
@@ -147,9 +154,12 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 往返**（remote 含网络上行+序列化+服务端推理+下行，本机实测 avg ~140ms）；`engine.server_timing`
 = 服务端分项（prep/pre/infer/post/total），`last_plan_ms − server_timing.total_ms` = 网络+序列化
 开销（实测 ~130ms）。
-排障卡顿再加 `joint_stream_log_file:=/tmp/pi_cmds.jsonl`——节点把**每次实际下发（30Hz）的
-关节指令值 + 同轴观测 state**（各话题 JSON 行）也追加写文件。跑完用绘图脚本直接看曲线、
-错位时间与平滑度：
+排障卡顿可分别指定 `joint_stream_log_file:=/tmp/pi_cmds.jsonl` 和
+`control_diagnostics_log_file:=/tmp/pi_control.jsonl`。前者记录**每次实际下发**的关节指令值、
+同轴观测 state、`send_kind=new_target|resend_last`；重复保持还会记录 `hold_reason`。后者每个
+控制回调一行，记录 `tick_interval_ms/tick_late_ms/callback_ms`、`action`、state/image 各源龄期、
+fresh/stale/missing 状态及 engine 队列快照。因此即使 `_state_ok()` 拒绝后完全没有下发指令，
+也不会成为日志空洞。跑完用绘图脚本直接看曲线、错位时间与平滑度：
 
 ```bash
 /usr/bin/python3 astral_ws/scripts/plot_inference_curves.py \
@@ -331,7 +341,9 @@ console script 放进 `install/astral_policy_inference/bin/` 而无 resource ind
 ros2 launch astral_policy_inference policy_inference.launch.py ... \
     log_dir:=<ws>/inference_test_logs/inference log_tag:=pick_place_test7
 #    → <ws>/inference_test_logs/inference/20260916-153012_pick_place_test7/{pi_metrics,pi_cmds}.jsonl
-# 精确路径模式（旧）：metrics_log_file:=/tmp/pi_metrics.jsonl joint_stream_log_file:=/tmp/pi_cmds.jsonl
+# 精确路径模式：metrics_log_file:=/tmp/pi_metrics.jsonl \
+#   joint_stream_log_file:=/tmp/pi_cmds.jsonl \
+#   control_diagnostics_log_file:=/tmp/pi_control.jsonl
 # ② 分析：尖峰换 chunk 关联 + 收敛拉回/模型突变分类（--self-test 先自测）
 /usr/bin/python3 astral_ws/scripts/plot_inference_curves.py \
     --log /tmp/pi_cmds.jsonl --metrics /tmp/pi_metrics.jsonl --out /tmp/pi_curves.png

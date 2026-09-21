@@ -213,6 +213,34 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertEqual(self.node.controller.state, "IDLE")
         self.assertIsNone(self.node._engine)
 
+    def test_mute_cameras_omits_image_and_skips_missing(self):
+        """mute_cameras：被静音相机从请求省略（serve 补零且 mask=False），
+        base 原样保留，且 image_required 不再把缺失腕部图当作阻断条件。"""
+        node = PolicyNode(parameter_overrides=params(
+            cameras=["base", "left_wrist"],
+            camera_map='{"base_0_rgb":"base",'
+                       '"left_wrist_0_rgb":"left_wrist"}',
+            mute_cameras='["left_wrist"]',
+            image_required=True,
+        ))
+        self.node.destroy_node()
+        self.node = node
+        # 喂关节状态（否则 state 组装失败，与图像无关）
+        feed_state(node)
+        # 只喂 base，不喂 left_wrist：被 mute 的腕部相机不应进入 images_missing。
+        base = np.full((224, 224, 3), 137, dtype=np.uint8)
+        node._images["base"] = base
+        node._image_stamps["base"] = time.monotonic()
+        state, missing = node._state_ok()
+        self.assertIsNotNone(state)
+        self.assertFalse(any(m.startswith("image:") for m in missing),
+                         f"muted camera leaked into missing: {missing}")
+        # _obs_batch 只保留 base；RemoteBackend 会省略 left_wrist 传输键。
+        obs = node._obs_batch(np.zeros(8))
+        self.assertIn("base", obs.images)
+        self.assertTrue(np.array_equal(obs.images["base"], base))
+        self.assertNotIn("left_wrist", obs.images)
+
     def test_policy_runs_ticks_and_stops(self):
         feed_state(self.node)
         self._cmd("policy")
@@ -500,6 +528,62 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertTrue(all(isinstance(v, float) for v in rec["/left_arm/joint_commands"]))
         self.assertIn("state", rec, "应同时记录观测 state（供绘图对比）")
         self.assertEqual(len(rec["state"]), 8)
+        self.assertEqual(rec["send_kind"], "new_target")
+
+    def test_control_diagnostics_records_stale_state_and_resend_reason(self):
+        """逐 tick 日志必须能区分 state gate 拒绝和 resend_last hold。"""
+        self._stop_server()
+        self._stop_node_spin()
+        if self.node.context.ok():
+            self.node.destroy_node()
+        d = tempfile.mkdtemp()
+        control_path = os.path.join(d, "pi_control.jsonl")
+        cmds_path = os.path.join(d, "pi_cmds.jsonl")
+        self.node = PolicyNode(parameter_overrides=params(
+            control_diagnostics_log_file=control_path,
+            joint_stream_log_file=cmds_path,
+            obs_timeout_s=0.01,
+        ))
+        feed_state(self.node)
+        self._cmd("policy")
+        self.assertEqual(self.node.controller.state, "POLICY")
+
+        # 先产生一个真实 target，确保后续 hold 有 last_cmd 可重发。
+        self.node._tick()
+        # 强制关节反馈过期：下一 tick 应被 _state_ok gate 静默拒绝，但诊断日志有证据。
+        arm_keys = [
+            key for key, src in self.node._layout.sources.items()
+            if src.kind != "ratio"
+        ]
+        for key in arm_keys:
+            self.node._stamps[key] = time.monotonic() - 0.1
+        self.node._tick()
+
+        # 恢复观测并暂停：paused tick 必须记录 resend_last 及明确原因。
+        feed_state(self.node)
+        self._cmd("pause")
+        self.node._tick()
+
+        with open(control_path) as f:
+            control = [json.loads(line) for line in f if line.strip()]
+        stale = [r for r in control if r["action"] == "state_rejected"]
+        self.assertEqual(len(stale), 1)
+        self.assertIn("left_arm_state", stale[0]["missing"])
+        obs = stale[0]["observation"]
+        self.assertEqual(obs["source_status"]["left_arm_state"], "stale")
+        self.assertGreater(obs["joint_age_max_ms"], obs["obs_timeout_ms"])
+        self.assertIn("tick_interval_ms", stale[0])
+        self.assertIn("callback_ms", stale[0])
+
+        holds = [r for r in control if r["action"] == "resend_last"]
+        self.assertTrue(holds)
+        self.assertEqual(holds[-1]["hold_reason"], "policy_paused")
+        with open(cmds_path) as f:
+            commands = [json.loads(line) for line in f if line.strip()]
+        resend = [r for r in commands if r["send_kind"] == "resend_last"]
+        self.assertTrue(resend)
+        self.assertEqual(resend[-1]["hold_reason"], "policy_paused")
+        self.assertIn("control_seq", resend[-1])
 
     def test_async_prefetch_ahead_reaches_engine(self):
         """async_prefetch_ahead 参数应透传到引擎（控制重规划/融合频率）。"""

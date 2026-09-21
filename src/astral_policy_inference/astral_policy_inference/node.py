@@ -125,6 +125,25 @@ class PolicyNode(Node):
             except OSError as exc:
                 self.get_logger().warn(f"joint_stream_log_file {js_log!r} open failed: {exc}")
 
+        # 控制定时器逐 tick 诊断：与 pi_cmds 分流，确保 state gate 拒绝、IDLE、
+        # HUMAN 等“没有下发指令”的周期也有记录，可区分 callback 阻塞和主动 hold。
+        self._control_diag_fh: Optional[object] = None
+        control_diag_log = str(
+            self.get_parameter("control_diagnostics_log_file").value or ""
+        )
+        if control_diag_log:
+            try:
+                self._control_diag_fh = open(control_diag_log, "a", buffering=1)
+                self.get_logger().info(f"control diagnostics log -> {control_diag_log}")
+            except OSError as exc:
+                self.get_logger().warn(
+                    f"control_diagnostics_log_file {control_diag_log!r} "
+                    f"open failed: {exc}"
+                )
+        self._control_diag_seq = 0
+        self._last_tick_started: Optional[float] = None
+        self._active_control_diag: Optional[dict] = None
+
         # observation buffers ---------------------------------------------------
         self._values: dict[str, np.ndarray] = {}
         self._stamps: dict[str, float] = {}
@@ -188,6 +207,7 @@ class PolicyNode(Node):
             f"anchor_tol={self.get_parameter('chunk_anchor_tol').value} "
             f"anchor_blend={self.get_parameter('chunk_anchor_blend').value} "
             f"prefetch={self.get_parameter('async_prefetch_ahead').value} "
+            f"mute={sorted(self._mute_cameras)} "
             f"jpeg={self.get_parameter('jpeg_transport').value} "
             f"backend={self.get_parameter('backend_type').value} "
             f"host={self.get_parameter('host').value}:{self.get_parameter('port').value}"
@@ -233,6 +253,10 @@ class PolicyNode(Node):
             # 每 (action_chunk − async_prefetch_ahead) 步融合一次。0 = 自动 (chunk//2)。
             "async_prefetch_ahead": 0,
             "camera_image_size": 224,
+            # JSON 数组：这些 collect label 不放入推理请求；pi0/pi05 服务端会
+            # 对缺失槽补零并设 image_mask=False，用于相机消融诊断。
+            # 例：["left_wrist"]。空 = 全部相机原样发送。
+            "mute_cameras": "",
             "abs_action_min_scale": 0.5,
             "default_prompt": "",
             # replay
@@ -264,6 +288,9 @@ class PolicyNode(Node):
             # 关节指令流：非空时每次实际下发（30Hz）把带时间戳的各话题指令值
             # 追加写该文件（JSON 行，排障卡顿用；与 metrics_log_file 相互独立）
             "joint_stream_log_file": "",
+            # 控制定时器逐 tick 诊断：调度间隔/回调耗时、state/image 龄期、
+            # state gate 拒绝原因、resend_last 原因、engine 队列快照。
+            "control_diagnostics_log_file": "",
         }
         for name, val in defaults.items():
             self.declare_parameter(name, val)
@@ -291,6 +318,16 @@ class PolicyNode(Node):
         self._layout = ObsLayout(schema)
         self._topic_to_key = {src.topic: k for k, src in self._layout.sources.items()}
         self._camera_map = {str(k): str(v) for k, v in camera_map.items()}
+        self._mute_cameras = {
+            str(s) for s in json.loads(self.get_parameter("mute_cameras").value or "[]")
+        }
+        unknown_mute = self._mute_cameras - set(self._camera_map.values())
+        if unknown_mute:
+            self.get_logger().warn(
+                f"mute_cameras {sorted(unknown_mute)} 不在 camera_map labels 里；"
+                "将不起作用（可 mute 的 label: "
+                f"{sorted(set(self._camera_map.values()))}）"
+            )
         self._image_size = int(self.get_parameter("camera_image_size").value)
         self._obs_timeout = float(self.get_parameter("obs_timeout_s").value)
         self._image_timeout = float(self.get_parameter("image_timeout_s").value)
@@ -483,8 +520,9 @@ class PolicyNode(Node):
         state, missing = self._layout.assemble_state(vectors)
         images_missing = [
             lab for lab in self._camera_map.values()
-            if lab not in self._images
-            or now - self._image_stamps[lab] > self._image_timeout
+            if lab not in self._mute_cameras
+            and (lab not in self._images
+                 or now - self._image_stamps[lab] > self._image_timeout)
         ]
         if self._image_required and images_missing:
             return None, [f"image:{m}" for m in images_missing]
@@ -497,6 +535,10 @@ class PolicyNode(Node):
             for lab, arr in self._images.items()
             if now - self._image_stamps.get(lab, 0.0) <= self._image_timeout * 4
         }
+        # mute_cameras：直接从请求省略；RemoteBackend 因取不到 label 不发送对应
+        # observation/camera/<slot>，pi0/pi05 AstralInputs 在服务端补零且 mask=False。
+        for lab in self._mute_cameras:
+            images.pop(lab, None)
         return ObsBatch(state=state, images=images, prompt=self._prompt)
 
     def _disarm_teleop(self) -> None:
@@ -904,34 +946,47 @@ class PolicyNode(Node):
     # ---------------------------------------------------------- control loop
 
     def _tick(self) -> None:
-        with self._lock:
-            now = time.monotonic()
-            # Event-driven takeover handshake first: while the re-anchor effect is
-            # in flight we neither drain commands (except stop, handled in
-            # _drain_cmds) nor emit control targets — single-writer guarantee.
-            if self._takeover_pending is not None:
-                if self._poll_takeover(now):
-                    return
-            self._drain_cmds()
-            now = time.monotonic()
-            dt = 1.0 / max(1.0, self._ctrl_rate)
-            st = self.controller.state
-            if st == "POLICY":
-                if self._engine is None:
-                    self._maybe_publish_state(now)
-                    return
-                if not self.controller.snapshot()["paused"]:
-                    self._policy_tick(dt)
-            elif st == "POLICY_PAUSED":
-                self._resend_last()
-            elif st == "PLAYBACK":
-                self._playback_tick(dt)
-            elif st == "PLAYBACK_PAUSED":
-                self._resend_last()
-            elif st == "HUMAN":
-                pass  # teleop owns the command topics now
-            # IDLE: silent
-            self._maybe_publish_state(now)
+        tick_started = time.monotonic()
+        self._begin_control_diag(tick_started)
+        try:
+            with self._lock:
+                now = time.monotonic()
+                # Event-driven takeover handshake first: while the re-anchor effect is
+                # in flight we neither drain commands (except stop, handled in
+                # _drain_cmds) nor emit control targets — single-writer guarantee.
+                if self._takeover_pending is not None:
+                    if self._poll_takeover(now):
+                        self._mark_control_diag("takeover_wait")
+                        return
+                self._drain_cmds()
+                now = time.monotonic()
+                dt = 1.0 / max(1.0, self._ctrl_rate)
+                st = self.controller.state
+                if st == "POLICY":
+                    if self._engine is None:
+                        self._mark_control_diag("policy_no_engine")
+                        self._maybe_publish_state(now)
+                        return
+                    if not self.controller.snapshot()["paused"]:
+                        self._policy_tick(dt)
+                elif st == "POLICY_PAUSED":
+                    self._resend_last("policy_paused")
+                elif st == "PLAYBACK":
+                    self._playback_tick(dt)
+                elif st == "PLAYBACK_PAUSED":
+                    self._resend_last("playback_paused")
+                elif st == "HUMAN":
+                    self._mark_control_diag("human_silent")
+                else:
+                    self._mark_control_diag("idle_silent")
+                self._maybe_publish_state(now)
+        except Exception as exc:
+            self._mark_control_diag(
+                "tick_exception", exception=f"{type(exc).__name__}: {exc}"
+            )
+            raise
+        finally:
+            self._finish_control_diag(tick_started)
 
     def _policy_tick(self, dt: float) -> None:
         self._acc += dt
@@ -939,8 +994,9 @@ class PolicyNode(Node):
         if self._acc + 1e-9 >= self._policy_dt:
             self._acc = max(0.0, self._acc - self._policy_dt)
             t_loop0 = time.monotonic()
-            state, _ = self._state_ok()
+            state, missing = self._state_ok()
             if state is None:
+                self._mark_control_diag("state_rejected", missing=missing)
                 # Mid-run observation loss gate: never keep re-inferring (or
                 # emitting) from a stale joint-state snapshot. After a grace
                 # period, auto-pause so the robot holds instead of running a
@@ -959,8 +1015,10 @@ class PolicyNode(Node):
             self._obs_lost_since = None
             try:
                 self._engine.feed_obs(self._obs_batch(state))
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                self._mark_control_diag(
+                    "feed_obs_error", exception=f"{type(exc).__name__}: {exc}"
+                )
             try:
                 row = self._engine.tick()
             except EngineStateError as exc:
@@ -968,7 +1026,7 @@ class PolicyNode(Node):
                 self._cmd_stop()
                 return
             if row is None:
-                self._resend_last()
+                self._resend_last("engine_no_row")
                 return
             if self._seg_cur is not None:
                 self._seg_prev = self._seg_cur
@@ -977,6 +1035,7 @@ class PolicyNode(Node):
         else:
             self._sub += 1
         self._emit_target()
+        self._mark_control_diag("policy_emit", policy_row=t_loop0 is not None)
         # 端到端控制延迟（新观测 → 指令发布）与观测龄期；只测「消费了新观测」的 tick
         if t_loop0 is not None:
             now = time.monotonic()
@@ -1023,7 +1082,7 @@ class PolicyNode(Node):
             ):
                 self._cmd_stop()
                 return
-            self._resend_last()
+            self._resend_last("playback_end_hold")
             return
         self._playback.advance()
         self._send_targets_from(row)
@@ -1041,12 +1100,18 @@ class PolicyNode(Node):
         self._publish_targets(safe)
         self._last_cmds = safe
         if self._js_fh is not None:
-            self._log_joint_stream(safe)
+            self._log_joint_stream(safe, send_kind="new_target")
 
-    def _log_joint_stream(self, targets: list) -> None:
+    def _log_joint_stream(
+        self, targets: list, *, send_kind: str, hold_reason: Optional[str] = None
+    ) -> None:
         """joint_stream_log_file 开启时：每次实际下发（30Hz）记录各话题指令值 +
         同一时刻的观测 state（同时间轴，供绘图对比 state↔action 与错位时间）。"""
-        rec: dict = {"t": round(time.time(), 4)}
+        rec: dict = {"t": round(time.time(), 4), "send_kind": send_kind}
+        if hold_reason is not None:
+            rec["hold_reason"] = hold_reason
+        if self._active_control_diag is not None:
+            rec["control_seq"] = self._active_control_diag["seq"]
         for tg in targets:
             rec[tg.topic] = [float(v) for v in tg.values]
         # 观测 state（layout 顺序：本机 [left_arm(7), left_ee(1)]）。只读、无副作用。
@@ -1061,9 +1126,130 @@ class PolicyNode(Node):
         except Exception:  # noqa: BLE001  写失败不干扰控制流
             pass
 
-    def _resend_last(self) -> None:
+    def _resend_last(self, reason: str = "unspecified") -> None:
+        self._mark_control_diag(
+            "resend_last", hold_reason=reason, has_last_cmd=bool(self._last_cmds)
+        )
         if self._last_cmds:
             self._publish_targets(self._last_cmds)
+            if self._js_fh is not None:
+                self._log_joint_stream(
+                    self._last_cmds,
+                    send_kind="resend_last",
+                    hold_reason=reason,
+                )
+
+    def _begin_control_diag(self, tick_started: float) -> None:
+        if self._control_diag_fh is None:
+            return
+        self._control_diag_seq += 1
+        interval_ms = None
+        if self._last_tick_started is not None:
+            interval_ms = (tick_started - self._last_tick_started) * 1000.0
+        self._last_tick_started = tick_started
+        expected_ms = 1000.0 / max(1.0, self._ctrl_rate)
+        self._active_control_diag = {
+            "t": round(time.time(), 4),
+            "seq": self._control_diag_seq,
+            "tick_interval_ms": (
+                round(interval_ms, 3) if interval_ms is not None else None
+            ),
+            "tick_late_ms": (
+                round(max(0.0, interval_ms - expected_ms), 3)
+                if interval_ms is not None else None
+            ),
+            "expected_interval_ms": round(expected_ms, 3),
+            "action": "unclassified",
+            "events": [],
+        }
+
+    def _mark_control_diag(self, action: str, **fields) -> None:
+        rec = self._active_control_diag
+        if rec is None:
+            return
+        rec["action"] = action
+        rec["events"].append(action)
+        rec.update(fields)
+
+    def _observation_diagnostics(self, now: float) -> dict:
+        source_age_ms: dict[str, Optional[float]] = {}
+        source_status: dict[str, str] = {}
+        joint_ages: list[float] = []
+        for key, src in self._layout.sources.items():
+            stamp = self._stamps.get(key)
+            age_ms = (now - stamp) * 1000.0 if stamp is not None else None
+            source_age_ms[key] = round(age_ms, 3) if age_ms is not None else None
+            if src.kind == "ratio":
+                if key in self._values:
+                    source_status[key] = "latched_ratio"
+                elif src.topic in self._ratio_last:
+                    source_status[key] = "commanded_ratio_fallback"
+                elif src.key.split("_", 1)[0] in self._grip_rad:
+                    source_status[key] = "gripper_joint_fallback"
+                else:
+                    source_status[key] = "missing"
+            elif stamp is None:
+                source_status[key] = "missing"
+            else:
+                joint_ages.append(age_ms)
+                source_status[key] = (
+                    "fresh" if age_ms <= self._obs_timeout * 1000.0 else "stale"
+                )
+        image_age_ms = {
+            lab: (
+                round((now - self._image_stamps[lab]) * 1000.0, 3)
+                if lab in self._image_stamps else None
+            )
+            for lab in sorted(set(self._camera_map.values()))
+        }
+        image_status = {
+            lab: (
+                "muted"
+                if lab in self._mute_cameras
+                else "missing"
+                if age_ms is None
+                else "fresh"
+                if age_ms <= self._image_timeout * 1000.0
+                else "stale"
+            )
+            for lab, age_ms in image_age_ms.items()
+        }
+        return {
+            "source_age_ms": source_age_ms,
+            "source_status": source_status,
+            "joint_age_max_ms": round(max(joint_ages), 3) if joint_ages else None,
+            "obs_timeout_ms": round(self._obs_timeout * 1000.0, 3),
+            "image_age_ms": image_age_ms,
+            "image_status": image_status,
+            "image_timeout_ms": round(self._image_timeout * 1000.0, 3),
+        }
+
+    def _finish_control_diag(self, tick_started: float) -> None:
+        rec = self._active_control_diag
+        self._active_control_diag = None
+        if rec is None or self._control_diag_fh is None:
+            return
+        try:
+            # 诊断绝不能反向影响控制；快照或写盘任一失败都只丢本行。
+            now = time.monotonic()
+            rec["callback_ms"] = round((now - tick_started) * 1000.0, 3)
+            rec["state"] = self.controller.state
+            rec["cam_frames"] = self._cam_frames
+            rec["observation"] = self._observation_diagnostics(now)
+            engine = self._engine
+            if engine is not None:
+                stats = engine.stats
+                rec["engine"] = {
+                    key: stats.get(key)
+                    for key in ("pops", "plans", "remaining", "last_plan_ms")
+                }
+            else:
+                rec["engine"] = None
+            self._control_diag_fh.write(
+                json.dumps(rec, ensure_ascii=False) + "\n"
+            )
+        except Exception:  # noqa: BLE001  写失败不干扰控制流
+            pass
 
     def _publish_targets(self, targets: list) -> None:
         for t in targets:
@@ -1180,6 +1366,12 @@ class PolicyNode(Node):
             except Exception:  # noqa: BLE001
                 pass
             self._js_fh = None
+        if self._control_diag_fh is not None:
+            try:
+                self._control_diag_fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._control_diag_fh = None
         super().destroy_node()
 
     def _maybe_publish_state(self, now: float) -> None:
