@@ -44,7 +44,7 @@ def test_policy_launch_args_overrides() -> None:
     assert args["engine_mode"] == "rtc"
     assert args["model"] == "pi05"
     assert args["backend_type"] == "stub"
-    # 日志开关 → 注入 log_dir 根目录（launch 每次自动建运行子目录，metrics/cmd 落里面）
+    # 日志开关 → 注入 log_dir 根目录（launch 自动建目录并落四类诊断流）
     assert args["log_dir"] == PI_LOG_ROOT
     assert "metrics_log_file" not in args
 

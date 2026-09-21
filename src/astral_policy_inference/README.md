@@ -144,7 +144,8 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 
 **真机指标自动记录**：推荐 `log_dir:=<root> log_tag:=<事件>`——每次 launch 自动建
 `{log_dir}/{YYYYMMDD-HHMMSS}[_tag]/` 运行目录，把 `pi_metrics.jsonl`（指标）+
-`pi_cmds.jsonl`（实际下发指令）+ `pi_control.jsonl`（逐控制 tick 诊断）一起落进去：
+`pi_cmds.jsonl`（实际下发指令）+ `pi_control.jsonl`（逐控制 tick 诊断）+
+`camera_diagnostics.jsonl`（streamer capture/tap + policy 图像 rx/decode）一起落进去：
 区分每次记录、持久化到测试归档（不复用同一 /tmp 文件、重启即丢）。
 也可用精确路径：`metrics_log_file:=/tmp/pi_metrics.jsonl`（或 yaml 配置），节点
 每次发布 state（1Hz + 状态变化）把带时间戳的 JSON（含 `latency_ms.loop/obs_age`、engine
@@ -159,7 +160,9 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 同轴观测 state、`send_kind=new_target|resend_last`；重复保持还会记录 `hold_reason`。后者每个
 控制回调一行，记录 `tick_interval_ms/tick_late_ms/callback_ms`、`action`、state/image 各源龄期、
 fresh/stale/missing 状态及 engine 队列快照。因此即使 `_state_ok()` 拒绝后完全没有下发指令，
-也不会成为日志空洞。跑完用绘图脚本直接看曲线、错位时间与平滑度：
+也不会成为日志空洞。`camera_diagnostics_log_file:=/tmp/camera_diagnostics.jsonl` 把相机管线分成
+`capture`、`collect_tap`、`policy_rx` 三层；使用 `log_dir` 时自动开启，无需额外测速终端。
+跑完用绘图脚本直接看曲线、错位时间与平滑度：
 
 ```bash
 /usr/bin/python3 astral_ws/scripts/plot_inference_curves.py \

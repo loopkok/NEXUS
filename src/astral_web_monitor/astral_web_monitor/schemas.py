@@ -74,4 +74,4 @@ class InferLaunchRequest(BaseModel):
     port: int = 8001                   # serve 端口
     camera_image_size: int = 480       # 模型输入尺寸（ACT 480，pi0.5 通常 224/480）
     engine_mode: str = "queue_async"   # queue_async | queue_sync | rtc
-    log: bool = False                  # 开启则记录 state+joint 到 /tmp 日志文件
+    log: bool = False                  # 开启则自动记录控制、指令、指标及相机全链路诊断

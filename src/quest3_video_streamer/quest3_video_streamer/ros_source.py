@@ -12,6 +12,7 @@ convert ``sensor_msgs/Image`` -> ``numpy`` -> ``av.VideoFrame`` by hand.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from quest3_video_streamer.source_base import VideoFormat, VideoSourceAdapter
@@ -48,6 +49,11 @@ class RosImageSourceAdapter(VideoSourceAdapter):
         # Optional tap for the data-collection pipeline: callable(rgb_frame).
         # Same contract as preview_hook (executor thread, must not block).
         self.collect_hook: Any = None
+        self.diagnostic_hook: Any = None
+        self._diag_t0 = time.monotonic()
+        self._diag_frames = 0
+        self._diag_last_frame: float | None = None
+        self._diag_max_gap_ms = 0.0
 
     async def start(self) -> None:
         if self._sub is not None:
@@ -108,6 +114,34 @@ class RosImageSourceAdapter(VideoSourceAdapter):
             return
         if rgb is None:
             return
+        self._diag_frames += 1
+        now = time.monotonic()
+        if self._diag_last_frame is not None:
+            self._diag_max_gap_ms = max(
+                self._diag_max_gap_ms,
+                (now - self._diag_last_frame) * 1000.0,
+            )
+        self._diag_last_frame = now
+        dt = now - self._diag_t0
+        if dt >= 5.0:
+            diagnostic_hook = self.diagnostic_hook
+            if diagnostic_hook is not None:
+                try:
+                    diagnostic_hook({
+                        "stage": "capture",
+                        "label": self._format.label,
+                        "source": "ros",
+                        "window_s": round(dt, 3),
+                        "frames": self._diag_frames,
+                        "fps": round(self._diag_frames / dt, 3),
+                        "read_failures": 0,
+                        "max_frame_gap_ms": round(self._diag_max_gap_ms, 3),
+                    })
+                except Exception:
+                    pass
+            self._diag_t0 = now
+            self._diag_frames = 0
+            self._diag_max_gap_ms = 0.0
         hook = self.preview_hook
         if hook is not None:
             try:

@@ -2,6 +2,35 @@
 
 ## 2026-09-21
 
+**Web“记录推理日志”自动收齐相机全链路诊断，无需额外终端**——
+`quest3_video_streamer` × `astral_policy_inference`。streamer 新增 BEST_EFFORT
+`~/diagnostics`：每 5 秒按相机发布 capture FPS/read failure，以及 collect tap 的 submit/rate skip/
+queue full/encode/publish FPS 与耗时。policy 在 `log_dir` 模式自动创建第四份
+`camera_diagnostics.jsonl`，逐帧记录 `policy_rx` 的 gap、payload bytes、JPEG decode ms/result，并
+把上游 capture/tap 事件合并到同一 epoch 时间轴。落盘使用独立后台线程和有界非阻塞队列，不在
+图像 callback 做磁盘 I/O。新增 policy 合并日志与 tap 结构化统计回归；C 轮现在只需 Web 勾选
+日志，目录自动得到 metrics/cmd/control/camera 四份 JSONL。
+
+**分析 pi0.5 B 轮 base-only：断流消失，但定位到稀疏时序融合的周期性内部接缝**——
+`inference_test_logs/inference/20260921-171159_pi05_muteleft_testB`。34.62 秒 POLICY 的
+1015 tick 全部正常 emit（29.45Hz，最大间隔 78ms），joint/base 全 fresh、左腕全 muted、无
+state reject/hold/queue empty，故肉眼抽搐不是控制断流。动作却有 28 次 >0.1rad/步尖峰，全部
+精确落在 chunk 安装后第 22～23 tick：`prefetch=25` 下融合覆盖 `new[0:25]`，随后切入未融合的
+`new[25:]` 形成接缝；安装当拍自身最大仅 0.042rad，anchor 无法覆盖后续接缝。记录新增 D 轮：
+保持其余参数不变，仅设 `temporal_ensemble_coeff=0.0` 验证。base-only 无法抓取也表明左腕近场
+视觉不可永久移除，最终应恢复训练视角/裁剪或用新视角数据微调。回查 A 轮的 4 个 >0.1rad
+尖峰也全部位于安装后第 22～24 tick，确认该接缝不是 mute 左腕才出现。
+
+**补充 pi0.5 C 轮左腕超时分层诊断方案 + 图像话题 BEST_EFFORT 测速**——
+`docs/2026-09-21-pi05-inference-investigation.md`、`scripts/hz_best_effort.py`。B 轮完成后恢复双相机，
+同步对照 V4L2 capture、collect tap、DDS 到达间隔和 policy freshness 四层时间线，判定超时发生于
+设备/USB、JPEG/发布、DDS 还是 policy callback；明确 C1 不改门限和图像参数，必要时再以关闭
+WebRTC/预览作为单变量 C2。测速脚本新增 `--msg cimg` 支持 `sensor_msgs/CompressedImage`，避免
+Humble `ros2 topic hz` 的 RELIABLE 默认值无法匹配 BEST_EFFORT 图像 publisher；新增
+`--log-file/--report-s/--gap-ms`，按墙钟时间写 JSONL，并在长 gap 恢复时立即留证。文档明确完整
+C 轮共 6 个文件，streamer 的 capture/tap stdout 需从 Web Launch 日志另存，不能误以为推理
+`log_dir` 会自动收集上游进程输出。
+
 **修复 Web 启动推理节点后“开始策略”偶发无反应的 DDS 发现竞态**——
 `astral_web_monitor`。**根因**：`/policy_inference/cmd` 有意采用 VOLATILE QoS，但 Web 在启动节点后
 立即单次 publish，不等待订阅者发现，并无条件向前端返回成功；若用户点得早，命令会静默丢失。

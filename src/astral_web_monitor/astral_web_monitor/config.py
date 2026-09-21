@@ -213,8 +213,8 @@ TELEOP_LOG_ROOT = os.path.join(LOG_ROOT_DEFAULT, "teleop")
 def policy_launch_args(cfg: dict) -> dict[str, str]:
     """web 推理配置 → policy_inference.launch.py 显式参数（k:=v，str→str）。
 
-    日志开关为 True 时注入 `log_dir`（launch 每次自动建运行子目录，metrics/cmd
-    两条流落到里面）——不再写 /tmp 固定文件。
+    日志开关为 True 时注入 `log_dir`（launch 每次自动建运行子目录，metrics/cmd/
+    control/camera diagnostics 四条流落到里面）——不再写 /tmp 固定文件。
 
     **消毒（对抗性审查）**：推理泳道的 launch 参数来自 web 用户输入，而
     LaunchManager 用 ``bash -c "exec ros2 launch ... k:=v"`` 拼装命令——host/

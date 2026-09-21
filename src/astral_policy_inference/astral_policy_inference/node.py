@@ -144,6 +144,33 @@ class PolicyNode(Node):
         self._last_tick_started: Optional[float] = None
         self._active_control_diag: Optional[dict] = None
 
+        # 相机全链路诊断：本节点逐帧 rx/decode + streamer 每 5 秒发布的
+        # capture/tap 统计写进同一个 JSONL。仅 log_dir/显式路径开启时有开销。
+        self._camera_diag_fh: Optional[object] = None
+        self._camera_diag_queue: "queue.Queue[str]" = queue.Queue(maxsize=4096)
+        self._camera_diag_stop = threading.Event()
+        self._camera_diag_thread: Optional[threading.Thread] = None
+        camera_diag_log = str(
+            self.get_parameter("camera_diagnostics_log_file").value or ""
+        )
+        if camera_diag_log:
+            try:
+                self._camera_diag_fh = open(camera_diag_log, "a", buffering=1)
+                self._camera_diag_thread = threading.Thread(
+                    target=self._camera_diagnostics_writer,
+                    name="camera-diagnostics-writer",
+                    daemon=True,
+                )
+                self._camera_diag_thread.start()
+                self.get_logger().info(f"camera diagnostics log -> {camera_diag_log}")
+            except OSError as exc:
+                self.get_logger().warn(
+                    f"camera_diagnostics_log_file {camera_diag_log!r} "
+                    f"open failed: {exc}"
+                )
+        self._image_rx_count: dict[str, int] = collections.defaultdict(int)
+        self._image_rx_last: dict[str, float] = {}
+
         # observation buffers ---------------------------------------------------
         self._values: dict[str, np.ndarray] = {}
         self._stamps: dict[str, float] = {}
@@ -291,6 +318,9 @@ class PolicyNode(Node):
             # 控制定时器逐 tick 诊断：调度间隔/回调耗时、state/image 龄期、
             # state gate 拒绝原因、resend_last 原因、engine 队列快照。
             "control_diagnostics_log_file": "",
+            # 相机全链路 JSONL：policy 每帧到达间隔/大小/解码耗时，以及 streamer
+            # /diagnostics 的 V4L2 capture + collect tap 五秒窗口统计。
+            "camera_diagnostics_log_file": "",
         }
         for name, val in defaults.items():
             self.declare_parameter(name, val)
@@ -386,6 +416,13 @@ class PolicyNode(Node):
                 lambda msg, lab=label: self._on_image(msg, lab),
                 _SENSOR_QOS,
             )
+        if self._camera_diag_fh is not None:
+            self.create_subscription(
+                String,
+                "/quest3_video_streamer/diagnostics",
+                self._on_streamer_diagnostics,
+                _SENSOR_QOS,
+            )
 
     # ------------------------------------------------------------ subscribers
 
@@ -406,7 +443,27 @@ class PolicyNode(Node):
         self._grip_rad[side] = np.asarray([msg.position[0]], dtype=np.float64)
 
     def _on_image(self, msg: CompressedImage, label: str) -> None:
+        rx_mono = time.monotonic()
+        rx_wall = time.time()
+        previous = self._image_rx_last.get(label)
+        self._image_rx_last[label] = rx_mono
+        self._image_rx_count[label] += 1
+        decode_t0 = time.perf_counter()
         img = decode_jpeg_rgb(msg.data)
+        decode_ms = (time.perf_counter() - decode_t0) * 1000.0
+        self._write_camera_diagnostics({
+            "t": round(rx_wall, 4),
+            "stage": "policy_rx",
+            "label": label,
+            "count": self._image_rx_count[label],
+            "gap_ms": (
+                round((rx_mono - previous) * 1000.0, 3)
+                if previous is not None else None
+            ),
+            "payload_bytes": len(msg.data),
+            "decode_ms": round(decode_ms, 3),
+            "decoded": img is not None,
+        })
         if img is None:
             self.get_logger().warn("collect image decode failed", throttle_duration_sec=5.0)
             return
@@ -415,6 +472,46 @@ class PolicyNode(Node):
             img = letterbox(img, self._image_size)
         self._images[label] = img
         self._image_stamps[label] = time.monotonic()
+
+    def _on_streamer_diagnostics(self, msg: String) -> None:
+        """Persist upstream capture/tap statistics on the policy run timeline."""
+        try:
+            upstream = json.loads(msg.data)
+        except (TypeError, json.JSONDecodeError):
+            upstream = {"stage": "streamer_invalid", "raw": str(msg.data)}
+        if not isinstance(upstream, dict):
+            upstream = {"stage": "streamer_invalid", "raw": str(upstream)}
+        upstream["policy_received_t"] = round(time.time(), 4)
+        self._write_camera_diagnostics(upstream)
+
+    def _write_camera_diagnostics(self, rec: dict) -> None:
+        if self._camera_diag_fh is None:
+            return
+        try:
+            line = json.dumps(rec, ensure_ascii=False) + "\n"
+            self._camera_diag_queue.put_nowait(line)
+        except queue.Full:
+            # Diagnostics must never block image callbacks. A full 4096-line
+            # queue means the disk is badly stalled; pi_control still retains
+            # receiver freshness evidence.
+            pass
+        except Exception:  # noqa: BLE001 - diagnostics must never affect control
+            pass
+
+    def _camera_diagnostics_writer(self) -> None:
+        """Drain camera diagnostics off callback threads (never block images)."""
+        while not self._camera_diag_stop.is_set() or not self._camera_diag_queue.empty():
+            try:
+                line = self._camera_diag_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                if self._camera_diag_fh is not None:
+                    self._camera_diag_fh.write(line)
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                self._camera_diag_queue.task_done()
 
     def _on_task(self, msg: String) -> None:
         self._prompt = msg.data
@@ -1372,6 +1469,16 @@ class PolicyNode(Node):
             except Exception:  # noqa: BLE001
                 pass
             self._control_diag_fh = None
+        if self._camera_diag_fh is not None:
+            self._camera_diag_stop.set()
+            if self._camera_diag_thread is not None:
+                self._camera_diag_thread.join(timeout=2.0)
+                self._camera_diag_thread = None
+            try:
+                self._camera_diag_fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._camera_diag_fh = None
         super().destroy_node()
 
     def _maybe_publish_state(self, now: float) -> None:

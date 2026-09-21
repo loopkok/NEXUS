@@ -437,9 +437,12 @@ def main() -> None:
     spin_thread.start()
 
     sources, layouts, cameras_info = _build_sources(node, params)
+    diagnostics_hook = _setup_pipeline_diagnostics(node, sources)
     gate = _setup_gate(node, sources, params, cameras_info)
     previews = _setup_previews(node, sources, gate, params)
-    collect_taps = _setup_collect_taps(node, sources, params)
+    collect_taps = _setup_collect_taps(
+        node, sources, params, diagnostics_hook=diagnostics_hook
+    )
 
     config = VideoServiceConfig(
         signaling_host=str(params["signaling_host"]),
@@ -508,6 +511,7 @@ def _setup_collect_taps(
     node: Node,
     sources: list[VideoSourceAdapter],
     params: dict[str, Any],
+    diagnostic_hook: Any = None,
 ) -> list[Any]:
     """Attach a CollectTapPublisher to each source (data-collection feed).
 
@@ -528,6 +532,7 @@ def _setup_collect_taps(
         label = str(src.get_format().label)
         pub = CollectTapPublisher(
             node=node, label=label, max_fps=fps, quality=quality,
+            diagnostic_hook=diagnostic_hook,
         )
         is_ros = isinstance(src, RosImageSourceAdapter)
         src.collect_hook = lambda f, p=pub, rgb=is_ros: p.submit(f, is_rgb=rgb)
@@ -538,6 +543,34 @@ def _setup_collect_taps(
             f"max {fps}fps full-res q{quality} (encode-on-demand)"
         )
     return taps
+
+
+def _setup_pipeline_diagnostics(
+    node: Node, sources: list[VideoSourceAdapter]
+) -> Any:
+    """Publish low-rate structured capture/tap stats for run-log collection."""
+    from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+
+    qos = QoSProfile(
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+        history=HistoryPolicy.KEEP_LAST,
+        depth=20,
+    )
+    pub = node.create_publisher(String, "~/diagnostics", qos)
+    publish_lock = threading.Lock()
+
+    def emit(fields: dict[str, Any]) -> None:
+        rec = {"t": round(time.time(), 4), **fields}
+        msg = String(data=json.dumps(rec, ensure_ascii=False))
+        # capture/tap each run in their own worker threads; serialize publish
+        # calls so diagnostics can never introduce a publisher race.
+        with publish_lock:
+            pub.publish(msg)
+
+    for src in sources:
+        src.diagnostic_hook = emit
+    _LOG.info("pipeline diagnostics on ~/diagnostics (capture + collect_tap)")
+    return emit
 
 
 _LATCHED_QOS = QoSProfile(

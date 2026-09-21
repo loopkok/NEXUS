@@ -371,6 +371,29 @@ mute_cameras: '["left_wrist"]'
 `state_rejected missing=[image:left_wrist]` 应降为 0；因此 B 轮应同时观察运动连续性和抓取方向，
 不要把“不卡了”和“视觉定位变准了”混成同一个结论。
 
+#### B 轮结果：`inference_test_logs/inference/20260921-171159_pi05_muteleft_testB`
+
+实机表现为无法抓到试管，并持续卡顿/抽搐。日志把“卡顿”进一步拆成了两类：
+
+1. **A 轮的断流型停顿已经消失**：34.62 秒 POLICY 内 1015/1015 tick 全部 `policy_emit`，
+   没有 `state_rejected`、`resend_last` 或 `engine_no_row`；base 1015/1015 fresh，左腕 1015/1015
+   muted，joint 1015/1015 fresh。实际指令约 29.45 Hz，最大相邻发送间隔 78 ms。engine 完成
+   41 次 plan，结束仍有 35 行，服务端 infer 约 6.85 ms。因此 B 中肉眼所见抽搐不是 ROS 指令
+   空档，也不是 GPU/queue 卡顿。
+2. **连续指令轨迹本身存在周期性大跳**：动作步长 p50 约 0.010 rad、p99 约 0.187 rad，
+   共有 28 次超过 0.1 rad/步，最大值被 `max_joint_vel=6 rad/s` 的安全层截在 0.2 rad/步。
+   28 次大跳全部落在某次 chunk 安装后的第 22～23 tick（约 0.75～0.81 秒）；反而 chunk
+   真正安装的当拍最大跳变仅 0.042 rad。该位置恰好是 `async_prefetch_ahead=25` 时，旧 chunk
+   剩余 25 行与新 chunk 前 25 行的 temporal ensemble 重叠区末端：`new[0:25]` 被融合，
+   `new[25:]` 未融合，执行从融合行 24 进入纯新预测行 25 时形成内部接缝。当前 anchor 只平滑
+   chunk 安装起点的 4 行，无法处理约 22 tick 后的这个接缝。回查 A 轮的 4 个 >0.1 rad
+   尖峰，它们同样全部位于 chunk 安装后第 22～24 tick，说明该接缝并非 mute 左腕才产生，
+   B 的长 rollout 只是把规律暴露得更充分。
+
+抓取失败说明 base-only 对这个双相机训练的 checkpoint 不足，左腕视觉即使视角发生变化仍携带
+关键近场信息；“屏蔽后更差”不能反推新左腕视角无影响，只能说明永久移除左腕不是解决方案。
+最终应恢复训练时视角/裁剪，或使用新视角数据微调，而不是用 mask 作为部署配置。
+
 ### 判定
 
 1. B 的第一次接近/抓取落点明显上移并靠近试管，而 A 仍偏向试管下方或桌面：腕部视角变化是
@@ -380,3 +403,79 @@ mute_cameras: '["left_wrist"]'
    腕部视角或把新画面裁剪/标定到训练视角，而不是永久移除腕部相机。
 4. A/B 都抓向相同错误位置：继续检查 raw action、归一化统计、state/action 顺序和 checkpoint
    数据覆盖，不能再把主要原因归到腕部相机。
+
+## 12. C 轮：恢复正常双相机，定位 `image:left_wrist` 超时发生在哪一层
+
+C 轮在 B 轮完成并保存日志后再做。恢复 `mute_cameras: "[]"`，其余 checkpoint、prompt、物体、
+初始位姿和 A/B 参数保持不变。C 轮不再用于比较模型行为，目标仅是定位左腕帧在以下哪一段中断：
+
+```text
+V4L2/USB capture → collect tap 准入/编码/发布 → DDS 图像话题
+                → policy_node 图像 callback → freshness gate
+```
+
+### C0/C1：先 IDLE、再正常推理，同步采集三层证据
+
+先只启动双相机 streamer 和 policy 节点，**不要点击开始策略，保持 IDLE 30 秒**。policy 在 IDLE
+同样持续订阅/解码图像，`pi_control.jsonl` 也逐 tick 记录 image age/status，因此 C0 可以在机械臂
+完全不运动时验证相机链路。若 C0 已出现 `image:left_wrist` stale，问题与模型推理无关；若 C0
+始终正常而点击开始策略后才出现，才说明 POLICY 阶段新增的推理、传输或 CPU 调度负载参与了超时。
+鉴于 A/B 已发现周期性动作尖峰，C1 的运动阶段限制为 8～10 秒。
+
+新版 streamer 会把每 5 秒的边界统计发布到 `/quest3_video_streamer/diagnostics`，开启 Web
+“记录推理日志”后由 policy 自动合并进 `camera_diagnostics.jsonl`：
+
+- `[capture left_wrist] driver-side N fps`：低或长时间不再出现，优先怀疑相机、USB、V4L2
+  `read()` 或捕获线程；
+- `[tap left_wrist] submit=... queue_full=... encoded=... published=... encode=... publish=...`：
+  capture 正常但 submit/published 低，说明问题位于抽头、JPEG 编码或 DDS 发布；
+- `queue_full` 高且 `encode` 高：JPEG 编码跟不上；`publish` 显著升高：DDS publish 阻塞或主机负载。
+
+开启 Web 完整推理日志，建议 `log_tag=pi05_left_wrist_timeout_diag`。记录第一次
+`image:left_wrist` stale 的墙钟时间；相机诊断使用同一 epoch 时间轴，不再需要另开测速终端。
+不要在 C1 改 `image_timeout_s`、`image_required`、分辨率、JPEG quality 或推流设置，否则只能掩盖
+超时，无法定位丢帧边界。
+
+勾选 Web“记录推理日志”后，一份完整 C 轮目录会自动包含：
+
+```text
+pi_metrics.jsonl
+pi_cmds.jsonl
+pi_control.jsonl
+camera_diagnostics.jsonl
+```
+
+`camera_diagnostics.jsonl` 的 `stage` 分为 `capture`（V4L2/ROS 源）、`collect_tap`
+（JPEG/队列/DDS 发布）和 `policy_rx`（每帧到达 gap、payload、JPEG decode 耗时/结果）。文件由
+独立后台线程写入，图像 callback 只做非阻塞入队，避免诊断本身制造超时。
+
+### C1 判定矩阵
+
+| 同一时刻的证据 | 结论/下一步 |
+|---|---|
+| capture 左腕先掉到接近 0，base 正常 | 左腕设备/USB/V4L2 捕获层；查内核 USB reset/disconnect、线缆和供电 |
+| capture 正常，tap `queue_full` 上升或 published 掉速 | streamer JPEG/抽头线程或 CPU 调度瓶颈 |
+| tap published 正常，但 `policy_rx` 出现约 1 秒 gap | DDS 传输/接收调度；检查 CPU 饥饿和 ROS executor |
+| `policy_rx` gap 正常但 `decode_ms` 暴涨/decoded=false | policy JPEG 解码异常或 callback 计算阻塞 |
+| base 与左腕同时出现 gap | 公共 CPU/USB 总线/streamer 进程问题，不是单个左腕设备 |
+| 只有左腕 gap | 左腕设备、物理 USB 路径或该路编码线程问题 |
+
+若捕获层异常，在测试后立即保存 `journalctl -k`/`dmesg` 中同一时间附近的 `usb`、`uvcvideo`、
+`reset`、`disconnect` 信息；不要在相机正被 streamer 占用时另跑 `v4l2-ctl --stream-*`，避免引入
+第二个设备消费者。若 C1 证明 capture 正常而 policy callback stale，再做 C2：保持推理参数不变，
+仅关闭 WebRTC 视频会话/浏览器预览，比较 gap 是否消失，以验证同进程编码或 CPU 争用。
+
+## 13. D 轮：单变量关闭稀疏 temporal ensemble，验证周期性抽搐
+
+C 轮完成后再做，恢复正常双相机，并保持 `async_prefetch_ahead=25`、`chunk_anchor_tol=0.05`、
+`chunk_anchor_blend=4`、`control_interp=1` 等参数不变，只改：
+
+```yaml
+temporal_ensemble_coeff: 0.0
+```
+
+单轮限制 8～10 秒。比较 B 中高度规律的“每次 chunk 安装后第 22～23 tick、步长 >0.1 rad”是否
+消失。若消失，说明抽搐来自当前稀疏重规划下 temporal ensemble 重叠区结束时的权重断崖，而非
+模型推理卡住；若仍在相同 chunk 内索引出现，则需记录服务端完整 raw chunk，确认 pi0.5 原始动作
+本身在约第 25 行是否不连续。`control_interp=2` 或降低 `max_joint_vel` 只能降低冲击，不应用来替代
+这个单变量定责实验。

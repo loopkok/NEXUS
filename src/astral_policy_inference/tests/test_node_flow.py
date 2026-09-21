@@ -19,12 +19,13 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import CompressedImage, JointState
 from std_msgs.msg import Float64, String
 from std_srvs.srv import Trigger
 
 from astral_data_collect.schema import CollectSchema
 from astral_policy_inference.node import PolicyNode
+from astral_policy_inference.image_codec import encode_jpeg
 
 FPS = 100
 
@@ -584,6 +585,44 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertTrue(resend)
         self.assertEqual(resend[-1]["hold_reason"], "policy_paused")
         self.assertIn("control_seq", resend[-1])
+
+    def test_camera_diagnostics_combines_policy_rx_and_streamer_stats(self):
+        """log_dir 的第四条流应自动包含逐帧接收和上游 capture/tap 统计。"""
+        self._stop_server()
+        self._stop_node_spin()
+        if self.node.context.ok():
+            self.node.destroy_node()
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "camera_diagnostics.jsonl")
+        self.node = PolicyNode(parameter_overrides=params(
+            camera_diagnostics_log_file=path,
+            camera_image_size=8,
+        ))
+        msg = CompressedImage()
+        msg.data = encode_jpeg(np.zeros((8, 8, 3), dtype=np.uint8))
+        self.node._on_image(msg, "base")
+        self.node._on_image(msg, "base")
+        self.node._on_streamer_diagnostics(String(data=json.dumps({
+            "t": 123.0,
+            "stage": "capture",
+            "label": "base",
+            "fps": 30.0,
+        })))
+        self.node._camera_diag_queue.join()
+
+        with open(path) as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+        rx = [r for r in rows if r.get("stage") == "policy_rx"]
+        self.assertEqual(len(rx), 2)
+        self.assertIsNone(rx[0]["gap_ms"])
+        self.assertIsInstance(rx[1]["gap_ms"], float)
+        self.assertTrue(rx[0]["decoded"])
+        self.assertGreater(rx[0]["payload_bytes"], 0)
+        self.assertIn("decode_ms", rx[0])
+        upstream = [r for r in rows if r.get("stage") == "capture"]
+        self.assertEqual(len(upstream), 1)
+        self.assertEqual(upstream[0]["fps"], 30.0)
+        self.assertIn("policy_received_t", upstream[0])
 
     def test_async_prefetch_ahead_reaches_engine(self):
         """async_prefetch_ahead 参数应透传到引擎（控制重规划/融合频率）。"""

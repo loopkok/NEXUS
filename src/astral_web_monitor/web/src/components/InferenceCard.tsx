@@ -202,7 +202,7 @@ export function InferenceCard({ infer, launch }: Props) {
             </select>
           </label>
           <label style={fieldSmallStyle}>
-            <span style={labelStyle}>记录日志</span>
+            <span style={labelStyle}>记录完整诊断日志</span>
             <input type="checkbox" checked={cfg.log}
               onChange={(e) => setCfg({ ...cfg, log: e.target.checked })} />
             <span style={dimStyle}>{cfg.log ? 'state+joint → /tmp' : '关'}</span>

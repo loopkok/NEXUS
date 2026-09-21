@@ -46,6 +46,7 @@ class CollectTapPublisher:
         label: str,
         max_fps: float = 30.0,
         quality: int = 90,
+        diagnostic_hook: Any = None,
     ) -> None:
         from sensor_msgs.msg import CompressedImage
         from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
@@ -54,6 +55,7 @@ class CollectTapPublisher:
         self._label = label
         self._max_fps = max(0.5, max_fps)
         self._quality = int(quality)
+        self._diagnostic_hook = diagnostic_hook
         # 令牌桶限流（容量 2）：源帧率==目标时抖动被吸收、长跑 100% 透传；
         # 源更快时仍限在目标附近。固定间隔硬卡会在源≈目标时误杀早到帧
         # （实机：30/s 到达只放行 19-28/s）。
@@ -68,6 +70,10 @@ class CollectTapPublisher:
         self._n_published = 0
         self._encode_ms_sum = 0.0
         self._publish_ms_sum = 0.0
+        self._last_submit_t: float | None = None
+        self._max_submit_gap_ms = 0.0
+        self._last_publish_t: float | None = None
+        self._max_publish_gap_ms = 0.0
         self._stat_t0 = time.monotonic()
         self._queue: queue.Queue = queue.Queue(maxsize=1)
         self._stop = threading.Event()
@@ -96,6 +102,12 @@ class CollectTapPublisher:
             return
         self._n_submitted += 1
         now = time.monotonic()
+        if self._last_submit_t is not None:
+            self._max_submit_gap_ms = max(
+                self._max_submit_gap_ms,
+                (now - self._last_submit_t) * 1000.0,
+            )
+        self._last_submit_t = now
         self._tokens = min(2.0, self._tokens + (now - self._last_refill) * self._max_fps)
         self._last_refill = now
         if self._tokens < 1.0:
@@ -135,9 +147,28 @@ class CollectTapPublisher:
             enc,
             pub,
         )
+        if self._diagnostic_hook is not None:
+            try:
+                self._diagnostic_hook({
+                    "stage": "collect_tap",
+                    "label": self._label,
+                    "window_s": round(dt, 3),
+                    "submitted_fps": round(self._n_submitted / dt, 3),
+                    "rate_skip": self._n_rate_skip,
+                    "queue_full": self._n_queue_full,
+                    "encoded_fps": round(self._n_encoded / dt, 3),
+                    "published_fps": round(self._n_published / dt, 3),
+                    "max_submit_gap_ms": round(self._max_submit_gap_ms, 3),
+                    "max_publish_gap_ms": round(self._max_publish_gap_ms, 3),
+                    "encode_ms": round(enc, 3),
+                    "publish_ms": round(pub, 3),
+                })
+            except Exception:
+                pass
         self._n_submitted = self._n_rate_skip = self._n_queue_full = 0
         self._n_encoded = self._n_published = 0
         self._encode_ms_sum = self._publish_ms_sum = 0.0
+        self._max_submit_gap_ms = self._max_publish_gap_ms = 0.0
         self._stat_t0 = now
 
     # -- encoder thread ------------------------------------------------------
@@ -172,6 +203,13 @@ class CollectTapPublisher:
                 t0 = time.monotonic()
                 self._pub.publish(msg)
                 self._n_published += 1
+                published_t = time.monotonic()
+                if self._last_publish_t is not None:
+                    self._max_publish_gap_ms = max(
+                        self._max_publish_gap_ms,
+                        (published_t - self._last_publish_t) * 1000.0,
+                    )
+                self._last_publish_t = published_t
                 self._publish_ms_sum += (time.monotonic() - t0) * 1000.0
             except Exception:
                 continue

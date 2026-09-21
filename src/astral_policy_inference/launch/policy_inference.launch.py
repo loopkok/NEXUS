@@ -69,10 +69,13 @@ def _node(context):
     control_diagnostics_log_file = LaunchConfiguration(
         "control_diagnostics_log_file"
     ).perform(context)
+    camera_diagnostics_log_file = LaunchConfiguration(
+        "camera_diagnostics_log_file"
+    ).perform(context)
     log_dir = LaunchConfiguration("log_dir").perform(context)
     log_tag = LaunchConfiguration("log_tag").perform(context)
     # log_dir 模式：每次 launch 建 {log_dir}/{stamp}_{tag}/ 运行目录，metrics + cmd +
-    # control 三条流一起落进去（不再重复写同一个 /tmp 文件、重启即丢）。显式路径参数
+    # control + camera diagnostics 四条流一起落进去（不复用 /tmp 文件）。显式路径参数
     # 仍分别优先于 log_dir。
     run_dir = ""
     if log_dir:
@@ -125,6 +128,16 @@ def _node(context):
     elif run_dir:
         parameters.append({
             "control_diagnostics_log_file": os.path.join(run_dir, "pi_control.jsonl")
+        })
+    if camera_diagnostics_log_file:
+        parameters.append({
+            "camera_diagnostics_log_file": camera_diagnostics_log_file
+        })
+    elif run_dir:
+        parameters.append({
+            "camera_diagnostics_log_file": os.path.join(
+                run_dir, "camera_diagnostics.jsonl"
+            )
         })
     node = Node(
         package="astral_policy_inference",
@@ -191,12 +204,19 @@ def generate_launch_description() -> LaunchDescription:
                     "非空则逐控制 tick 记录调度/执行耗时、观测龄期和 hold 原因"
                 )),
             DeclareLaunchArgument(
+                "camera_diagnostics_log_file", default_value="",
+                description=(
+                    "非空则逐帧记录 policy 图像接收/解码，并合并 streamer "
+                    "capture/tap 分层统计"
+                )),
+            DeclareLaunchArgument(
                 "log_dir", default_value="",
                 description=(
                     "非空根目录 → 每次 launch 自动建 {log_dir}/{YYYYMMDD-HHMMSS}[_tag]/ "
-                    "运行目录，把 pi_metrics.jsonl + pi_cmds.jsonl + pi_control.jsonl "
+                    "运行目录，把 pi_metrics.jsonl + pi_cmds.jsonl + pi_control.jsonl + "
+                    "camera_diagnostics.jsonl "
                     "落进去（区分每次记录、"
-                    "持久化、不复用同一文件）。三个显式日志路径参数分别优先。"
+                    "持久化、不复用同一文件）。四个显式日志路径参数分别优先。"
                 ),
             ),
             DeclareLaunchArgument(

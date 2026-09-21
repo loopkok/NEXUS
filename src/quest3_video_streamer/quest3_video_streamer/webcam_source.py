@@ -54,6 +54,9 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         # Optional tap for the data-collection pipeline: callable(bgr_frame).
         # Same contract as preview_hook (capture thread, must not block).
         self.collect_hook: Any = None
+        # Optional structured 5s-window diagnostics sink. The streamer wires
+        # this to ~/diagnostics; kept non-blocking and failure-isolated.
+        self.diagnostic_hook: Any = None
 
     async def start(self) -> None:
         import cv2
@@ -129,6 +132,9 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         # 偏差 >15%（掉速/降级立即可见）；(b) 距上次上报 ≥60s（保底心跳，
         # 证明线程还活着）。
         frames = 0
+        read_failures = 0
+        last_frame_t: float | None = None
+        max_frame_gap_ms = 0.0
         window_t0 = time.monotonic()
         last_report_t = 0.0
         last_reported_fps: float | None = None
@@ -136,13 +142,19 @@ class WebcamSourceAdapter(VideoSourceAdapter):
             if self._capture is None:
                 break
             ok, bgr = self._capture.read()
-            if not ok or bgr is None:
-                # Brief retry on transient read failure.
-                continue
-            frames += 1
             now = time.monotonic()
+            if not ok or bgr is None:
+                read_failures += 1
+            else:
+                frames += 1
+                if last_frame_t is not None:
+                    max_frame_gap_ms = max(
+                        max_frame_gap_ms, (now - last_frame_t) * 1000.0
+                    )
+                last_frame_t = now
             if now - window_t0 >= 5.0:
-                fps = frames / (now - window_t0)
+                dt = now - window_t0
+                fps = frames / dt
                 deviated = (
                     last_reported_fps is None
                     or abs(fps - last_reported_fps) / max(last_reported_fps, 1e-9)
@@ -155,8 +167,27 @@ class WebcamSourceAdapter(VideoSourceAdapter):
                     )
                     last_report_t = now
                     last_reported_fps = fps
+                diagnostic_hook = self.diagnostic_hook
+                if diagnostic_hook is not None:
+                    try:
+                        diagnostic_hook({
+                            "stage": "capture",
+                            "label": self._format.label,
+                            "window_s": round(dt, 3),
+                            "frames": frames,
+                            "fps": round(fps, 3),
+                            "read_failures": read_failures,
+                            "max_frame_gap_ms": round(max_frame_gap_ms, 3),
+                        })
+                    except Exception:
+                        pass
                 frames = 0
+                read_failures = 0
+                max_frame_gap_ms = 0.0
                 window_t0 = now
+            if not ok or bgr is None:
+                # Brief retry on transient read failure.
+                continue
             hook = self.preview_hook
             if hook is not None:
                 try:
