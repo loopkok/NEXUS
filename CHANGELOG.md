@@ -14,6 +14,14 @@ reentrant group；cmd/task 独占 command group，control/status 共享独立 se
 `cmd_execute/cmd_queue_delay_ms`，并在启动行打印解析后的 `cmd_topic` 与 callback 布局。新增回归覆盖
 callback 隔离和命令留痕。**验证**：policy node-flow 21 passed。
 
+**C 轮恢复策略执行，并补齐模型原始动作/安全层动作的可审计日志**——
+`TEST——0922-1137` 中 `policy` 命令 29ms 内切到 POLICY，base/left_wrist policy 接收恢复到
+28.98/29.77fps，图像年龄 p95 均约 34ms；由此排除相机采集、DDS 接收及 image timeout 作为本轮
+卡顿主因。控制稳态下实际下发 579 条指令，30Hz 间隔 p95 37.6ms；首 plan 仍有一次 307ms callback
+停顿。发现旧 `pi_cmds.jsonl` 只记录安全处理后的值，无法区分 pi0.5 原始输出、时序融合和
+clip/slew 的影响；现对每个发生安全修正的动作记录 `raw_targets`、`safety_events`，并同步写入
+`pi_control.jsonl`。控制行为不变。**验证**：node-flow + executor 29 passed。
+
 **Web 推理卡片接入 Launch 实时日志；pi0.5/224 成为全链路默认**——
 `astral_web_monitor`。推理泳道原本已采集 subprocess stdout/stderr 到独立的 `LaunchManager`，但
 `infer_launch.log_tail` 未在卡片渲染，`/api/v1/logs` 也未返回推理的完整环形缓冲，故 Web 启动失败时

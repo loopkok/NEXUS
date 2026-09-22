@@ -462,6 +462,24 @@ IDLE。原因不是 GPU server 或相机，而是所有高频 image、control ti
 `cmd_rx`、再出现 `cmd_exec`，对应 `pi_control.jsonl` 的 `cmd_execute` 事件。若 `cmd_rx` 都没有，
 再查 ROS domain/topic；若 `cmd_rx` 有而 `cmd_exec` 没有，查 control callback 阻塞。
 
+### 2026-09-22：C 轮 `TEST——0922-1137` 结论
+
+该轮已部署回调组修复，`cmd_rx seq=1` 后 29.0ms 出现 `cmd_exec seq=1 state=POLICY`，
+`pi_cmds.jsonl` 有 579 条实际指令；因此“Web 点开始策略仍 IDLE”已解决。两路 policy 接收也恢复：
+base 为 28.98fps、left_wrist 为 29.77fps，二者 gap p95 分别为 40.46/38.93ms，图像年龄 p95
+分别为 34.50/34.27ms，无 image stale。结论：当前卡顿**不是**左腕相机采集、DDS 接收或观测超时。
+
+控制正常阶段 30Hz 指令间隔中位数为 33.30ms、p95 为 37.60ms；仅开始策略的首个同步 plan 使一次
+control callback 达 306.75ms（首 plan 端到端 130ms），随后 23 次后台 replan 为约 93--137ms，
+未造成持续断流。当前运行参数仍是 `coeff=0.05`、`anchor_tol=0.05`、`prefetch=25`，并非计划中的
+pi0.5 无 ACT 融合对照，故下一轮应只改 `temporal_ensemble_coeff=0`、`chunk_anchor_tol=0`，其余保持。
+
+运动语义仍不正确不能归因于图像时序：训练集 action 第 8 维确为 0..1 的 gripper ratio，C 轮实际
+下发的臂关节相对 state 偏差最大达到 0.44rad，且 launch 摘要出现 `clip:left_ee_cmd` 与
+`slew:left_arm_cmd`。旧日志仅保留 safety 后的指令，不能判断是模型原始 action、时序融合还是 safety
+层造成；现已在新日志加入 `raw_targets` 和 `safety_events`。下一轮需要检查它们，且不要凭现有
+最终指令值断言模型输出越界。
+
 ### C1 判定矩阵
 
 | 同一时刻的证据 | 结论/下一步 |

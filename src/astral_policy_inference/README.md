@@ -166,6 +166,9 @@ fresh/stale/missing 状态及 engine 队列快照。因此即使 `_state_ok()` �
 及其 queue delay；同一控制行的 `events` 包含 `cmd_execute`、`cmd`、`cmd_rx_seq` 与
 `cmd_queue_delay_ms`。图像回调按相机分组并行，命令与控制定时器使用独立 callback group，避免 base
 JPEG 解码饿死 left_wrist 或可靠命令订阅。
+当某一帧经过安全层修正时，`pi_cmds.jsonl` 还会同时保存 `raw_targets`（模型/融合器给出的原始
+目标）与 `safety_events`，而同 control tick 也会保存同名 `safety_events`；可直接区分模型输出越界、
+关节限速与实际下发动作，不能只根据最终的 0/1 夹爪值推断模型行为。
 跑完用绘图脚本直接看曲线、错位时间与平滑度：
 
 ```bash

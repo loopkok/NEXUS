@@ -1256,14 +1256,39 @@ class PolicyNode(Node):
             self.get_logger().error(f"split_action failed: {exc}")
             return
         safe = self._executor.step(targets, 1.0 / max(1.0, self._ctrl_rate))
-        self._exec_events += [f"{e.kind}:{e.stream}" for e in self._executor.events]
+        # Keep the model-side target separate from the safety-processed command.
+        # Without this, a run log can show a gripper at 0/1 but cannot tell
+        # whether pi0.5 predicted an invalid ratio or the driver changed it.
+        # Reading ``events`` drains SafeExecutor's per-step event buffer.
+        safety_events = self._executor.events
+        event_codes = [f"{e.kind}:{e.stream}" for e in safety_events]
+        self._exec_events += event_codes
+        if safety_events and self._active_control_diag is not None:
+            self._active_control_diag["safety_events"] = [
+                {"stream": e.stream, "kind": e.kind, "detail": e.detail}
+                for e in safety_events
+            ]
+            self._active_control_diag["events"].extend(
+                f"safety:{code}" for code in event_codes
+            )
         self._publish_targets(safe)
         self._last_cmds = safe
         if self._js_fh is not None:
-            self._log_joint_stream(safe, send_kind="new_target")
+            self._log_joint_stream(
+                safe,
+                send_kind="new_target",
+                raw_targets=targets,
+                safety_events=safety_events,
+            )
 
     def _log_joint_stream(
-        self, targets: list, *, send_kind: str, hold_reason: Optional[str] = None
+        self,
+        targets: list,
+        *,
+        send_kind: str,
+        hold_reason: Optional[str] = None,
+        raw_targets: Optional[list] = None,
+        safety_events: Optional[list] = None,
     ) -> None:
         """joint_stream_log_file 开启时：每次实际下发（30Hz）记录各话题指令值 +
         同一时刻的观测 state（同时间轴，供绘图对比 state↔action 与错位时间）。"""
@@ -1274,6 +1299,15 @@ class PolicyNode(Node):
             rec["control_seq"] = self._active_control_diag["seq"]
         for tg in targets:
             rec[tg.topic] = [float(v) for v in tg.values]
+        if raw_targets is not None:
+            rec["raw_targets"] = {
+                tg.topic: [float(v) for v in tg.values] for tg in raw_targets
+            }
+        if safety_events:
+            rec["safety_events"] = [
+                {"stream": e.stream, "kind": e.kind, "detail": e.detail}
+                for e in safety_events
+            ]
         # 观测 state（layout 顺序：本机 [left_arm(7), left_ee(1)]）。只读、无副作用。
         try:
             state, _ = self._state_ok()
