@@ -451,6 +451,17 @@ camera_diagnostics.jsonl
 （JPEG/队列/DDS 发布）和 `policy_rx`（每帧到达 gap、payload、JPEG decode 耗时/结果）。文件由
 独立后台线程写入，图像 callback 只做非阻塞入队，避免诊断本身制造超时。
 
+### 2026-09-22：命令 IDLE 与 left_wrist 低接收率的回调组修复
+
+`TEST_922-1101` 证明 streamer 两路均约 30fps、queue full 为 0，但 policy 端 base 收到
+28.7fps、left_wrist 仅 2.86fps（最长 gap 2.37 秒），`pi_cmds.jsonl` 为 0 行且全部控制 tick 为
+IDLE。原因不是 GPU server 或相机，而是所有高频 image、control timer 和 `/policy_inference/cmd`
+都落在 Node 默认的 `MutuallyExclusiveCallbackGroup`；即使使用 4 线程 executor，实际仍被串行化。
+现已改为每相机一个串行 group、轻量 state 回调 reentrant、命令专用 group、控制/status 专用 group。
+新一轮 launch 应显示 `callbacks=image-per-camera+command+control`；点击策略时必须先出现
+`cmd_rx`、再出现 `cmd_exec`，对应 `pi_control.jsonl` 的 `cmd_execute` 事件。若 `cmd_rx` 都没有，
+再查 ROS domain/topic；若 `cmd_rx` 有而 `cmd_exec` 没有，查 control callback 阻塞。
+
 ### C1 判定矩阵
 
 | 同一时刻的证据 | 结论/下一步 |

@@ -624,6 +624,49 @@ class PolicyNodeFlowTest(unittest.TestCase):
         self.assertEqual(upstream[0]["fps"], 30.0)
         self.assertIn("policy_received_t", upstream[0])
 
+    def test_command_callback_isolated_and_traced_in_control_log(self):
+        """高频图像不能再与 cmd/tick 共用默认串行 callback group。
+
+        回归 2026-09-22：base 30fps 解码时 left_wrist 仅 2.86fps，连可靠的
+        ``policy`` 命令也始终未被 callback 调度。这里锁定每相机独立组、命令
+        专用组，以及 cmd_rx -> cmd_execute 的控制日志证据。
+        """
+        self._stop_server()
+        self._stop_node_spin()
+        if self.node.context.ok():
+            self.node.destroy_node()
+        d = tempfile.mkdtemp()
+        control_path = os.path.join(d, "pi_control.jsonl")
+        self.node = PolicyNode(parameter_overrides=params(
+            cameras=["base", "left_wrist"],
+            camera_map='{"base_0_rgb":"base","left_wrist_0_rgb":"left_wrist"}',
+            control_diagnostics_log_file=control_path,
+        ))
+        self.assertIs(
+            self.node._cmd_sub.callback_group,
+            self.node._command_callback_group,
+        )
+        self.assertIsNot(
+            self.node._cmd_sub.callback_group,
+            self.node._timer.callback_group,
+        )
+        self.assertIsNot(
+            self.node._image_callback_groups["base"],
+            self.node._image_callback_groups["left_wrist"],
+        )
+
+        feed_state(self.node)
+        self.node._on_cmd(String(data="policy"))
+        self.node._tick()
+        self.assertEqual(self.node.controller.state, "POLICY")
+        with open(control_path) as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        rec = records[-1]
+        self.assertIn("cmd_execute", rec["events"])
+        self.assertEqual(rec["cmd"], "policy")
+        self.assertEqual(rec["cmd_rx_seq"], 1)
+        self.assertGreaterEqual(rec["cmd_queue_delay_ms"], 0.0)
+
     def test_async_prefetch_ahead_reaches_engine(self):
         """async_prefetch_ahead 参数应透传到引擎（控制重规划/融合频率）。"""
         self._stop_server()

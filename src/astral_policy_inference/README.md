@@ -162,6 +162,10 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
 fresh/stale/missing 状态及 engine 队列快照。因此即使 `_state_ok()` 拒绝后完全没有下发指令，
 也不会成为日志空洞。`camera_diagnostics_log_file:=/tmp/camera_diagnostics.jsonl` 把相机管线分成
 `capture`、`collect_tap`、`policy_rx` 三层；使用 `log_dir` 时自动开启，无需额外测速终端。
+命令也有完整留痕：launch 日志依次出现 `cmd_rx`（DDS callback 已收）、`cmd_exec`（控制 tick 已执行）
+及其 queue delay；同一控制行的 `events` 包含 `cmd_execute`、`cmd`、`cmd_rx_seq` 与
+`cmd_queue_delay_ms`。图像回调按相机分组并行，命令与控制定时器使用独立 callback group，避免 base
+JPEG 解码饿死 left_wrist 或可靠命令订阅。
 跑完用绘图脚本直接看曲线、错位时间与平滑度：
 
 ```bash

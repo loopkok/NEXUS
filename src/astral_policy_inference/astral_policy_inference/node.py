@@ -37,6 +37,7 @@ from typing import Optional
 
 import numpy as np
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (
@@ -86,10 +87,24 @@ class PolicyNode(Node):
         # command topics + engine/session swaps). Sensor subscription callbacks
         # (_on_joints/_on_ratio/_on_image/_on_task) stay lock-free on purpose.
         self._lock = threading.RLock()
-        # /~/cmd strings are queued here by the ROS callback and drained by the
-        # control timer, so slow transitions (engine build, reanchor waits) never
-        # run inside an rclpy executor thread where the wait-set would starve.
-        self._cmd_queue: "queue.Queue[str]" = queue.Queue()
+        # Do not put high-rate JPEG callbacks, the control timer, and commands in
+        # Node's default MutuallyExclusiveCallbackGroup. That makes a nominally
+        # MultiThreadedExecutor effectively single-threaded: base-image decoding
+        # can then starve left_wrist *and* a reliable /policy_inference/cmd.
+        # Each image source gets its own serial group (a camera cannot race with
+        # itself); base and left_wrist can decode in parallel. State callbacks
+        # are small and reentrant. Control/status remain mutually exclusive to
+        # preserve one-writer arbitration, and commands get a dedicated lane.
+        self._sensor_callback_group = ReentrantCallbackGroup()
+        self._image_callback_groups: dict[str, MutuallyExclusiveCallbackGroup] = {}
+        self._command_callback_group = MutuallyExclusiveCallbackGroup()
+        self._control_callback_group = MutuallyExclusiveCallbackGroup()
+
+        # /~/cmd records are queued by the ROS callback and drained by the
+        # control timer. Keep a receive sequence/timestamp so run logs prove
+        # the full path: DDS receive -> queue -> controller execution.
+        self._cmd_queue: "queue.Queue[tuple[str, int, float]]" = queue.Queue()
+        self._cmd_rx_seq = 0
         self._engine: Optional[ActionEngine] = None
         self._executor = SafeExecutor(
             max_joint_vel=float(self.get_parameter("max_joint_vel").value),
@@ -210,18 +225,34 @@ class PolicyNode(Node):
             String, self.get_parameter("state_topic").value, _LATCHED_QOS
         )
         self._cmd_sub = self.create_subscription(
-            String, self.get_parameter("cmd_topic").value, self._on_cmd, 10
+            String,
+            self.get_parameter("cmd_topic").value,
+            self._on_cmd,
+            10,
+            callback_group=self._command_callback_group,
         )
         self._task_sub = self.create_subscription(
-            String, self.get_parameter("task_topic").value, self._on_task, 10
+            String,
+            self.get_parameter("task_topic").value,
+            self._on_task,
+            10,
+            callback_group=self._command_callback_group,
         )
         self._reanchor_clients = {
             name: self.create_client(Trigger, name)
             for name in self.get_parameter("teleop_reanchor_services").value
         }
 
-        self._timer = self.create_timer(1.0 / max(1.0, self._ctrl_rate), self._tick)
-        self._status_timer = self.create_timer(1.0, self._publish_state)
+        self._timer = self.create_timer(
+            1.0 / max(1.0, self._ctrl_rate),
+            self._tick,
+            callback_group=self._control_callback_group,
+        )
+        self._status_timer = self.create_timer(
+            1.0,
+            self._publish_state,
+            callback_group=self._control_callback_group,
+        )
         self._last_publish = 0.0
         self.get_logger().info(
             f"policy_node up: schema={self._layout.state_dim}D "
@@ -237,7 +268,9 @@ class PolicyNode(Node):
             f"mute={sorted(self._mute_cameras)} "
             f"jpeg={self.get_parameter('jpeg_transport').value} "
             f"backend={self.get_parameter('backend_type').value} "
-            f"host={self.get_parameter('host').value}:{self.get_parameter('port').value}"
+            f"host={self.get_parameter('host').value}:{self.get_parameter('port').value} "
+            f"cmd_topic={self.get_parameter('cmd_topic').value} "
+            "callbacks=image-per-camera+command+control"
         )
 
     # ------------------------------------------------------------- parameters
@@ -404,17 +437,27 @@ class PolicyNode(Node):
                     f"/{side}_gripper/joint_states",
                     lambda msg, s=side: self._on_gripper_rad(msg, s),
                     _SENSOR_QOS,
+                    callback_group=self._sensor_callback_group,
                 )
             else:
                 cb = lambda msg, k=key, d=src.dim: self._on_joints(msg, k, d)  # noqa: E731
-                self.create_subscription(JointState, src.topic, cb, _SENSOR_QOS)
+                self.create_subscription(
+                    JointState,
+                    src.topic,
+                    cb,
+                    _SENSOR_QOS,
+                    callback_group=self._sensor_callback_group,
+                )
         for label in sorted({v for v in self._camera_map.values()}):
             topic = f"/quest3_video_streamer/collect/{label}"
+            group = MutuallyExclusiveCallbackGroup()
+            self._image_callback_groups[label] = group
             self.create_subscription(
                 CompressedImage,
                 topic,
                 lambda msg, lab=label: self._on_image(msg, lab),
                 _SENSOR_QOS,
+                callback_group=group,
             )
         if self._camera_diag_fh is not None:
             self.create_subscription(
@@ -422,6 +465,7 @@ class PolicyNode(Node):
                 "/quest3_video_streamer/diagnostics",
                 self._on_streamer_diagnostics,
                 _SENSOR_QOS,
+                callback_group=self._sensor_callback_group,
             )
 
     # ------------------------------------------------------------ subscribers
@@ -525,7 +569,13 @@ class PolicyNode(Node):
         executor thread (where a blocking wait would starve the wait-set)."""
         text = msg.data.strip()
         if text:
-            self._cmd_queue.put_nowait(text)
+            self._cmd_rx_seq += 1
+            seq = self._cmd_rx_seq
+            queued_at = time.monotonic()
+            self._cmd_queue.put_nowait((text, seq, queued_at))
+            self.get_logger().info(
+                f"cmd_rx seq={seq} cmd={text!r} queued={self._cmd_queue.qsize()}"
+            )
 
     def _handle_cmd(self, text: str) -> None:
         """Synchronous command entry (ROS-timer drain + tests). Caller must not
@@ -565,22 +615,35 @@ class PolicyNode(Node):
         """Run queued commands now (caller holds ``self._lock``)."""
         while True:
             try:
-                text = self._cmd_queue.get_nowait()
+                text, rx_seq, queued_at = self._cmd_queue.get_nowait()
             except queue.Empty:
                 return
+            queue_delay_ms = (time.monotonic() - queued_at) * 1000.0
+            self._mark_control_diag(
+                "cmd_execute",
+                cmd=text,
+                cmd_rx_seq=rx_seq,
+                cmd_queue_delay_ms=round(queue_delay_ms, 3),
+            )
             # While a takeover effect is in flight only 'stop' is honoured; the
             # pending re-anchor owns the transition and other verbs would race it.
             if self._takeover_pending is not None:
                 verb = text.split(":", 1)[0].split()[0]
                 if verb != "stop":
                     self.get_logger().warn(
-                        f"cmd {verb!r} ignored during takeover effect"
+                        f"cmd_exec seq={rx_seq} {verb!r} ignored during takeover effect"
                     )
                     continue
             try:
                 self._exec_cmd(text)
+                self.get_logger().info(
+                    f"cmd_exec seq={rx_seq} state={self.controller.state} "
+                    f"queue_delay_ms={queue_delay_ms:.1f}"
+                )
             except Exception as exc:  # noqa: BLE001
-                self.get_logger().error(f"queued cmd {text!r} failed: {exc}")
+                self.get_logger().error(
+                    f"cmd_exec seq={rx_seq} {text!r} failed: {exc}"
+                )
 
     def _state_ok(self) -> tuple[Optional[np.ndarray], list[str]]:
         now = time.monotonic()

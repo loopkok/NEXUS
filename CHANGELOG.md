@@ -2,6 +2,18 @@
 
 ## 2026-09-22
 
+**修复 pi0.5 policy 命令永远 IDLE、left_wrist 在 policy 端被饿死**——
+`astral_policy_inference/node.py`。`TEST_922-1101` 中 streamer 对 base/left_wrist 均稳定发布
+约 30fps（queue_full=0），policy 却收到 base 28.7fps、left_wrist 2.86fps（最大 gap 2.37s），
+`pi_cmds.jsonl` 为 0 行；Web 显示已发送及终端直接 pub 都不触发状态切换。**根因**：所有高频
+image callback、30Hz control timer 与可靠 cmd subscription 仍共用 Node 默认
+`MutuallyExclusiveCallbackGroup`，故 4 线程 executor 实际串行化，base JPEG decode 长期占用等待集。
+**修复**：每台相机独占一个 serial callback group，使两路解码并行；state/diagnostics 回调使用
+reentrant group；cmd/task 独占 command group，control/status 共享独立 serial group 保持仲裁单写。
+同时加 `cmd_rx seq`（DDS 收到）→ `cmd_exec seq`（tick 执行）日志与 control JSONL 的
+`cmd_execute/cmd_queue_delay_ms`，并在启动行打印解析后的 `cmd_topic` 与 callback 布局。新增回归覆盖
+callback 隔离和命令留痕。**验证**：policy node-flow 21 passed。
+
 **Web 推理卡片接入 Launch 实时日志；pi0.5/224 成为全链路默认**——
 `astral_web_monitor`。推理泳道原本已采集 subprocess stdout/stderr 到独立的 `LaunchManager`，但
 `infer_launch.log_tail` 未在卡片渲染，`/api/v1/logs` 也未返回推理的完整环形缓冲，故 Web 启动失败时
