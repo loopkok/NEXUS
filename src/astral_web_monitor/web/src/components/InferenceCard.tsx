@@ -5,6 +5,7 @@ import { useState } from 'react'
 import type { InferLaunchConfig, InferLaunchInfo, InferState } from '../types'
 import { api } from '../api/client'
 import { pushToast } from '../hooks/useToast'
+import { LaunchLogPanel } from './LogConsole'
 
 interface Props {
   infer: InferState | null
@@ -44,10 +45,10 @@ function fmtStat(v: unknown): string {
 export function InferenceCard({ infer, launch }: Props) {
   const [cfg, setCfg] = useState<InferLaunchConfig>({
     backend_type: 'remote',
-    model: 'act',
+    model: 'pi05',
     host: '127.0.0.1',
     port: 8001,
-    camera_image_size: 480,
+    camera_image_size: 224,
     engine_mode: 'queue_async',
     log: false,
   })
@@ -142,7 +143,7 @@ export function InferenceCard({ infer, launch }: Props) {
           推理节点离线——点右上「启动节点」（配置化泳道），或命令行
           <code style={codeStyle}>
             ros2 launch astral_policy_inference policy_inference.launch.py backend_type:=remote
-            host:=&lt;GPU主机IP&gt; port:=8001 camera_image_size:=480
+            host:=&lt;GPU主机IP&gt; port:=8001 camera_image_size:=224 model:=pi05
           </code>
           。CLI 启动的节点，本卡片命令按钮同样可用（纯话题控制面）。
         </div>
@@ -182,7 +183,7 @@ export function InferenceCard({ infer, launch }: Props) {
           <label style={fieldSmallStyle}>
             <span style={labelStyle}>图像尺寸</span>
             <input style={inputStyle} type="number" value={cfg.camera_image_size}
-              onChange={(e) => setCfg({ ...cfg, camera_image_size: Number(e.target.value) || 480 })} />
+              onChange={(e) => setCfg({ ...cfg, camera_image_size: Number(e.target.value) || 224 })} />
           </label>
           <label style={fieldStyle}>
             <span style={labelStyle}>引擎模式</span>
@@ -260,6 +261,17 @@ export function InferenceCard({ infer, launch }: Props) {
           ))}
         </div>
       )}
+
+      <LaunchLogPanel
+        title="推理 Launch 日志"
+        lines={launch?.log_tail ?? []}
+        downloadPrefix="policy-launch-logs"
+        height="260px"
+        loadAll={async () => {
+          const res = await api.logs()
+          return res.ok && res.data ? res.data.infer ?? [] : launch?.log_tail ?? []
+        }}
+      />
     </div>
   )
 }

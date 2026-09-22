@@ -69,9 +69,9 @@ class InferTaskRequest(BaseModel):
 class InferLaunchRequest(BaseModel):
     """推理节点泳道启动配置 → policy_inference.launch.py 显式参数。"""
     backend_type: str = "remote"       # remote | inproc | stub
-    model: str = "act"                 # act | pi05 | ...
+    model: str = "pi05"                # act | pi05 | ...
     host: str = "127.0.0.1"            # GPU 主机 IP
     port: int = 8001                   # serve 端口
-    camera_image_size: int = 480       # 模型输入尺寸（ACT 480，pi0.5 通常 224/480）
+    camera_image_size: int = 224       # 模型输入尺寸（pi0.5 默认 224）
     engine_mode: str = "queue_async"   # queue_async | queue_sync | rtc
     log: bool = False                  # 开启则自动记录控制、指令、指标及相机全链路诊断

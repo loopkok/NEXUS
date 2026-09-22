@@ -3,9 +3,23 @@ import type { NormalisedState } from '../lib/mapUiState'
 import { api } from '../api/client'
 import { pushToast } from '../hooks/useToast'
 
-export function LogConsole({ state }: { state: NormalisedState | null }) {
+interface LaunchLogPanelProps {
+  title: string
+  lines: string[]
+  /** Download uses the complete backend ring buffer; the live panel is only its tail. */
+  loadAll: () => Promise<string[]>
+  downloadPrefix: string
+  height?: string
+}
+
+export function LaunchLogPanel({
+  title,
+  lines,
+  loadAll,
+  downloadPrefix,
+  height,
+}: LaunchLogPanelProps) {
   const ref = useRef<HTMLPreElement>(null)
-  const lines = state?.logTail ?? []
 
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
@@ -26,21 +40,14 @@ export function LogConsole({ state }: { state: NormalisedState | null }) {
   }
 
   async function download() {
-    let teleop = lines
-    let collect: string[] = []
-    const res = await api.logs()
-    if (res.ok && res.data) {
-      teleop = res.data.teleop ?? teleop
-      collect = res.data.collect ?? []
+    let all = lines
+    try {
+      all = await loadAll()
+    } catch {
+      pushToast('读取完整日志失败', 'error')
+      return
     }
-    const parts: string[] = []
-    if (teleop.length) {
-      parts.push('# teleop launch', ...teleop)
-    }
-    if (collect.length) {
-      parts.push('', '# data collect', ...collect)
-    }
-    const text = parts.join('\n')
+    const text = all.join('\n')
     if (!text.trim()) {
       pushToast('暂无日志', 'info')
       return
@@ -50,16 +57,16 @@ export function LogConsole({ state }: { state: NormalisedState | null }) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `launch-logs-${stamp}.txt`
+    a.download = `${downloadPrefix}-${stamp}.txt`
     a.click()
     URL.revokeObjectURL(url)
-    pushToast(`已下载 ${teleop.length + collect.length} 行`, 'success')
+    pushToast(`已下载 ${all.length} 行`, 'success')
   }
 
   return (
-    <div style={wrapStyle}>
+    <div style={{ ...wrapStyle, height: height ?? wrapStyle.height }}>
       <div style={headerStyle}>
-        <span>Launch 日志</span>
+        <span>{title}</span>
         <span style={btnRow}>
           <button type="button" style={hdrBtn} onClick={() => void copy()}>复制</button>
           <button type="button" style={hdrBtn} onClick={() => void download()}>下载</button>
@@ -69,6 +76,26 @@ export function LogConsole({ state }: { state: NormalisedState | null }) {
         {lines.length === 0 ? '（等待启动...）' : lines.join('\n')}
       </pre>
     </div>
+  )
+}
+
+export function LogConsole({ state }: { state: NormalisedState | null }) {
+  const lines = state?.logTail ?? []
+  return (
+    <LaunchLogPanel
+      title="Launch 日志"
+      lines={lines}
+      downloadPrefix="launch-logs"
+      loadAll={async () => {
+        const res = await api.logs()
+        if (!res.ok || !res.data) return lines
+        const parts: string[] = []
+        if (res.data.teleop?.length) parts.push('# teleop launch', ...res.data.teleop)
+        if (res.data.collect?.length) parts.push('', '# data collect', ...res.data.collect)
+        if (res.data.infer?.length) parts.push('', '# policy inference', ...res.data.infer)
+        return parts
+      }}
+    />
   )
 }
 

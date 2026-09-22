@@ -228,10 +228,10 @@ def policy_launch_args(cfg: dict) -> dict[str, str]:
 
     args: dict[str, str] = {
         "backend_type": safe(cfg.get("backend_type", "remote")),
-        "model": safe(cfg.get("model", "act")),
+        "model": safe(cfg.get("model", "pi05")),
         "host": safe(cfg.get("host", "127.0.0.1")),
         "port": str(int(cfg.get("port", 8001))),
-        "camera_image_size": str(int(cfg.get("camera_image_size", 480))),
+        "camera_image_size": str(int(cfg.get("camera_image_size", 224))),
         "engine_mode": safe(cfg.get("engine_mode", "queue_async")),
         "keyboard": "false",  # web 按钮取代键盘节点
     }

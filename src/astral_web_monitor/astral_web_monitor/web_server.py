@@ -208,6 +208,7 @@ async def get_logs() -> ApiEnvelope:
         data={
             "teleop": _launch_mgr.log_tail(),
             "collect": _collect_mgr.log_tail(),
+            "infer": _policy_mgr.log_tail(),
         },
     )
 

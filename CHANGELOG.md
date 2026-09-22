@@ -1,5 +1,16 @@
 # Changelog（astral_ws）
 
+## 2026-09-22
+
+**Web 推理卡片接入 Launch 实时日志；pi0.5/224 成为全链路默认**——
+`astral_web_monitor`。推理泳道原本已采集 subprocess stdout/stderr 到独立的 `LaunchManager`，但
+`infer_launch.log_tail` 未在卡片渲染，`/api/v1/logs` 也未返回推理的完整环形缓冲，故 Web 启动失败时
+仍要回终端查日志。现将通用日志面板复用于推理卡片：实时显示最新 800 行、可复制显示内容；下载从
+REST 获取推理泳道完整缓冲（默认最多 8000 行）。系统页下载同步包含遥操/数采/推理三段。并将前端
+表单、Pydantic 请求默认值和后端 `policy_launch_args()` 默认值统一改为 `model=pi05`、
+`camera_image_size=224`，避免旧客户端或缺字段请求回退为 ACT/480。**验证**：web pytest 与 Vite
+生产构建通过。
+
 ## 2026-09-21
 
 **streamer `_setup_collect_taps` 参数名错配修复（`diagnostics_hook` vs `diagnostic_hook`）**——
@@ -2137,4 +2148,3 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   port:=8001 \
   camera_image_size:=480 \
   engine_mode:=queue_async，同时还要专门起一个键盘节点来进行开始等操作，现在在数采那个web的tab的下面加一个推理的模块，数采模块在上面，在推理模块部分，可以配置GPU主机IP，端口，输入的图像尺寸，是否开启记录日志（把state和joint记录到文件中），以及用按钮来实现键盘的所有功能，同时UI做好看一点，做完所有功能后进行对抗性审查，确保功能正常且无隐藏bug
-

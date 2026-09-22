@@ -18,10 +18,10 @@ from astral_web_monitor.config import (  # noqa: E402
 def test_policy_launch_args_defaults() -> None:
     args = policy_launch_args({})
     assert args["backend_type"] == "remote"
-    assert args["model"] == "act"
+    assert args["model"] == "pi05"
     assert args["host"] == "127.0.0.1"
     assert args["port"] == "8001"
-    assert args["camera_image_size"] == "480"
+    assert args["camera_image_size"] == "224"
     assert args["engine_mode"] == "queue_async"
     assert args["keyboard"] == "false"  # web 按钮取代键盘节点
     assert "metrics_log_file" not in args  # 日志默认关

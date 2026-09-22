@@ -192,3 +192,9 @@ export interface InferLaunchConfig {
   engine_mode: string
   log: boolean
 }
+
+export interface LaunchLogsData {
+  teleop: string[]
+  collect: string[]
+  infer: string[]
+}

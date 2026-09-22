@@ -1,5 +1,5 @@
 // REST client mirroring rob_station's api/client.js convention.
-import type { ApiEnvelope, HealthData, InferLaunchConfig, Preset, VideoStatusData } from '../types'
+import type { ApiEnvelope, HealthData, InferLaunchConfig, LaunchLogsData, Preset, VideoStatusData } from '../types'
 
 const base = import.meta.env.VITE_API_BASE ?? ''
 
@@ -74,5 +74,5 @@ export const api = {
   inferLaunchRestart: () => post<unknown>('/api/v1/infer/launch/restart'),
   inferCmd: (cmd: string) => post<unknown>('/api/v1/infer/cmd', { cmd }),
   inferTask: (text: string) => post<unknown>('/api/v1/infer/task', { text }),
-  logs: () => get<{ teleop: string[]; collect: string[] }>('/api/v1/logs'),
+  logs: () => get<LaunchLogsData>('/api/v1/logs'),
 }
