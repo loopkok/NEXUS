@@ -426,9 +426,11 @@ V4L2/USB capture → collect tap 准入/编码/发布 → DDS 图像话题
 “记录推理日志”后由 policy 自动合并进 `camera_diagnostics.jsonl`：
 
 - `[capture left_wrist] driver-side N fps`：低或长时间不再出现，优先怀疑相机、USB、V4L2
-  `read()` 或捕获线程；
+  `read()` 或捕获线程；JSON 中的 `max_frame_gap_ms` 会保留该 5 秒窗口内最长的一次帧间隔，
+  可直接与第一次 stale 的时间比对；
 - `[tap left_wrist] submit=... queue_full=... encoded=... published=... encode=... publish=...`：
-  capture 正常但 submit/published 低，说明问题位于抽头、JPEG 编码或 DDS 发布；
+  capture 正常但 submit/published 低，说明问题位于抽头、JPEG 编码或 DDS 发布；JSON 中的
+  `max_submit_gap_ms` / `max_publish_gap_ms` 能定位间隔是发生在送入抽头前还是 DDS 发布后；
 - `queue_full` 高且 `encode` 高：JPEG 编码跟不上；`publish` 显著升高：DDS publish 阻塞或主机负载。
 
 开启 Web 完整推理日志，建议 `log_tag=pi05_left_wrist_timeout_diag`。记录第一次

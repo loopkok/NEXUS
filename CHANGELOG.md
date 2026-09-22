@@ -2,6 +2,14 @@
 
 ## 2026-09-21
 
+**streamer `_setup_collect_taps` 参数名错配修复（`diagnostics_hook` vs `diagnostic_hook`）**——
+`quest3_video_streamer/streamer_node.py`。**动机**：C 轮测试启动 streamer 即崩
+`TypeError: _setup_collect_taps() got an unexpected keyword argument 'diagnostics_hook'`——
+pipeline diagnostics 链路并行改动时，main 调用传 `diagnostics_hook=`（带 s），而函数定义与
+CollectTapPublisher 都是 `diagnostic_hook`（不带 s），参数名不匹配 → 启动即死。**做法**：
+main 调用处改回 `diagnostic_hook=diagnostics_hook`（与定义/CollectTapPublisher 一致）。**验证**：
+streamer 测试 39 passed；语法 OK。**部署**：机器人侧 git pull + colcon build quest3_video_streamer。
+
 **Web“记录推理日志”自动收齐相机全链路诊断，无需额外终端**——
 `quest3_video_streamer` × `astral_policy_inference`。streamer 新增 BEST_EFFORT
 `~/diagnostics`：每 5 秒按相机发布 capture FPS/read failure，以及 collect tap 的 submit/rate skip/
@@ -2130,15 +2138,3 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   camera_image_size:=480 \
   engine_mode:=queue_async，同时还要专门起一个键盘节点来进行开始等操作，现在在数采那个web的tab的下面加一个推理的模块，数采模块在上面，在推理模块部分，可以配置GPU主机IP，端口，输入的图像尺寸，是否开启记录日志（把state和joint记录到文件中），以及用按钮来实现键盘的所有功能，同时UI做好看一点，做完所有功能后进行对抗性审查，确保功能正常且无隐藏bug
 
-nvidia@nvidia-desktop:~/loopkok/astral_ws/src/quest3_video_streamer$ python3 -m quest3_video_streamer.scan
-video0  (/dev/video0, MJPG):
-    platform-3610000.usb-usb-0:2.2:1.0-video-index0
-    WN Camera: WN Camera
-video2  (/dev/video2, MJPG):
-    usb-WN-260724-ZW_WN_Camera_01.00.00-video-index0
-    platform-3610000.usb-usb-0:1.4:1.0-video-index0
-    WN Camera: WN Camera
-video8  (/dev/video8, YUYV):
-    usb-Intel_R__RealSense_TM__Depth_Camera_435i_Intel_R__RealSense_TM__Depth_Camera_435i_254843065994-video-index0
-    platform-3610000.usb-usb-0:2.1:1.3-video-index0
-    Intel(R) RealSense(TM) Depth Ca

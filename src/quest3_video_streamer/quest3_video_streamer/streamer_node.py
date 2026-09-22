@@ -441,7 +441,7 @@ def main() -> None:
     gate = _setup_gate(node, sources, params, cameras_info)
     previews = _setup_previews(node, sources, gate, params)
     collect_taps = _setup_collect_taps(
-        node, sources, params, diagnostics_hook=diagnostics_hook
+        node, sources, params, diagnostic_hook=diagnostics_hook
     )
 
     config = VideoServiceConfig(
