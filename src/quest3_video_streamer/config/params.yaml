@@ -32,6 +32,8 @@ quest3_video_streamer:
     #   fov_h_deg   : 水平视场角，Quest 用它按真实尺度缩放面板（修 2x 放大）
     #   label       : track 标签，用于 Quest 端识别和统计
     #   force_mjpg  : 是否强制 MJPG（USB 腕部相机 true；D435i UVC 彩色是 YUYV 用 false）
+    #   strict_capture_fps: 请求帧率与 V4L2 实际协商不符时拒绝启动（正式采集应 true）
+    #   capture_fps_tolerance: 协商帧率允许相对误差；0.15 = ±15%
     #   layout      : Quest 端 3D 布局
     #     position        : [x, y, z] 米，相对眼睛（z=1.8 为面板距离）
     #     distance       : 面板距离（米）
@@ -60,6 +62,8 @@ quest3_video_streamer:
       fov_h_deg: 60.0
       label: "left_wrist"
       force_mjpg: true
+      strict_capture_fps: true
+      capture_fps_tolerance: 0.15
       layout:
         position: [-0.95, 0.32, 1.8]
         distance: 1.8
@@ -73,6 +77,8 @@ quest3_video_streamer:
       fov_h_deg: 60.0
       label: "right_wrist"
       force_mjpg: true
+      strict_capture_fps: true
+      capture_fps_tolerance: 0.15
       layout:
         position: [-0.95, -0.42, 1.8]
         distance: 1.8

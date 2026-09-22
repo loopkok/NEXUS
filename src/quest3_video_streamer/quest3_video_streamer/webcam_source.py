@@ -23,6 +23,19 @@ from quest3_video_streamer.source_base import VideoFormat, VideoSourceAdapter
 _LOG = logging.getLogger("quest3_video_streamer.capture")
 
 
+def _fourcc_text(value: float) -> str:
+    """OpenCV exposes FOURCC as a packed float; make it diagnostic text."""
+    packed = int(value)
+    return "".join(chr((packed >> (8 * i)) & 0xFF) for i in range(4)).strip("\x00 ")
+
+
+def _fps_mismatch(requested: float, reported: float, tolerance: float) -> bool:
+    """Unknown/zero backend reports fail open; known large mismatches do not."""
+    if requested <= 0.0 or reported <= 0.0:
+        return False
+    return abs(reported - requested) / requested > max(0.0, tolerance)
+
+
 class WebcamSourceAdapter(VideoSourceAdapter):
     def __init__(
         self,
@@ -34,6 +47,8 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         fov_h_deg: float = 60.0,
         label: str = "webcam",
         force_mjpg: bool = True,
+        strict_capture_fps: bool = True,
+        capture_fps_tolerance: float = 0.15,
     ) -> None:
         self._format = VideoFormat(
             width=width, height=height, fps=fps,
@@ -41,6 +56,8 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         )
         self._device_index = device_index
         self._force_mjpg = force_mjpg
+        self._strict_capture_fps = bool(strict_capture_fps)
+        self._capture_fps_tolerance = max(0.0, float(capture_fps_tolerance))
         self._capture: Any = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -57,6 +74,13 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         # Optional structured 5s-window diagnostics sink. The streamer wires
         # this to ~/diagnostics; kept non-blocking and failure-isolated.
         self.diagnostic_hook: Any = None
+        # A camera may ignore 30fps and stream a USB3-only 120fps descriptor.
+        # Always drain the device, but only deliver frames at the configured
+        # rate so preview/collect/inference are protected in explicit fallback
+        # mode.  This does not repair corrupt USB/MJPEG payloads; strict mode
+        # therefore rejects a known negotiation mismatch at startup.
+        self._delivery_tokens = 2.0
+        self._last_delivery_refill = time.monotonic()
 
     async def start(self) -> None:
         import cv2
@@ -76,9 +100,49 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(self._format.width))
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self._format.height))
         capture.set(cv2.CAP_PROP_FPS, float(self._format.fps))
+        # Minimise stale buffered frames when a device physically streams much
+        # faster than requested.  Some V4L2 backends ignore this property; the
+        # latest-frame design and software delivery gate remain the fallback.
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        actual_w = int(round(capture.get(cv2.CAP_PROP_FRAME_WIDTH)))
+        actual_h = int(round(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        actual_fps = float(capture.get(cv2.CAP_PROP_FPS))
+        actual_fourcc = _fourcc_text(capture.get(cv2.CAP_PROP_FOURCC))
+        _LOG.info(
+            "[capture %s] negotiated device=/dev/video%d requested=%dx%d@%g "
+            "actual=%dx%d@%.3g fourcc=%s strict_fps=%s",
+            self._format.label, self._device_index,
+            self._format.width, self._format.height, self._format.fps,
+            actual_w, actual_h, actual_fps, actual_fourcc or "?",
+            self._strict_capture_fps,
+        )
+        if _fps_mismatch(
+            float(self._format.fps), actual_fps, self._capture_fps_tolerance
+        ):
+            msg = (
+                f"camera {self._format.label} /dev/video{self._device_index} "
+                f"requested {self._format.width}x{self._format.height}@{self._format.fps} "
+                f"but V4L2 negotiated {actual_w}x{actual_h}@{actual_fps:.3g} "
+                f"{actual_fourcc or '?'}; this usually means the USB-speed-specific "
+                "UVC descriptors do not offer the requested interval"
+            )
+            if self._strict_capture_fps:
+                capture.release()
+                raise RuntimeError(
+                    msg + ". Refusing to record/infer silently at the wrong rate; "
+                    "use a USB2 path/firmware with 30fps support, or set "
+                    "strict_capture_fps=false only for diagnostic software throttling."
+                )
+            _LOG.error(
+                "%s; software-limiting delivered frames, data use is unsafe "
+                "if JPEG corruption appears", msg,
+            )
         self._capture = capture
         self._loop = asyncio.get_running_loop()
         self._stop.clear()
+        self._delivery_tokens = 2.0
+        self._last_delivery_refill = time.monotonic()
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
 
@@ -132,6 +196,7 @@ class WebcamSourceAdapter(VideoSourceAdapter):
         # 偏差 >15%（掉速/降级立即可见）；(b) 距上次上报 ≥60s（保底心跳，
         # 证明线程还活着）。
         frames = 0
+        delivered_frames = 0
         read_failures = 0
         last_frame_t: float | None = None
         max_frame_gap_ms = 0.0
@@ -176,18 +241,36 @@ class WebcamSourceAdapter(VideoSourceAdapter):
                             "window_s": round(dt, 3),
                             "frames": frames,
                             "fps": round(fps, 3),
+                            "delivered_frames": delivered_frames,
+                            "delivered_fps": round(delivered_frames / dt, 3),
+                            "requested_fps": self._format.fps,
                             "read_failures": read_failures,
                             "max_frame_gap_ms": round(max_frame_gap_ms, 3),
                         })
                     except Exception:
                         pass
                 frames = 0
+                delivered_frames = 0
                 read_failures = 0
                 max_frame_gap_ms = 0.0
                 window_t0 = now
             if not ok or bgr is None:
                 # Brief retry on transient read failure.
                 continue
+            # Keep draining the physical stream to avoid latency accumulation,
+            # but expose no more than the configured rate downstream.  At a
+            # genuine ~30fps source every frame passes; a forced 120fps source
+            # contributes the freshest ~30fps frames.
+            self._delivery_tokens = min(
+                2.0,
+                self._delivery_tokens
+                + (now - self._last_delivery_refill) * float(self._format.fps),
+            )
+            self._last_delivery_refill = now
+            if self._delivery_tokens < 1.0:
+                continue
+            self._delivery_tokens -= 1.0
+            delivered_frames += 1
             hook = self.preview_hook
             if hook is not None:
                 try:

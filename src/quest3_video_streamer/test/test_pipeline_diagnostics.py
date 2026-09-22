@@ -3,8 +3,52 @@
 from __future__ import annotations
 
 import time
+import queue
 
 from quest3_video_streamer.collect_tap import CollectTapPublisher
+
+
+def test_collect_tap_stamps_at_admission_before_encoding() -> None:
+    stamp = object()
+
+    class Pub:
+        @staticmethod
+        def get_subscription_count():
+            return 1
+
+    class Now:
+        @staticmethod
+        def to_msg():
+            return stamp
+
+    class Clock:
+        @staticmethod
+        def now():
+            return Now()
+
+    class Node:
+        @staticmethod
+        def get_clock():
+            return Clock()
+
+    tap = object.__new__(CollectTapPublisher)
+    tap._pub = Pub()
+    tap._node = Node()
+    tap._queue = queue.Queue(maxsize=1)
+    tap._max_fps = 30.0
+    tap._tokens = 2.0
+    tap._last_refill = time.monotonic()
+    tap._n_submitted = tap._n_rate_skip = tap._n_queue_full = 0
+    tap._last_submit_t = None
+    tap._max_submit_gap_ms = 0.0
+
+    frame = object()
+    tap.submit(frame, is_rgb=False)
+
+    queued_frame, is_rgb, queued_stamp = tap._queue.get_nowait()
+    assert queued_frame is frame
+    assert is_rgb is False
+    assert queued_stamp is stamp
 
 
 def test_collect_tap_emits_window_diagnostics_and_resets_counters() -> None:
