@@ -588,3 +588,177 @@ pi0.5 raw action 在当前观测下会离开训练 action 分布。它们可解�
 为什么同一收敛拉回的幅度更大”，但不应取代对共用时间轴的定责。下一轮 trace 若显示时间轴正常而
 server chunk 自身仍在返回相互矛盾的大动作，才有充分证据把主因进一步收敛到 pi0.5 的视觉分布、
 归一化/动作语义或在线采样输出。
+
+## 15. `TEST_0922-1505`：逐 plan trace 的首次定责结果
+
+本轮 prompt 为训练任务文本，POLICY 期间在完成任务后立即 stop。有效动作窗口为 10.23 秒，300/300
+control tick 都是 `policy_emit`；无 `state_rejected`、`resend_last`、queue empty 或运行中 image stale。
+300 条实际 arm 指令的间隔中位 33.3ms、p95 37.7ms、最大 41.9ms。唯一 312ms control callback 是
+进入 POLICY 时的首个同步 plan；随后 callback p95 7.58ms。因此“运动中的卡顿”不是 ROS timer、
+图像 callback、state gate 或指令断流。
+
+### 输入新鲜且近似原子；RTT 补偿也实际生效
+
+13 次 plan 的 remote RTT 中位 98.50ms、p95 101.13ms（首块冷启动 118.30ms）；服务端 infer 中位
+6.89ms，说明约 90ms 是网络/编码传输，但没有异常长尾。每次 request 之前的 snapshot state 龄期中位
+4.07ms、p95 12.33ms；base/left_wrist 图像龄期中位为 22.88/16.29ms、p95 为 32.08/19.17ms；两路
+image stamp 相差中位 7.31ms、p95 14.98ms。除首 plan 的启动调度间隔 175ms 外，snapshot 到 request
+的间隔中位 4.84ms、p95 9.17ms。
+
+9 个运行中 replan 实际 `consumed=3`、另 2 个为 2，恰与约 95--101ms / 30Hz 相符；首次发出的
+`selected_row` 与**该行实际下发时** state 的最大差通常为 0.011--0.063rad。换言之，客户端没有把
+约 100ms 旧观测直接送成错误的 action；`consumed/resume_i` 延迟补偿在这一轮工作正常。最后 plan 13
+在 stop 指令之后才返回，未产生任何 command，随后引擎完整 teardown，不会带入下一次策略。
+
+### 已证实与 ACT 相同的“旧 chunk 漂移 → 新 plan 收敛拉回”
+
+各边界应比较“旧 chunk 的最后已发行”与新 row 真正下发时的 state，不能只比较 snapshot。结果如下：
+
+| plan | 旧行 → 当前 state 最大偏差 | 新 selected row → 当前 state 最大偏差 | 边界最大跳变 | 解释 |
+|---:|---:|---:|---|
+| 6 | 0.164rad（j3） | 0.063rad（j3） | 0.101rad | 新 plan 纠正旧尾段漂移 |
+| 7 | 0.124rad（j5） | 0.059rad（j3） | 0.163rad（j2） | 最大 arm 跳变；不是 RTT 或 image stale 异常 |
+| 8 | 0.148rad（j5） | 0.027rad（j5） | 0.120rad | 新行明显更接近当前 state |
+| 12 | 0.118rad（j5） | 0.021rad（j0） | 0.120rad | 同一模式再次出现 |
+
+plan 5 的 0.655 差异仅发生在 gripper ratio（旧尾段 0.661 → 新行 0.007），对应抓取阶段闭合；arm
+边界仅约 0.061rad，不能与 arm 抽搐混为一谈。所有 arm 大步的 `raw_targets` 与实际下发值一致，安全层
+只做了 69 次很小的 gripper 负值 clip，**没有** arm slew/clip，因此也不是安全层制造了抖动。
+
+这与 ACT 历史的 6/7 “收敛拉回”完全一致：`prefetch=25` 时，新 observation 到来前旧 chunk 已开环
+运行约 25--28 行（约 0.8--0.93 秒），新 plan 基于当前 state 给出更接近实测的路径，因 `coeff=0`、
+`anchor_tol=0` 而硬切换。server raw chunk 内也有步长（p95 0.083rad，最大 0.105rad），但本轮最大 arm
+步长 0.163rad 发生在 chunk 边界，主导视觉上的“抽一下”。
+
+### 遥操/driver 对照
+
+POLICY 窗口内 driver 收到 297 条 `/left_arm/joint_commands`，逐值与 policy 的 297 条可匹配 arm
+command 完全相同；teleop 在策略开始时已有 `disarm_reason=operator`，日志中没有并发的 teleop arm
+command。故本轮不存在遥操与 policy 同时覆盖机械臂指令的证据。stop 后第一拍 IDLE 在末条 policy
+command 后约 32ms 出现，符合“完成即 stop”的预期。
+
+### 后续实验（先不改变模型采样）
+
+本轮已完成 `coeff=0`、`anchor_tol=0` 原始基线的定责；不应再把主要精力放在图像超时或固定 pi0.5
+flow-matching noise。下一轮只把 YAML 的 `async_prefetch_ahead` 从 25 改为 40，其余保持不变；这会把
+重新看 state/image 的周期从约 25 行缩至约 10 行，同时仍不使用 temporal/anchor 平滑。若 trace 中
+`old_last_sent → 当前 state` 及边界 jump 显著下降，即可确认开环 chunk 年龄是主要可控项；若 server
+chunk 的内部跳变反而成为主导，再单独诊断 pi0.5 online sampling/视觉输入。
+
+## 16. 收敛拉回：机制、数据口径与固定测试计划
+
+本节把 §14--15 的结论整理为可复现的排查项，后续每轮均以本节口径比较。
+
+### 机制：旧预测并非没有执行，而是开环 target 与实机脱节
+
+在当前 `action_chunk=50`、`async_prefetch_ahead=25`、30Hz、RTT 约 100ms 的实现中：
+
+```text
+旧 chunk: [old[0] ... old[24] | old[25] old[26] old[27] | old[28] ... old[49]]
+                                  ↑ 已发起请求、RTT 内继续执行  ↑ 被新 chunk 丢弃
+新 chunk: [new[0] new[1] new[2] | new[3] new[4] ... new[49]]
+                                            ↑ 返回后实际续播行
+```
+
+因此旧 chunk 的前约 28 行确实被逐行下发；`pi_cmds`、driver command 和 `raw_targets` 已证明 arm
+没有被安全层或遥操改写。问题是 `old[25:27]` 是约 0.83--0.93 秒前、由当时单次 state/image 观测预测的
+绝对位置 target。实机不保证每 33ms 到达上一个 target：驱动跟踪、惯性/摩擦、负载、接触以及模型未来
+轨迹预测误差都会使实际 state 与旧预测逐渐不同。新 plan 依据当前 state 重算，通常比旧尾段更接近实机；
+在 `temporal_ensemble_coeff=0`、`chunk_anchor_tol=0` 时直接 `old[27] → new[3]`，就是可见的收敛拉回。
+
+这里的约 0.2s command↔state 相位差是历史 ACT 曲线的互相关结果，**不是**本轮 image/state 输入旧了
+0.2s。位置差只可近似理解为 `位置差 ≈ 轨迹速度 × 相位/预测时间误差`：例如 0.3/0.5/0.8rad/s 对应
+约 0.06/0.10/0.16rad。它在匀速时不会无限累加；在加减速、反向、接触或视觉判断改变时，则会变成
+不同关节、不同方向的轨迹分叉，直到下一次 replan 才被纠正。
+
+### 如何判定为收敛拉回，而非图像超时、网络卡顿或安全层
+
+判定必须在同一个 plan 的三个时刻比较：
+
+```text
+1. request snapshot：检查 state/image age、双相机 skew
+2. response/install：检查 RTT、consumed、resume_i
+3. first selected row 真正下发时：比较 old_last_sent / selected_row 与该拍 state
+```
+
+`TEST_0922-1505` 已满足以下完整证据链：
+
+- 300/300 tick `policy_emit`，cmd dt p95 37.7ms；无 `state_rejected`、hold、queue empty；
+- state age p95 12.33ms，base/left_wrist image age p95 32.08/19.17ms，双相机 skew p95 14.98ms；
+- RTT p50/p95 98.50/101.13ms，`consumed=2--3` 正好对应 RTT×30Hz；新行下发时与 state 通常仅差
+  0.011--0.063rad；
+- 反而 plan 6/7/8/12 的旧最后行与同拍 state 已相差 0.164/0.124/0.148/0.118rad，新行更接近 state，
+  边界 arm jump 为 0.101/0.163/0.120/0.120rad；
+- raw arm target 与下发 arm target 完全相同，安全层只有 69 次微小 gripper clip；driver 与 policy arm
+  command 逐值一致，teleop 已 disarm。
+
+因此本轮的“抽一下”归因于旧开环轨迹被新闭环轨迹纠正。这与 ACT base--test4 的换 chunk 尖峰及其中
+6/7 收敛拉回相同；不是 pi0.5 flow-matching 特有故障，也不能由“左腕当前帧过期”解释。
+
+### 处理原则
+
+1. **先缩短开环年龄。** 这才会减少旧 target 相对实机的偏离；不要用更多 `resume_i` 跳步来伪补偿，
+   因为 action 是绝对位置 target，盲目多跳只会使目标更远。
+2. **再平滑已经发生的边界。** `chunk_anchor_tol` 直接比较旧最后 command 与新续播行；超过阈值时在
+   `chunk_anchor_blend` 行内过渡。它降低冲击，但也会把真正的状态纠正延后约 `blend/30Hz`，不等于提高
+   视觉抓取精度。
+3. **temporal ensemble 留到后续。** 它融合旧/新预测但不直接利用真实 state。此前 `prefetch=25`
+   只覆盖前 25 行融合、后半为纯新预测，可能产生内部接缝；应在更早 replan 的基础上单独验证。
+4. **长期解决项。** 用 driver feedback 标定各关节 command→state 延迟，审计训练数据的
+   state/image/action 时间语义，并在需要时重对齐标签或引入带时间戳的低层短轨迹控制。Ruking 等
+   插值/轨迹重定时方法属于后续候选，使用前必须确认其处理的是绝对位置 target 还是速度/时间参数化轨迹，
+   并继续用 plan trace 验证，不能直接套用。
+
+### 已确定的两轮 YAML 实验
+
+每轮均保持 checkpoint、prompt、物体位置、初始位姿、双相机、224 输入和 `control_interp=1` 不变；
+任务完成即 stop，并保存 Web 自动生成的五份 JSONL（尤其 `pi_plan_trace.jsonl`）。
+
+```yaml
+# E1：验证缩短开环年龄，不使用任何平滑
+async_prefetch_ahead: 40
+temporal_ensemble_coeff: 0.0
+chunk_anchor_tol: 0.0
+
+# E2：只在 E1 基础上增加直接的 chunk 边界过渡
+async_prefetch_ahead: 40
+temporal_ensemble_coeff: 0.0
+chunk_anchor_tol: 0.05
+chunk_anchor_blend: 4
+```
+
+E1 的成功指标是 `old_last_sent→当前 state` 与 raw boundary jump 下降，证明较短开环年龄有效；E2 的
+成功指标是 raw server chunk 不变或相近时，**applied** boundary jump 降低且不持续增加
+`selected_row→当前 state`。两轮完成后再决定是否引入 temporal ensemble 或插值/轨迹重定时方案。
+
+## 17. `TEST_0922-1626`：anchor 测试被只读 chunk 安装崩溃中断
+
+测试参数为 `prefetch=40, coeff=0, anchor_tol=0.05, anchor_blend=4, control_interp=2`。现象是机械臂
+执行到试管附近后保持不动。该轮不能用于评价 anchor、prefetch 或插值效果，因为第二个 chunk 没有成功
+安装：policy launch 在 `_install()` 的 anchor 原地赋值处明确报
+`ValueError: assignment destination is read-only`，随后 planner daemon 退出。
+
+时间线与各日志完全一致：首 plan RTT 115.19ms（server infer 15.21ms），只产生 1 条
+`plan_installed` trace；队列从 50 行消费到 `pops=50, remaining=0, plans=1`，16:26:09.2949 起至 stop
+持续保持末指令约 4.27s。POLICY 的 358 个控制 tick 中 joint/image stale 均为 0；排除启动首拍后，
+callback 平均 3.44ms、p95 7.84ms、最大 15.85ms，因此这次停止不是相机、关节观测或远端延迟导致。
+`control_interp=2` 使耗尽后的 policy-rate tick 记录 `resend_last`，中间插值 tick 仍把最后 `_seg_cur`
+记为 `policy_emit`；两者都是 hold，不是新模型动作。
+
+根因是 vendored msgpack 协议用不可变 `bytes` 作为 ndarray buffer；dtype 已为 float64 时，
+`np.asarray(..., dtype=float64)` 不复制，故 `coeff=0` 路径把只读 view 直接作为 `_chunk`。anchor 开启且
+边界偏差超过 tol 后首次写入即崩溃；以前测试使用可写的 `np.zeros`，没有覆盖真实远端所有权语义。
+
+修复采用三层防护：
+
+1. `_install()` 在所有权边界用 `np.array(..., copy=True)` 取得可写且不与 backend 共享的有效行副本；
+2. 新 chunk 在局部 candidate 上完成 temporal ensemble 与 anchor，成功后原子提交；失败则恢复
+   ensemble counts，并保留旧 chunk、`_i` 和统计值；
+3. planner 捕获所有未预期异常，记录 `planner_failed`，保留已接受尾段；尾段耗尽后 `tick()` 抛出
+   `EngineStateError`，PolicyNode 执行现有安全 stop，而不是永久重发旧指令。
+
+负面影响审计：复制不改变 dtype、shape、行值、`resume_i`、融合权重或 anchor 公式；anchor 关闭路径有
+逐值回归，ACT ensemble+anchor 组合、短 chunk、慢推理续播、三种 engine mode 均由现有/新增测试覆盖。
+典型 50×8 float64 仅 3.2KB，实测复制约 0.25µs/plan，相对约 100ms 远端 RTT 可忽略。完整推理包
+119 tests passed，语法编译与 diff whitespace 检查通过。下一轮真机应从原定 E1/E2 单变量矩阵重跑；
+本轮结果标记为“基础设施故障，无算法对比效力”。

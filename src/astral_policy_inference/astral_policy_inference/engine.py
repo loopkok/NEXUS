@@ -514,13 +514,28 @@ class ActionEngine:
         full = np.asarray(full, dtype=np.float64)
         if full.ndim == 1:
             full = full.reshape(1, -1)
+        if full.ndim != 2:
+            self._last_error = (
+                f"chunk must be 2-D (rows, action_dim), got shape {full.shape}"
+            )
+            return None
         if full.shape[1] != self.action_dim:
             self._last_error = (
                 f"chunk action_dim {full.shape[1]} != {self.action_dim}"
             )
             return None
         rows = min(self.chunk, len(full))
-        tail = full[:rows]
+        if rows <= 0:
+            self._last_error = "policy returned an empty action chunk"
+            return None
+        # The websocket/msgpack decoder reconstructs ndarrays on top of an
+        # immutable ``bytes`` buffer.  ``np.asarray(..., dtype=float64)`` keeps
+        # that read-only storage when no dtype conversion is needed.  The
+        # installed chunk is engine-owned and anchor blending mutates its first
+        # rows, so take one explicit writable copy at this ownership boundary.
+        # This also prevents a backend from changing an executing chunk after
+        # ``infer()`` returns.  The copy is tiny (normally 50 x 8 float64).
+        tail = np.array(full[:rows], dtype=np.float64, copy=True)
         anchor = snap_i if snap_i is not None else self._i
         was_moving = self._chunk is not None and anchor < len(self._chunk)
         # 安装前"正在执行的旧 command 当前行"——blend 起点。切换尖峰的本质是
@@ -548,40 +563,55 @@ class ActionEngine:
             i0 = int(np.clip(consumed, 0, max(0, rows - 1)))
         else:
             i0 = 0
-        if self._ensembler is not None:
-            # ACT 时序融合：用锚点 anchor（=snap_i）对齐 old[anchor+k] ↔ new[k]，
-            # 保证时间语义；前 consumed 行是推理期间已执行的 stale 混合，由 i0 跳过。
-            self._chunk = self._ensembler.update(
-                tail,
-                old=self._chunk if was_moving else None,
-                i=anchor if was_moving else 0,
-            )
-        else:
-            self._chunk = tail
-        # 换 chunk 实测对齐（切换平滑）：续播起点 chunk[i0] 偏离"正在执行的旧 command"
-        # >tol 时，前 blend 行从旧值平滑过渡到新轨迹——首拍≈旧值、逐步追 chunk，
-        # 消除收敛拉回/模型突变两类切换尖峰（旧的"从实测 state 起步"对收敛拉回无效——
-        # 该类跳后新 chunk[i0]≈state、dev<tol 不触发；真正跳的是旧 command 漂移量）。
-        anchor_deviation = None
-        anchor_blended_rows = 0
-        if (
-            self.chunk_anchor_tol > 0
-            and was_moving
-            and old_row is not None
-            and self._chunk.shape[0] > i0
-            and self._chunk.shape[1] == old_row.shape[0]
-        ):
-            dev = float(np.abs(self._chunk[i0] - old_row).max())
-            anchor_deviation = dev
-            if dev > self.chunk_anchor_tol:
-                nblend = int(min(self.chunk_anchor_blend, self._chunk.shape[0] - i0))
-                for k in range(1, nblend + 1):
-                    w = k / (nblend + 1)
-                    self._chunk[i0 + k - 1] = (
-                        old_row + w * (self._chunk[i0 + k - 1] - old_row)
-                    )
-                anchor_blended_rows = nblend
-        selected_row = self._chunk[i0].copy() if self._chunk.shape[0] > i0 else None
+        # Build the replacement transactionally.  Until all post-processing
+        # succeeds, ``self._chunk`` remains the previously accepted trajectory.
+        # TemporalEnsembler owns mutable counters, so snapshot and roll those
+        # back too if a future post-processor unexpectedly raises.
+        ensembler_counts_before = (
+            None
+            if self._ensembler is None or self._ensembler.counts is None
+            else self._ensembler.counts.copy()
+        )
+        try:
+            if self._ensembler is not None:
+                # ACT 时序融合：用锚点 anchor（=snap_i）对齐 old[anchor+k] ↔ new[k]，
+                # 保证时间语义；前 consumed 行是推理期间已执行的 stale 混合，由 i0 跳过。
+                candidate = self._ensembler.update(
+                    tail,
+                    old=self._chunk if was_moving else None,
+                    i=anchor if was_moving else 0,
+                )
+            else:
+                candidate = tail
+            # 换 chunk 实测对齐（切换平滑）：续播起点 candidate[i0] 偏离
+            # "正在执行的旧 command" >tol 时，前 blend 行从旧值平滑过渡到新轨迹。
+            anchor_deviation = None
+            anchor_blended_rows = 0
+            if (
+                self.chunk_anchor_tol > 0
+                and was_moving
+                and old_row is not None
+                and candidate.shape[0] > i0
+                and candidate.shape[1] == old_row.shape[0]
+            ):
+                dev = float(np.abs(candidate[i0] - old_row).max())
+                anchor_deviation = dev
+                if dev > self.chunk_anchor_tol:
+                    nblend = int(min(self.chunk_anchor_blend, candidate.shape[0] - i0))
+                    for k in range(1, nblend + 1):
+                        w = k / (nblend + 1)
+                        candidate[i0 + k - 1] = (
+                            old_row + w * (candidate[i0 + k - 1] - old_row)
+                        )
+                    anchor_blended_rows = nblend
+            selected_row = candidate[i0].copy() if candidate.shape[0] > i0 else None
+        except Exception:
+            if self._ensembler is not None:
+                self._ensembler.counts = ensembler_counts_before
+            raise
+
+        # Atomic commit: indices/statistics change only after candidate is valid.
+        self._chunk = candidate
         self._i = i0
         self._pops_since_install = 0
         self._plans += 1
@@ -631,6 +661,23 @@ class ActionEngine:
                 continue
             try:
                 self._run_plan()
+            except Exception as exc:  # noqa: BLE001
+                # An unexpected post-processing/programming error must never
+                # kill the daemon planner silently.  Preserve the current
+                # chunk so its already accepted rows can finish, then make the
+                # failure visible through stats/trace; tick() raises as soon as
+                # that chunk is exhausted and PolicyNode performs a safe stop.
+                error = f"planner failed: {type(exc).__name__}: {exc}"
+                with self._lock:
+                    self._last_error = error
+                self._emit_plan_trace({
+                    "schema": "pi_plan_trace/v1",
+                    "event": "planner_failed",
+                    "t": round(time.time(), 6),
+                    "mode": self.mode,
+                    "error": error,
+                })
+                return
             finally:
                 with self._lock:
                     self._planning = False

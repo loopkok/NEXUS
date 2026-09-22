@@ -73,6 +73,17 @@ class TestQueueSync(unittest.TestCase):
         eng.set_enabled(False)
         self.assertIsNone(eng.tick())
 
+    def test_malformed_or_empty_chunks_are_rejected_cleanly(self):
+        """Bad backend shapes become diagnostic rejection, never index errors."""
+        eng, _ = make_engine("queue_sync")
+        for bad in (
+            np.asarray(1.0),
+            np.zeros((1, DIM, 1)),
+            np.zeros((0, DIM)),
+        ):
+            self.assertIsNone(eng._install(bad, 0.0))
+            self.assertIsNotNone(eng.last_error)
+
 
 class TestQueueAsync(unittest.TestCase):
     def test_queue_async_refill_logic(self):
@@ -173,6 +184,48 @@ class TestThreadingSafety(unittest.TestCase):
         eng.stop()
         # 修复前 ~7 pop/0.5s；修复后 >1000。200 为 10× 余量的宽松阈值。
         self.assertGreater(n, 200, f"control thread starved: {n} pops in 0.5s")
+
+    def test_unexpected_planner_failure_is_traced_and_surfaced_after_tail(self):
+        """Unexpected planner bugs must not become an infinite last-command hold.
+
+        The accepted tail remains usable, but once exhausted tick() raises so
+        PolicyNode can stop.  The daemon thread also leaves an auditable trace.
+        """
+        class ExplodingPlannerEngine(ActionEngine):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.plan_calls = 0
+
+            def _run_plan(self):
+                self.plan_calls += 1
+                if self.plan_calls >= 2:
+                    raise RuntimeError("injected install bug")
+                return super()._run_plan()
+
+        traces = []
+        eng = ExplodingPlannerEngine(
+            StubBackend(action_dim=DIM, camera_map={}),
+            mode="queue_async", action_dim=DIM, chunk=10,
+            autostart=True, async_prefetch_ahead=4,
+            plan_trace_hook=traces.append,
+        )
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng.set_enabled(True)
+        eng.start()  # first synchronous plan succeeds; background replan explodes
+
+        deadline = time.monotonic() + 1.0
+        while eng.last_error is None and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertIn("injected install bug", eng.last_error or "")
+        self.assertTrue(any(r.get("event") == "planner_failed" for r in traces))
+
+        # StubBackend returns four rows.  A planner fault must not discard that
+        # already accepted tail or interrupt it halfway through.
+        for _ in range(4):
+            self.assertIsNotNone(eng.tick())
+        with self.assertRaisesRegex(EngineStateError, "injected install bug"):
+            eng.tick()
+        eng.stop()
 
 
 class TestAbsoluteSemanticsGuard(unittest.TestCase):
@@ -485,6 +538,86 @@ class TestChunkAnchor(unittest.TestCase):
         new = np.zeros((50, DIM)); new[:, 0] = 0.8
         eng._install(new, 0.1, snap_i=20, consumed=3)
         self.assertAlmostEqual(eng._chunk[3, 0], 0.8, places=9)
+        eng.stop()
+
+    def test_readonly_remote_chunk_is_copied_before_anchor_blend(self):
+        """msgpack decodes ndarray data from immutable bytes; anchor may mutate it.
+
+        This reproduces TEST_0922-1626 exactly: coeff=0 leaves the remote array
+        untouched, then anchor blending needs to write the replacement chunk.
+        """
+        eng = self._engine()
+        eng._chunk[19, 0] = 0.5
+        payload = np.zeros((50, DIM), dtype=np.float64)
+        payload[:, 0] = 0.8
+        readonly = np.frombuffer(payload.tobytes(), dtype=np.float64).reshape(50, DIM)
+        before = readonly.copy()
+        self.assertFalse(readonly.flags.writeable)
+
+        install = eng._install(readonly, 0.1, snap_i=20, consumed=3)
+
+        self.assertIsNotNone(install)
+        self.assertTrue(eng._chunk.flags.writeable)
+        self.assertEqual(install["anchor_blended_rows"], 4)
+        self.assertAlmostEqual(eng._chunk[3, 0], 0.56, places=6)
+        np.testing.assert_array_equal(readonly, before)  # backend response not mutated
+        eng.stop()
+
+    def test_readonly_chunk_copy_preserves_disabled_anchor_behavior(self):
+        """The ownership copy must not numerically change the legacy tol=0 path."""
+        eng = self._engine(tol=0.0)
+        payload = np.arange(50 * DIM, dtype=np.float64).reshape(50, DIM)
+        readonly = np.frombuffer(payload.tobytes(), dtype=np.float64).reshape(50, DIM)
+        install = eng._install(readonly, 0.1, snap_i=20, consumed=3)
+        self.assertIsNotNone(install)
+        self.assertTrue(eng._chunk.flags.writeable)
+        np.testing.assert_array_equal(eng._chunk, readonly)
+        self.assertEqual(eng._i, 3)
+        eng.stop()
+
+    def test_readonly_chunk_with_temporal_ensemble_and_anchor(self):
+        """Defense-in-depth for the combined ACT-style ensemble + anchor path."""
+        eng, _ = make_engine(
+            mode="queue_async", chunk=50, temporal_ensemble_coeff=0.01,
+            chunk_anchor_tol=0.05, chunk_anchor_blend=4,
+        )
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng._install(np.zeros((50, DIM)), 0, snap_i=0, consumed=0)
+        eng._i = 20
+        eng._chunk[19, 0] = 0.5
+        payload = np.zeros((50, DIM), dtype=np.float64)
+        payload[:, 0] = 1.0
+        readonly = np.frombuffer(payload.tobytes(), dtype=np.float64).reshape(50, DIM)
+        install = eng._install(readonly, 0.1, snap_i=20, consumed=3)
+        self.assertIsNotNone(install)
+        self.assertTrue(eng._chunk.flags.writeable)
+        self.assertTrue(np.isfinite(eng._chunk).all())
+        eng.stop()
+
+    def test_failed_postprocess_rolls_back_chunk_index_and_ensemble_state(self):
+        """Chunk installation is atomic even if a future postprocessor raises."""
+        eng, _ = make_engine(
+            mode="queue_async", chunk=50, temporal_ensemble_coeff=0.01,
+            chunk_anchor_tol=0.05,
+        )
+        eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))
+        eng._install(np.zeros((50, DIM)), 0, snap_i=0, consumed=0)
+        eng._i = 20
+        old_chunk = eng._chunk.copy()
+        old_counts = eng._ensembler.counts.copy()
+        old_i = eng._i
+        real_update = eng._ensembler.update
+
+        def update_then_fail(*args, **kwargs):
+            real_update(*args, **kwargs)  # deliberately mutates counts first
+            raise RuntimeError("injected postprocess failure")
+
+        eng._ensembler.update = update_then_fail
+        with self.assertRaisesRegex(RuntimeError, "injected postprocess failure"):
+            eng._install(np.ones((50, DIM)), 0.1, snap_i=20, consumed=3)
+        np.testing.assert_array_equal(eng._chunk, old_chunk)
+        np.testing.assert_array_equal(eng._ensembler.counts, old_counts)
+        self.assertEqual(eng._i, old_i)
         eng.stop()
 
 

@@ -2,6 +2,18 @@
 
 ## 2026-09-22
 
+**修复 `TEST_0922-1626` 第二个 chunk 安装崩溃及 planner 静默死亡**——
+`astral_policy_inference/engine.py`。本轮 `coeff=0 + anchor_tol=0.05` 在第二次 plan 的 anchor blend
+报 `ValueError: assignment destination is read-only`：msgpack 从不可变 `bytes` 恢复 ndarray，原
+`np.asarray` 未取得可写所有权；planner 线程退出后仅执行完首个 50 行 chunk，随后持续重发末指令。
+现于引擎所有权边界复制实际安装的 `rows × action_dim` 小数组，并将融合、anchor 与计数更新改为事务式
+安装，全部成功后才替换旧 chunk，异常时恢复 ensemble 计数、旧 chunk 和消费索引。planner 外层新增
+兜底：未预期异常写 `planner_failed` trace/metrics，已接受尾段执行完后由 `EngineStateError` 驱动节点
+安全 stop，不再无限 hold。关闭 anchor、ACT temporal ensemble、queue_sync/queue_async/RTC 的数值及
+时序语义不变；50×8 float64 复制约 3.2KB，基准约 0.25µs/plan。新增只读远端 buffer、anchor 开/关、
+ensemble 组合、非法/空 chunk 拒绝、后处理回滚和 planner 异常注入测试。**验证**：推理包完整 119 tests passed，compileall
+与 `git diff --check` 通过。
+
 **整理 ACT 推理卡顿排查记录为独立文档**——`docs/act-inference-stutter-investigation.md`。
 从 `astral_policy_inference/CLAUDE.md`"推理优化历程"章节展开：四层叠加原因（参数没生效 /
 换 chunk 断流 / 收敛拉回尖峰 / 训练数据节奏 / 网络带宽）+ 两个 ACT 专属机制（单行 chunk、
@@ -24,6 +36,17 @@ Python 单元测试 24 passed；语法编译通过。
 观测/执行时间轴。ACT test5 的平滑参数真正生效后尖峰清零；pi0.5 D2 刻意关闭相同参数作原始基线，
 两者不能直接比较。left_wrist 旧帧是 C1 已证实风险，但旧 ACT 日志缺少逐帧龄期，未将它倒推为 ACT
 历史卡顿的既定原因。
+
+**`TEST_0922-1505` 首次以逐 plan trace 定责 pi0.5 的运行中抽搐**——
+`pi05_infer_test_log/TEST_0922-1505/20260922-150517`。完成后立即 stop 的 10.23 秒窗口内 300/300
+tick 都正常 emit（cmd dt p95 37.7ms），无 state/image gate、hold、queue empty 或遥操竞争；driver
+接收的 arm command 与 policy 指令逐值一致。13 次 plan 的 state p95 龄期 12.33ms、base/left_wrist
+image p95 32.08/19.17ms、双相机 stamp p95 skew 14.98ms；RTT p50/p95 为 98.50/101.13ms，实际
+`consumed=2--3` 行与该延迟匹配，首次 selected row 在下发时与 state 的偏差通常 ≤0.063rad。反而旧
+chunk 尾部在边界已偏离当前 state 0.10--0.16rad，新 plan 拉回实测造成最大 0.163rad arm jump；raw 和
+applied arm 指令相同，安全层未参与。这与 ACT 的收敛拉回共因一致，排除“持续旧图像/RTT 补偿失效”作为
+本轮主因。下一项单变量测试为 `async_prefetch_ahead: 25 → 40`，保留 `coeff=0`、`anchor_tol=0`，先
+降低旧 chunk 开环年龄而不固定 pi0.5 采样或用平滑掩盖问题。
 
 **修复 pi0.5 policy 命令永远 IDLE、left_wrist 在 policy 端被饿死**——
 `astral_policy_inference/node.py`。`TEST_922-1101` 中 streamer 对 base/left_wrist 均稳定发布
@@ -2182,12 +2205,3 @@ ros2 run astral_arm_teleop teleop_tune_plot --ros-args -p arm_side:=right
 - 真机与 MuJoCo **二选一**，勿抢同一 `joint_commands`
 - `*_serial` 可空（按 `hand_side` 连）
 - USB：`0483` 需 udev `MODE="0666"`
-现在整个推理包大致实机测完了，现在一直都是命令行启动，source /opt/ros/humble/setup.bash
-source /home/robot/loopkok/sdk/astral_ws/install/setup.bash
-
-ros2 launch astral_policy_inference policy_inference.launch.py \
-  backend_type:=remote \
-  host:=<GPU主机IP> \
-  port:=8001 \
-  camera_image_size:=480 \
-  engine_mode:=queue_async，同时还要专门起一个键盘节点来进行开始等操作，现在在数采那个web的tab的下面加一个推理的模块，数采模块在上面，在推理模块部分，可以配置GPU主机IP，端口，输入的图像尺寸，是否开启记录日志（把state和joint记录到文件中），以及用按钮来实现键盘的所有功能，同时UI做好看一点，做完所有功能后进行对抗性审查，确保功能正常且无隐藏bug

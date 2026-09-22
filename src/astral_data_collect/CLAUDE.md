@@ -110,6 +110,7 @@ test/                     ← pytest 全套（见下"测试"）
 
 > 给新会话/接手者：理解数采链路质量认知的演进顺序（坑表是"症状→防护"，这里是"决策顺序 +
 > 数据 + 教训"）。完整逐日记录见 `astral_ws/CHANGELOG.md`。
+> **独立整理版**（五层防线 + 全部数值 + 工具表）：`astral_ws/docs/data-quality-investigation.md`。
 
 **第 1 层：采集链路精度（上游量化阶梯）**
 慢速遥操"抖抖的"——上游 `astral-tracking` 位姿序列化 F4/F3（0.1mm/0.001）量化成台阶，下游

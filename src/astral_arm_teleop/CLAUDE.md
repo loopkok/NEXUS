@@ -6,6 +6,8 @@ Quest3 腕部 → 双臂 IK → `/left_arm|/right_arm/joint_commands`。本文�
 > `doc/2026-09-17-ik-solver-comparison.md`，数据/脚本在 `astral_test_logs/2026-09-17_ik_solver_comparison/`。
 > 一句话：电机死区(~1mrad)×geometric 最小关节速度优化 → 慢速指令压死区下 → 一顿一顿；
 > `cmd_deadband_mrad`（指令最小步长地板，0=关）可缓解。
+> **独立整理版**：慢速平移"抖"排障全记录（五步链路 + 数值 + 工具）→ `astral_ws/docs/teleop-stick-slip-investigation.md`；
+> 驱动层"电机突然自己动"定责 → `astral_ws/docs/motor-control-pitfalls.md`。
 
 ## 当前状态（2026-09-03）
 

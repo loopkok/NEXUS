@@ -153,7 +153,22 @@ ros2 launch astral_data_collect data_collect.launch.py \
 | [`src/quest3_video_streamer/README.md`](src/quest3_video_streamer/README.md) | Quest 相机 WebRTC 回传 |
 | [`src/astral_policy_inference/README.md`](src/astral_policy_inference/README.md) | 策略部署 / 数据回放 / 人在环路（HITL） |
 | [`src/astral_policy_inference/CLAUDE.md`](src/astral_policy_inference/CLAUDE.md) | 推理包架构不变量 / 环境约束 / 已解决坑 / 测试验证清单 |
-| [`CHANGELOG.md`](CHANGELOG.md) | 版本记录 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本记录（按天演进史，每个问题 症状→根因→修法→数值） |
+
+### 排查经验（`docs/`，症状→根因→修法 独立整理版）
+
+| 文件 | 内容 |
+|------|------|
+| [`docs/README.md`](docs/README.md) | **排查经验索引**：主题 → 文档 → 一句话结论 + 跨主题方法论 |
+| [`docs/act-inference-stutter-investigation.md`](docs/act-inference-stutter-investigation.md) | ACT 推理卡顿（四层叠加原因 + 排查 checklist） |
+| [`docs/2026-09-21-pi05-inference-investigation.md`](docs/2026-09-21-pi05-inference-investigation.md) | pi0.5 真机推理问题调查（A/B/C/D 轮实验，进行中） |
+| [`docs/inference-deploy-pitfalls.md`](docs/inference-deploy-pitfalls.md) | 推理部署环境/后端坑（版本墙/ACT 1 行 chunk/锁饥饿/陈旧队列/参数静默退化） |
+| [`docs/teleop-stick-slip-investigation.md`](docs/teleop-stick-slip-investigation.md) | 遥操慢速"抖"（驱动层低速粘滑）排障全记录 |
+| [`docs/motor-control-pitfalls.md`](docs/motor-control-pitfalls.md) | 驱动层/电机控制坑（"电机突然自己动"定责手册） |
+| [`docs/data-quality-investigation.md`](docs/data-quality-investigation.md) | 数采数据质量排障（五层防线 + 卡点治本 + repair 演进） |
+| [`docs/camera-video-performance-investigation.md`](docs/camera-video-performance-investigation.md) | 相机/视频回传性能排障（GIL/编码器线程/限流/设备指纹） |
+| [`docs/camera-label-semanticization.md`](docs/camera-label-semanticization.md) | 相机 label 语义化（videoN→语义名，硬件指纹钉死） |
+| [`docs/openpi-training-deploy.md`](docs/openpi-training-deploy.md) | openpi 训练部署（RAM≥32GB 等迁移清单） |
 
 ### 测试记录
 

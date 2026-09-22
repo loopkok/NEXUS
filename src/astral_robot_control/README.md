@@ -110,6 +110,9 @@ ros2 topic echo /left_arm/joint_states --once
 
 ## 驱动层诊断日志（`driver_log_file`）
 
+> 驱动层/电机控制坑的完整排障历史（陈旧命令流/板端陈旧目标/使能/HOME 归位/夹爪竞态/死区）：
+> `astral_ws/docs/motor-control-pitfalls.md`。
+
 排"电机抽一下"（遥操/没遥操时臂/夹爪/头偶发突动）用。参数 `driver_log_file`（空=关）+ `driver_spike_mrad`（默认 30）。JSONL `kind` 区分：
 
 | kind | 触发 | 用途 |

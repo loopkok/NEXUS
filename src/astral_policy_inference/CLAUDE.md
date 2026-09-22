@@ -64,7 +64,9 @@
 
 > 给新会话/接手者：理解**为什么**有这些参数和机制（坑表是"症状→防护"，这里是"决策顺序 + 数据 +
 > 教训"）。完整逐日记录见 `astral_ws/CHANGELOG.md`。
-> **独立整理版（症状→根因→修法→数值 + 排查 checklist）**：`docs/act-inference-stutter-investigation.md`。
+> **独立整理版（症状→根因→修法→数值 + 排查 checklist）**：`docs/act-inference-stutter-investigation.md`；
+> **部署环境/后端/协议类坑**（跑不起来、回传不对、静默退化）：`docs/inference-deploy-pitfalls.md`；
+> 全主题索引：`docs/README.md`。
 
 **第 0 层：参数根本没生效（最隐蔽、最贵的教训）**
 yaml 顶层键 `astral_policy_inference:` 而节点名是 `policy_node`——rclpy 按节点名匹配

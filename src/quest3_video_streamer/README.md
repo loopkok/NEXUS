@@ -208,6 +208,8 @@ WebRTC 软编码（libx264）是嵌入式平台上本进程最大的 CPU 负载�
 
 ### 帧率排障插桩
 
+> 性能/低帧率排障完整记录（GIL/编码器线程/限流/设备指纹）：`astral_ws/docs/camera-video-performance-investigation.md`。
+
 采集激活时每 5 秒打两类 INFO 日志，定位帧丢在管线哪一段：
 
 - `[capture <label>] driver-side N fps`——捕获线程从驱动读帧的实际速率。
