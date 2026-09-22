@@ -13,8 +13,8 @@ requested_fps 补充）只向下游交付最新帧——120fps 源只贡献最�
 ③ `CAP_PROP_BUFFERSIZE=1` 减少陈旧缓冲帧；5s 诊断新增 `delivered_frames/delivered_fps/
 requested_fps`。④ `collect_tap.py` 时间戳改在**准入时刻**（帧入队时打），不再在 JPEG 编码后打——
 CPU 压力下编码可滞后数十 ms，发布时打戳会掩盖该年龄，导致离线对齐相机/state 错位。左右腕
-params.yaml 已开 `strict_capture_fps: true`（容差 0.15）。新增 `test_webcam_fps_guard.py` 6 例
-（120fps 拒绝 / 29.97/27.9 通过 / 未知 fps 放行 / fourcc 可读 / strict 拒绝且 release 无线程）。
+params.yaml 已开 `strict_capture_fps: true`（容差 0.15）。新增 FPS/FourCC/strict release 与 tap 准入
+时间戳回归；`quest3_video_streamer` **45 tests passed**，ROS 包构建与 compileall 通过。
 
 **修复 `TEST_0922-1626` 第二个 chunk 安装崩溃及 planner 静默死亡**——
 `astral_policy_inference/engine.py`。本轮 `coeff=0 + anchor_tol=0.05` 在第二次 plan 的 anchor blend

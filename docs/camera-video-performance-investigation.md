@@ -17,6 +17,46 @@
 | H264 强转失效 | offer 含 H264 应答仍 VP8 | `setCodecPreferences` 在应答路径无效（aiortc 1.15 源码实证） | setRemoteDescription 后直接重排 `transceiver._codecs`（H264 提前） | 有日志 `codec 首优 VP8 -> H264` |
 | 限流误杀 | 源≈目标时 2-3/s 被 rate_skip 误杀 | 硬卡整周期，早到几 ms 的帧被当超速 | 0.8×period 容差 → 后换**令牌桶**（容量 2、速率=max_fps） | 实机 29.8-29.9/s、rate_skip=0 |
 | 相机源不启 | Quest 不开 video feed 采不到图 | 源惰性打开（等 WebRTC track 首帧） | `eager_start_sources: true`（service 启动即开源） | — |
+| USB3 枚举假30 | 配置720p30却实采约90--120fps，伴随JPEG损坏 | 相机的SuperSpeed UVC描述符只声明120fps，驱动不能凭配置创造30fps | 正式运行严格拒绝；相机走USB2、升级固件或换设备 | testcam: 27.9 vs 95.5fps |
+
+## USB2 有 720p30、USB3 只有 120fps：不是 launch 把 collect 改成了90
+
+`testcam` 的启动配置仍然是 `left_wrist/right_wrist 1280x720@30`，collect tap 也明确为
+`max 30.0fps`。但 V4L2 枚举显示：USB2 `/dev/video0` 的 MJPG 720p 支持 30/60/120fps；USB3
+`/dev/video8` 的同模式只有一个离散的 120fps interval。V4L2 的离散 frame interval 列表就是设备/驱动
+对该格式和尺寸声明的可用集合，设置一个未声明的30fps可能失败或被钳到120。实测 capture 日志对应为
+left_wrist 27.9fps、right_wrist 95.5fps；后者低于标称120是主机解码/调度后的实吞吐，不代表协商成功
+为90fps。
+
+原链路中 capture 每读到一帧就调用 collect hook，而 collect tap 自身用30 token/s的令牌桶抽取最新帧，
+离线 align 再建立严格30Hz网格，因此模型数据不会直接变成90fps。但仍有四项实质风险：
+
+1. 传感器工作在120fps曝光时序，曝光时间、增益、运动模糊和30fps训练画面不同；简单四取一不能恢复
+   真正的30fps成像域；
+2. USB传输和OpenCV MJPEG解码仍按约95--120fps付费，会挤占双相机、DDS、推理与控制线程资源；
+3. 日志已有连续 `Corrupt JPEG data`。该libjpeg信息不含设备标签，不能仅凭日志把每次损坏都归给
+   `/dev/video8`，但可确定至少一路MJPEG在进入模型/采集前已损坏；解码后的坏画面会被抽头重新编码成
+   结构合法JPEG，普通“能否decode”校验可能漏检；
+4. 旧 collect header stamp 在JPEG编码完成后生成，高负载下把编码排队延迟伪装成采集时刻，恶化
+   state/双相机最近邻对齐的可解释性。
+
+当前修复：`WebcamSourceAdapter.start()` 在设置 FOURCC/尺寸/FPS 后读取并记录 negotiated 值；
+`strict_capture_fps=true`（腕部相机默认）且偏差超过 `capture_fps_tolerance=0.15` 时释放设备、明确报错并
+拒绝启动。这样正式采集和推理不会在用户不知情时使用错误模式。严格模式显式关闭时，捕获线程仍连续
+排空物理流，容量2的令牌桶只把最新目标帧率交给 preview/collect/WebRTC，并在 diagnostics 同时记录
+`fps`（驱动读取）与 `delivered_fps`（下游交付）；它只是诊断兼容模式，不能修复USB/MJPEG损坏或120fps
+曝光域。collect timestamp 已提前到抽头准入时固定，编码时延不再污染图像时刻。
+
+正式处理顺序：
+
+1. 用 `v4l2-ctl -d /dev/videoN --set-fmt-video=width=1280,height=720,pixelformat=MJPG --set-parm=30
+   --get-fmt-video --get-parm` 验证实际协商；若返回120或拒绝，软件不能强制该描述符产生30fps；
+2. 让该相机经 USB2-only 口/集线器/线缆连接，并用 `lsusb -t` 确认 `480M`，再确认 MJPG 720p30；两台
+   相机尽量分散到不同根控制器/Hub；
+3. 若必须USB3，升级相机固件或更换在SuperSpeed描述符中真实列出30fps的型号；
+4. 重新启动后必须看到 negotiated `1280x720@30 MJPG`、capture/delivered/collect 均约30fps，且至少
+   持续录制5--10分钟无 `Corrupt JPEG data`，再用于正式采集或推理；已有可疑数据应抽帧可视化复核，
+   不能只看HDF5/JPEG能否打开。
 
 ## 全案根因：rosidl `data` setter 逐字节校验吃光 GIL（最贵的教训）
 
