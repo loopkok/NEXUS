@@ -2,6 +2,29 @@
 
 ## 2026-09-22
 
+**整理 ACT 推理卡顿排查记录为独立文档**——`docs/act-inference-stutter-investigation.md`。
+从 `astral_policy_inference/CLAUDE.md`"推理优化历程"章节展开：四层叠加原因（参数没生效 /
+换 chunk 断流 / 收敛拉回尖峰 / 训练数据节奏 / 网络带宽）+ 两个 ACT 专属机制（单行 chunk、
+摩擦伪影）+ 排查标准 checklist + 诊断资产。CLAUDE.md 加指向；CHANGELOG 留档。
+
+**新增 pi0.5 每次 plan 的端到端可审计 trace，验证观测旧/非原子快照与 chunk 切换**——
+`astral_policy_inference`。D2 表明训练集动作本身均在硬件范围内；先前日志中的越界是当前模型 raw
+output，不能反推训练数据有问题。此前 C1 的 left_wrist timeout 已由 callback 隔离修复，但“图像流
+fresh”不等于模型请求中的 state/双相机是同一时刻，也无法从旧日志验证约 95ms remote RTT 期间的
+action 消费补偿。新增 `plan_trace_log_file`，`log_dir` 自动生成 `pi_plan_trace.jsonl`；每次 plan 以
+非阻塞后台 JSONL 记录请求 state、相机/状态源龄期、RTT/server timing、`snap_i/consumed/resume_i`、
+完整 server raw chunk、最终 installed chunk 及旧/新边界动作。诊断写盘不会阻塞 planner 或控制线程，
+队列满时 fail-open 丢弃 trace。未改变模型采样、时序融合或 YAML 策略参数。**验证**：engine + runlog
+Python 单元测试 24 passed；语法编译通过。
+
+**补充 ACT 历史卡顿与 pi0.5 的跨模型归因**——`docs/2026-09-21-pi05-inference-investigation.md`。
+回查 2026-09-14 ACT 原始指令/metrics：未启用平滑时 5--17 个大步全在换 chunk 附近，已分类的 7 个中
+6 个为旧开环 command 向实测 state 的收敛拉回；state↔command 稳定相位差约 194--214ms。故 pi0.5
+当前的“旧 chunk 偏离实测→新 plan 拉回”不能首先归因于 flow-matching，先以新 plan trace 定责共同的
+观测/执行时间轴。ACT test5 的平滑参数真正生效后尖峰清零；pi0.5 D2 刻意关闭相同参数作原始基线，
+两者不能直接比较。left_wrist 旧帧是 C1 已证实风险，但旧 ACT 日志缺少逐帧龄期，未将它倒推为 ACT
+历史卡顿的既定原因。
+
 **修复 pi0.5 policy 命令永远 IDLE、left_wrist 在 policy 端被饿死**——
 `astral_policy_inference/node.py`。`TEST_922-1101` 中 streamer 对 base/left_wrist 均稳定发布
 约 30fps（queue_full=0），policy 却收到 base 28.7fps、left_wrist 2.86fps（最大 gap 2.37s），

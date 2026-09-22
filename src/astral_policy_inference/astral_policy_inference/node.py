@@ -183,6 +183,25 @@ class PolicyNode(Node):
                     f"camera_diagnostics_log_file {camera_diag_log!r} "
                     f"open failed: {exc}"
                 )
+        # 每次 plan 的请求快照、完整 server chunk、续播索引和旧/新 chunk 边界。
+        # 采用独立 writer，不能把磁盘 IO 带进 planner 线程。
+        self._plan_trace_fh: Optional[object] = None
+        self._plan_trace_queue: "queue.Queue[str]" = queue.Queue(maxsize=256)
+        self._plan_trace_stop = threading.Event()
+        self._plan_trace_thread: Optional[threading.Thread] = None
+        plan_trace_log = str(self.get_parameter("plan_trace_log_file").value or "")
+        if plan_trace_log:
+            try:
+                self._plan_trace_fh = open(plan_trace_log, "a", buffering=1)
+                self._plan_trace_thread = threading.Thread(
+                    target=self._plan_trace_writer, name="plan-trace-writer", daemon=True,
+                )
+                self._plan_trace_thread.start()
+                self.get_logger().info(f"plan trace log -> {plan_trace_log}")
+            except OSError as exc:
+                self.get_logger().warn(
+                    f"plan_trace_log_file {plan_trace_log!r} open failed: {exc}"
+                )
         self._image_rx_count: dict[str, int] = collections.defaultdict(int)
         self._image_rx_last: dict[str, float] = {}
 
@@ -354,6 +373,8 @@ class PolicyNode(Node):
             # 相机全链路 JSONL：policy 每帧到达间隔/大小/解码耗时，以及 streamer
             # /diagnostics 的 V4L2 capture + collect tap 五秒窗口统计。
             "camera_diagnostics_log_file": "",
+            # 每次推理请求/返回/安装的完整 trace；log_dir 模式自动写 pi_plan_trace.jsonl。
+            "plan_trace_log_file": "",
         }
         for name, val in defaults.items():
             self.declare_parameter(name, val)
@@ -542,6 +563,31 @@ class PolicyNode(Node):
         except Exception:  # noqa: BLE001 - diagnostics must never affect control
             pass
 
+    def _write_plan_trace(self, rec: dict) -> None:
+        """Called by the planner thread; queue only, never block inference."""
+        if self._plan_trace_fh is None:
+            return
+        try:
+            self._plan_trace_queue.put_nowait(json.dumps(rec, ensure_ascii=False) + "\n")
+        except (queue.Full, TypeError, ValueError):
+            # Trace loss is preferable to adding a planning/control stall.
+            pass
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _plan_trace_writer(self) -> None:
+        while not self._plan_trace_stop.is_set() or not self._plan_trace_queue.empty():
+            try:
+                line = self._plan_trace_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                if self._plan_trace_fh is not None:
+                    self._plan_trace_fh.write(line)
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                self._plan_trace_queue.task_done()
     def _camera_diagnostics_writer(self) -> None:
         """Drain camera diagnostics off callback threads (never block images)."""
         while not self._camera_diag_stop.is_set() or not self._camera_diag_queue.empty():
@@ -699,7 +745,25 @@ class PolicyNode(Node):
         # observation/camera/<slot>，pi0/pi05 AstralInputs 在服务端补零且 mask=False。
         for lab in self._mute_cameras:
             images.pop(lab, None)
-        return ObsBatch(state=state, images=images, prompt=self._prompt)
+        active_labels = sorted(images.keys())
+        metadata = {
+            "obs_created_monotonic": round(now, 6),
+            "obs_created_wall_time": round(time.time(), 6),
+            "state_source_age_ms": {
+                key: round((now - stamp) * 1000.0, 3)
+                for key, stamp in self._stamps.items()
+            },
+            "image_age_ms": {
+                label: round((now - self._image_stamps.get(label, 0.0)) * 1000.0, 3)
+                for label in active_labels
+            },
+            "image_stamp_monotonic": {
+                label: round(self._image_stamps.get(label, 0.0), 6)
+                for label in active_labels
+            },
+            "muted_cameras": sorted(self._mute_cameras),
+        }
+        return ObsBatch(state=state, images=images, prompt=self._prompt, metadata=metadata)
 
     def _disarm_teleop(self) -> None:
         msg = Bool()
@@ -763,6 +827,7 @@ class PolicyNode(Node):
                 int(self.get_parameter("async_prefetch_ahead").value)
                 or None  # 0 = 引擎默认 chunk//2
             ),
+            plan_trace_hook=(self._write_plan_trace if self._plan_trace_fh is not None else None),
         )
 
     def _cmd_policy(self) -> None:
@@ -1576,6 +1641,16 @@ class PolicyNode(Node):
             except Exception:  # noqa: BLE001
                 pass
             self._camera_diag_fh = None
+        if self._plan_trace_fh is not None:
+            self._plan_trace_stop.set()
+            if self._plan_trace_thread is not None:
+                self._plan_trace_thread.join(timeout=2.0)
+                self._plan_trace_thread = None
+            try:
+                self._plan_trace_fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._plan_trace_fh = None
         super().destroy_node()
 
     def _maybe_publish_state(self, now: float) -> None:

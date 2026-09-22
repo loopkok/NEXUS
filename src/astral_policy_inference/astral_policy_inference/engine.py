@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -115,6 +115,7 @@ class ActionEngine:
         temporal_ensemble_coeff: float = 0.0,
         chunk_anchor_tol: float = 0.0,
         chunk_anchor_blend: int = 4,
+        plan_trace_hook: Optional[Callable[[dict], None]] = None,
     ):
         if mode not in ("queue_sync", "queue_async", "rtc"):
             raise ValueError(f"mode={mode!r} not in queue_sync|queue_async|rtc")
@@ -140,6 +141,9 @@ class ActionEngine:
         # <=0 关闭（硬切换）；blend=过渡行数（@30Hz 每行 33ms）。
         self.chunk_anchor_tol = float(chunk_anchor_tol)
         self.chunk_anchor_blend = int(max(1, chunk_anchor_blend))
+        # Hook must be non-blocking.  PolicyNode feeds it to a dedicated JSONL
+        # writer, so detailed tracing cannot delay the planner/control threads.
+        self._plan_trace_hook = plan_trace_hook
         self.async_prefetch_ahead = (
             int(async_prefetch_ahead)
             if async_prefetch_ahead is not None
@@ -182,6 +186,7 @@ class ActionEngine:
                     k: np.array(v, copy=True) for k, v in (obs.images or {}).items()
                 },
                 prompt=str(obs.prompt or ""),
+                metadata=dict(obs.metadata or {}),
             )
 
     @property
@@ -320,7 +325,27 @@ class ActionEngine:
                     for k, v in (self._obs.images or {}).items()
                 },
                 prompt=self._obs.prompt,
+                metadata=dict(self._obs.metadata or {}),
             )
+
+    @staticmethod
+    def _trace_observation(obs: ObsBatch) -> dict:
+        """A serialisable request-side view; deliberately excludes image pixels."""
+        return {
+            "state": np.asarray(obs.state, dtype=np.float64).tolist(),
+            "prompt": str(obs.prompt or ""),
+            "image_labels": sorted((obs.images or {}).keys()),
+            "metadata": dict(obs.metadata or {}),
+        }
+
+    def _emit_plan_trace(self, rec: dict) -> None:
+        hook = self._plan_trace_hook
+        if hook is None:
+            return
+        try:
+            hook(rec)
+        except Exception:  # noqa: BLE001 - diagnostic tracing must be fail-open
+            pass
 
     def _plan_blocking(self) -> None:
         """Blocking plan (first chunk / queue_sync refill).
@@ -356,18 +381,36 @@ class ActionEngine:
                 return False
             obs = self._snapshot_obs()
             snap_i = self._i  # 观测时刻的消费位置（时间对齐锚点）
+        request_t = time.time()
         t0 = time.perf_counter()
         try:
             full = np.asarray(self.backend.infer(obs), dtype=np.float64)
         except PolicyError as exc:
             with self._lock:
                 self._last_error = str(exc)
+            self._emit_plan_trace({
+                "schema": "pi_plan_trace/v1", "event": "infer_failed",
+                "t": round(time.time(), 6), "mode": self.mode,
+                "snapshot": self._trace_observation(obs),
+                "inference": {"request_t": round(request_t, 6),
+                              "rtt_ms": round((time.perf_counter() - t0) * 1000.0, 3)},
+                "error": str(exc),
+            })
             return False
         except Exception as exc:  # noqa: BLE001
             with self._lock:
                 self._last_error = f"infer failed: {exc}"
+            self._emit_plan_trace({
+                "schema": "pi_plan_trace/v1", "event": "infer_failed",
+                "t": round(time.time(), 6), "mode": self.mode,
+                "snapshot": self._trace_observation(obs),
+                "inference": {"request_t": round(request_t, 6),
+                              "rtt_ms": round((time.perf_counter() - t0) * 1000.0, 3)},
+                "error": f"infer failed: {exc}",
+            })
             return False
         ms = (time.perf_counter() - t0) * 1000.0
+        trace_rec = None
         with self._lock:
             # 服务端分项（serve.py 返回 prep/pre/infer/post/total）——从 backend 带回，
             # 进 state/metrics 后能直接拆"网络+序列化 vs 服务端推理"（RTT−total）。
@@ -380,9 +423,49 @@ class ActionEngine:
                 self._check_absolute_semantics(full, obs.state)
             except PolicyError as exc:
                 self._last_error = str(exc)
-                return False
-            self._install(full, latency_ms=ms, snap_i=snap_i, consumed=consumed)
-            return True
+                trace_rec = {
+                    "schema": "pi_plan_trace/v1", "event": "plan_rejected",
+                    "t": round(time.time(), 6), "mode": self.mode,
+                    "snapshot": self._trace_observation(obs),
+                    "inference": {"request_t": round(request_t, 6), "rtt_ms": round(ms, 3), "server_timing": self._last_server_timing},
+                    "alignment": {"snap_i": snap_i, "i_at_install": self._i,
+                                  "consumed": consumed},
+                    "server_chunk": full.tolist(), "error": str(exc),
+                }
+            else:
+                install = self._install(full, latency_ms=ms, snap_i=snap_i, consumed=consumed)
+                if install is not None:
+                    trace_rec = {
+                        "schema": "pi_plan_trace/v1", "event": "plan_installed",
+                        "t": round(self._last_accept_t, 6), "mode": self.mode,
+                        "plan": self._plans,
+                        "snapshot": self._trace_observation(obs),
+                        "inference": {"request_t": round(request_t, 6), "rtt_ms": round(ms, 3), "server_timing": self._last_server_timing},
+                        "alignment": install,
+                        # This is the complete action chunk received from the remote
+                        # policy before any local ensembling/anchor processing.
+                        "server_chunk": full.tolist(),
+                        "installed_chunk": self._chunk.tolist() if self._chunk is not None else [],
+                        "postprocess": {
+                            "temporal_ensemble_coeff": self.temporal_ensemble_coeff,
+                            "chunk_anchor_tol": self.chunk_anchor_tol,
+                            "chunk_anchor_blend": self.chunk_anchor_blend,
+                        },
+                    }
+                else:
+                    trace_rec = {
+                        "schema": "pi_plan_trace/v1", "event": "plan_rejected",
+                        "t": round(time.time(), 6), "mode": self.mode,
+                        "snapshot": self._trace_observation(obs),
+                        "inference": {"request_t": round(request_t, 6), "rtt_ms": round(ms, 3), "server_timing": self._last_server_timing},
+                        "alignment": {"snap_i": snap_i, "i_at_install": self._i,
+                                      "consumed": consumed},
+                        "server_chunk": full.tolist(),
+                        "error": self._last_error or "chunk installation failed",
+                    }
+        if trace_rec is not None:
+            self._emit_plan_trace(trace_rec)
+        return trace_rec is not None and trace_rec["event"] == "plan_installed"
 
     def _check_absolute_semantics(self, full: np.ndarray, state: np.ndarray) -> None:
         """绝对动作语义守卫：机器人明显离开零位时，chunk 首行目标值不得全是小值。
@@ -420,7 +503,7 @@ class ActionEngine:
         latency_ms: float,
         snap_i: Optional[int] = None,
         consumed: int = 0,
-    ) -> None:
+    ) -> Optional[dict]:
         """Swap the chunk and resume at the right index.
 
         ``snap_i`` = 观测捕获时的消费位置（融合对齐锚点）；``consumed`` = 推理期间
@@ -435,7 +518,7 @@ class ActionEngine:
             self._last_error = (
                 f"chunk action_dim {full.shape[1]} != {self.action_dim}"
             )
-            return
+            return None
         rows = min(self.chunk, len(full))
         tail = full[:rows]
         anchor = snap_i if snap_i is not None else self._i
@@ -448,6 +531,16 @@ class ActionEngine:
         old_row = (
             self._chunk[self._i - 1].copy()
             if self._chunk is not None and 1 <= self._i <= len(self._chunk)
+            else None
+        )
+        old_next_row = (
+            self._chunk[self._i].copy()
+            if self._chunk is not None and self._i < len(self._chunk)
+            else None
+        )
+        old_at_snapshot = (
+            self._chunk[anchor].copy()
+            if self._chunk is not None and 0 <= anchor < len(self._chunk)
             else None
         )
         if self.mode != "queue_sync" and was_moving:
@@ -469,6 +562,8 @@ class ActionEngine:
         # >tol 时，前 blend 行从旧值平滑过渡到新轨迹——首拍≈旧值、逐步追 chunk，
         # 消除收敛拉回/模型突变两类切换尖峰（旧的"从实测 state 起步"对收敛拉回无效——
         # 该类跳后新 chunk[i0]≈state、dev<tol 不触发；真正跳的是旧 command 漂移量）。
+        anchor_deviation = None
+        anchor_blended_rows = 0
         if (
             self.chunk_anchor_tol > 0
             and was_moving
@@ -477,6 +572,7 @@ class ActionEngine:
             and self._chunk.shape[1] == old_row.shape[0]
         ):
             dev = float(np.abs(self._chunk[i0] - old_row).max())
+            anchor_deviation = dev
             if dev > self.chunk_anchor_tol:
                 nblend = int(min(self.chunk_anchor_blend, self._chunk.shape[0] - i0))
                 for k in range(1, nblend + 1):
@@ -484,12 +580,26 @@ class ActionEngine:
                     self._chunk[i0 + k - 1] = (
                         old_row + w * (self._chunk[i0 + k - 1] - old_row)
                     )
+                anchor_blended_rows = nblend
+        selected_row = self._chunk[i0].copy() if self._chunk.shape[0] > i0 else None
         self._i = i0
         self._pops_since_install = 0
         self._plans += 1
         self._last_plan_ms = latency_ms
         self._last_error = None
         self._last_accept_t = time.time()
+        return {
+            "snap_i": int(snap_i) if snap_i is not None else None,
+            "i_at_install": int(self._i),
+            "consumed": int(consumed), "resume_i": int(i0), "rows": int(rows),
+            "was_moving": bool(was_moving),
+            "old_last_sent": old_row.tolist() if old_row is not None else None,
+            "old_next": old_next_row.tolist() if old_next_row is not None else None,
+            "old_at_snapshot": old_at_snapshot.tolist() if old_at_snapshot is not None else None,
+            "selected_row": selected_row.tolist() if selected_row is not None else None,
+            "anchor_deviation_max": anchor_deviation,
+            "anchor_blended_rows": anchor_blended_rows,
+        }
 
     # ------------------------------------------------------- planner thread
 

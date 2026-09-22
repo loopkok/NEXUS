@@ -84,6 +84,8 @@ policy_node:
     # resend_last 原因和 engine 队列快照。log_dir 模式会自动写 pi_control.jsonl。
     control_diagnostics_log_file: ""
     camera_diagnostics_log_file: ""
+    # 每次 server 请求/完整返回 chunk/本地续播对齐；log_dir 会自动设置该路径。
+    plan_trace_log_file: ""
 
     # ---------------- replay（真机回放） ---------------------------------------
     replay_source: ""         # LeRobot v2.1 数据集目录 或 aligned_data.h5 文件

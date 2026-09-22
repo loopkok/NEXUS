@@ -27,6 +27,27 @@ class FailingBackend(StubBackend):
 
 
 class TestQueueSync(unittest.TestCase):
+    def test_plan_trace_contains_snapshot_chunk_and_alignment(self):
+        rows = []
+        eng, _ = make_engine(
+            "queue_sync", chunk=4, plan_trace_hook=rows.append,
+        )
+        eng.feed_obs(ObsBatch(
+            state=np.zeros(DIM, dtype=np.float64), images={}, prompt="pick",
+            metadata={"image_age_ms": {"base": 12.5}},
+        ))
+        eng.set_enabled(True)
+        eng.start()
+        self.assertEqual(len(rows), 1)
+        rec = rows[0]
+        self.assertEqual(rec["event"], "plan_installed")
+        self.assertEqual(rec["snapshot"]["state"], [0.0] * DIM)
+        self.assertEqual(rec["snapshot"]["metadata"]["image_age_ms"]["base"], 12.5)
+        self.assertEqual(len(rec["server_chunk"]), 4)
+        self.assertEqual(rec["alignment"]["resume_i"], 0)
+        self.assertIn("selected_row", rec["alignment"])
+        eng.stop()
+
     def test_ticks_consume_and_refill(self):
         eng, _ = make_engine("queue_sync", chunk=3)
         eng.feed_obs(ObsBatch(state=np.zeros(DIM), images={}, prompt=""))

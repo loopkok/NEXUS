@@ -510,3 +510,81 @@ temporal_ensemble_coeff: 0.0
 模型推理卡住；若仍在相同 chunk 内索引出现，则需记录服务端完整 raw chunk，确认 pi0.5 原始动作
 本身在约第 25 行是否不连续。`control_interp=2` 或降低 `max_joint_vel` 只能降低冲击，不应用来替代
 这个单变量定责实验。
+
+### 2026-09-22：`TEST_0922-1352` — 原始动作越界；本轮 YAML 参数仍为 ACT 值
+
+启动行仍为 `coeff=0.05 anchor_tol=0.05`，所以该轮不能称为 D 对照；这些参数仅由
+`policy_inference.yaml` 管理，下一轮应在 YAML 修改后重启节点，并以此启动行核验。该轮图像、状态、控制节奏仍正常（base/left_wrist 28.48/29.97fps；图像年龄
+p95 34.81/34.36ms；845 条指令 dt p95 38.10ms），故“抖动/脱离范围”不是超时、断流或 left_wrist。
+
+新 `raw_targets` 表明模型/融合器给出的臂关节目标在 845 帧中有 688 帧超出训练集 action min/max；
+例如 j0 到 -1.748rad（训练下限 -0.477rad）、j3 到 -2.879rad（训练下限 -2.073rad）、j5 到
+-1.029rad（训练下限 -0.503rad）。安全层只修正夹爪 ratio 越界 253 次和臂关节瞬时 slew 6 次，
+不负责把臂关节钳回训练集范围，因此会忠实驱动机械臂去异常位置。chunk 边界最大 raw 跳变仅 0.096rad，
+小于非边界最大 0.503rad，说明本轮主要不是 chunk 接缝跳变，而是连续的异常轨迹/视觉分布偏移或模型
+训练质量问题。必须先跑参数真正为 0 的 D2 对照，再决定是否从数据与 checkpoint 排查。
+
+### 2026-09-22：D2 `TEST_0922-1403` 的边界证据与下一轮逐 plan trace
+
+这里需要纠正上一节容易造成的误读：**训练集动作没有越过机械臂硬件范围**。训练集
+`pick_place_merged_repaired_v3/meta/stats.json` 的 action min/max 均在 URDF 关节范围内；D2 中
+出现的低于 URDF 下限的值，是 pi0.5 在当前实机观测上返回的 *inference raw action*，不是训练样本
+“超限”。因此不能以“训练动作不正常”解释当前现象。
+
+此前 C1/`tetsA` 确认过另一种真实故障：`image_required=true` 且 left_wrist 偶发旧帧会触发
+`image:left_wrist` gate，控制保持旧指令。回调组修复后的 D2 不再复现该**单路 freshness timeout**：
+base/left_wrist policy 端接收约 28/30fps，图像龄期 p95 约 35/37ms，control tick p95 约 37ms。
+这只能说明“某一路图像连续一秒未到”已不再是 D2 的主因，**不能**证明每一次送入模型的 state 与两张
+图是同一物理时刻的原子快照，也不能证明请求返回时观测仍足够新。
+
+D2（`coeff=0`、`anchor_tol=0`、`prefetch=25`）的 remote plan RTT 中位约 95ms（约 3 个 30Hz
+control tick）。客户端当前会在请求前取 latest observation，并在返回后以实际 `consumed` 跳过已执行
+行；设计上这是正确的延迟补偿，但旧日志没有保存每一次的 `snapshot → consumed → resume_i` 映射，无法
+验证它在每个边界都用到了正确的 state/image 对。最大一次 raw 边界跳变约 0.518rad，恰发生在新 plan
+把旧开环 chunk 中 j3≈-2.687 拉回接近实测 j3≈-2.23 的时刻；该 plan RTT 约 93ms，并不比中位 RTT 高。
+所以“网络某次特别慢”不是这次最大跳变的充分解释；更合理的待验证链是：旧 chunk 在约 0.8 秒开环执行
+中已偏离实测，而新的、可能时间不一致的视觉/state 观测要求回正。模型在新相机视角下的分布偏移和每次
+flow-matching 采样差异也会放大该闭环校正，但不应为了掩盖它而固定 pi0.5 的采样噪声。
+
+现已新增 `pi_plan_trace.jsonl`。启用 Web 的“记录推理日志”（即 launch 有 `log_dir`）后，每个运行目录
+自动生成该文件；无需另开终端，也不会修改 YAML 的 `temporal_ensemble_coeff` 或 `chunk_anchor_tol`。
+每个 `plan_installed` 一行记录：
+
+- 请求快照的完整 state、prompt、实际发送的相机 label，及各 state source / image 的龄期、monotonic
+  timestamp；不写图像像素，避免日志暴涨；
+- 请求 RTT 和 server timing、`snap_i`、推理期间实际 `consumed`、最终 `resume_i`；
+- server 返回的完整 raw action chunk、客户端最终安装的 chunk、实际将续播的 `selected_row`；
+- 旧 chunk 的 `old_last_sent`、`old_next`、`old_at_snapshot`、是否在运动，以及 temporal/anchor 的
+  后处理参数和实际 blend 信息。
+
+下一轮保持当前 checkpoint、prompt、相机、初始位姿和 YAML 不变，只运行一次 8--10 秒 pick-place。
+分析时按 plan id 把 `pi_plan_trace.jsonl` 与 `pi_cmds.jsonl`/`pi_control.jsonl` 对齐：若 snapshot 的
+state/image age 或二者时间差异常，先定责观测原子性；若 `consumed` 与 RTT×30Hz 不匹配，查控制调度；若
+二者正常而 `old_last_sent → selected_row` 或 server chunk 自身仍大跳，才将证据指向旧 chunk 开环漂移、
+模型 OOD 或新采样 chunk 的不连续。这样才可以把“图像观测旧”与“模型原始动作异常”区分开。
+
+## 14. ACT 历史卡顿的交叉对照（必须作为 pi0.5 主对照）
+
+ACT 不是“无关的旧模型”，而是相同机器人、驱动、ROS state/image 缓存、ActionEngine 和 action-chunk
+执行架构下最有价值的对照组。回查
+`inference_test_logs/inference/SUMMARY.md` 及对应 `raw_logs/pi_cmds*_test*.jsonl` 后，已经能确认的
+**模型无关共性**如下：
+
+| 证据 | ACT 历史结果 | 当前 pi0.5 D2 对应含义 |
+|---|---|---|
+| action 与实测 state 的相位差 | 各 ACT 轮稳定约 194--214ms，手腕更大 | D2 RTT 中位约 95ms，连同相机/state 龄期、next-state 语义和驱动跟踪，同样存在“新观测返回时旧 chunk 已执行多步”的条件 |
+| 大步位置 | 未开启平滑的 base--test4 有 5--17 个 >0.1rad 尖峰；全部在换 chunk 附近，已分类的 7 个中 6 个是收敛拉回 | D2 最大边界跳变同样是旧 j3 command 已偏离实测后，新 plan 拉回实测附近；这是同一类开环尾段→闭环校正模式 |
+| 网络是不是唯一根因 | ACT 直连后 RTT 从约 116ms 降到约 21ms，卡顿仍可见 | 不应把 pi0.5 的约 95ms RTT 当唯一根因；它会放大错位，但不是单独的充分解释 |
+| 有效处理 | ACT test5 真正启用 anchor、temporal ensemble、60Hz interpolation、JPEG 后，大步尖峰为 0 | pi0.5 D2 故意设 `coeff=0`、`anchor_tol=0` 做原始基线，不能拿它与“ACT 全部平滑生效”的 test5 直接比较优劣 |
+
+因此当前优先级应调整为：**先验证共同的 chunk/观测/执行时间轴问题，再讨论 pi0.5 特异模型问题**。
+此前 C1 的 `image:left_wrist` timeout 是已证实的公共输入链路风险，但老 ACT 日志没有逐帧 image age，
+不能倒推“ACT 的每次卡顿也是左腕旧帧”。D2 的常规 freshness 统计已正常，也不能反向证明 request
+snapshot 原子。新 `pi_plan_trace.jsonl` 正是补齐这个 ACT 旧日志缺失的证据：它会显示一次新 chunk 的
+`old_last_sent → selected_row` 差异究竟是否随 state/image timestamp skew 或 `consumed` 异常增大。
+
+在共同原因之外，pi0.5 仍有两项 ACT 对照不能解释的叠加风险：左腕视野已与训练数据显著不同，以及
+pi0.5 raw action 在当前观测下会离开训练 action 分布。它们可解释“为什么 pi0.5 抓向试管下方/胶带、
+为什么同一收敛拉回的幅度更大”，但不应取代对共用时间轴的定责。下一轮 trace 若显示时间轴正常而
+server chunk 自身仍在返回相互矛盾的大动作，才有充分证据把主因进一步收敛到 pi0.5 的视觉分布、
+归一化/动作语义或在线采样输出。

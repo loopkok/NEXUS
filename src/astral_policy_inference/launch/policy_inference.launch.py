@@ -72,6 +72,7 @@ def _node(context):
     camera_diagnostics_log_file = LaunchConfiguration(
         "camera_diagnostics_log_file"
     ).perform(context)
+    plan_trace_log_file = LaunchConfiguration("plan_trace_log_file").perform(context)
     log_dir = LaunchConfiguration("log_dir").perform(context)
     log_tag = LaunchConfiguration("log_tag").perform(context)
     # log_dir 模式：每次 launch 建 {log_dir}/{stamp}_{tag}/ 运行目录，metrics + cmd +
@@ -139,6 +140,10 @@ def _node(context):
                 run_dir, "camera_diagnostics.jsonl"
             )
         })
+    if plan_trace_log_file:
+        parameters.append({"plan_trace_log_file": plan_trace_log_file})
+    elif run_dir:
+        parameters.append({"plan_trace_log_file": os.path.join(run_dir, "pi_plan_trace.jsonl")})
     node = Node(
         package="astral_policy_inference",
         executable="policy_node",
@@ -210,13 +215,16 @@ def generate_launch_description() -> LaunchDescription:
                     "capture/tap 分层统计"
                 )),
             DeclareLaunchArgument(
+                "plan_trace_log_file", default_value="",
+                description="非空则记录每次 plan 的观测快照、完整 chunk 与续播对齐 JSONL"),
+            DeclareLaunchArgument(
                 "log_dir", default_value="",
                 description=(
                     "非空根目录 → 每次 launch 自动建 {log_dir}/{YYYYMMDD-HHMMSS}[_tag]/ "
                     "运行目录，把 pi_metrics.jsonl + pi_cmds.jsonl + pi_control.jsonl + "
-                    "camera_diagnostics.jsonl "
+                    "camera_diagnostics.jsonl + pi_plan_trace.jsonl "
                     "落进去（区分每次记录、"
-                    "持久化、不复用同一文件）。四个显式日志路径参数分别优先。"
+                    "持久化、不复用同一文件）。五个显式日志路径参数分别优先。"
                 ),
             ),
             DeclareLaunchArgument(

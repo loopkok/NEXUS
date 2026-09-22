@@ -44,6 +44,9 @@ class ObsBatch:
     state: np.ndarray          # (state_dim,) unnormalized, dataset layout order
     images: dict[str, np.ndarray]  # logical key -> HxWx3 uint8
     prompt: str
+    # 只供诊断使用的轻量元数据（时间戳、龄期、来源状态）；绝不传给模型。
+    # default_factory 保持现有 backend/unit test 的构造方式兼容。
+    metadata: dict = dataclasses.field(default_factory=dict)
 
 
 class PolicyBackend(ABC):
