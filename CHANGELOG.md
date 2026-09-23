@@ -14,7 +14,22 @@ UVC 传输有 CRC、出错帧默认被 uvcvideo 丢弃（`nodrop=0`）——能�
 120fps 下间歇性故障（传感器/编码器跟不上），不是 USB 丢字节。**待实机验证**：`--set-parm=30` 是否
 被 USB3 相机接受；USB2@120fps 对照（损坏跟帧率还是端口）；dmesg 无 USB 错（佐证相机侧）。脚本
 固化以上三步并输出 VERDICT。**做法**：新增 `astral_ws/scripts/diag_camera_usb3_fps.sh`（S_PARM 30
-测试 + USB3 录制 + USB2@120 对照录制 + ffmpeg error dc 计数 + dmesg USB 错误检查）。
+测试 + USB3 录制 + USB2@120 对照录制 + ffmpeg error dc 计数 + dmesg USB 错误检查）。**后续实测
+（Jetson 报告 2026-09-23）**：① ffmpeg `-f v4l2` 实时解码 120fps 报 `Found EOI before any SOF`/
+`No JPEG data`/`bad vlc`/dts 洪水 = 软解过载+缓冲覆盖，**只在实时路径、文件里没有**；② ffmpeg
+`-c:v copy` 采集仅 59.6%（V4L2 输入层解析开销致丢帧），v4l2-ctl 采集 96.5%——但 **v4l2-ctl 纯净
+采集的 `test_v4l2_15s.mjpg` 离线解码仍有 error dc**，实锤损坏为相机编码器自产、与采集工具/传输
+无关；③ 相机实测 ~130fps（超标称）→ 编码器过载。全工程图像链路（采集/推理）核实**无 ffmpeg**，
+均走 OpenCV V4L2（`webcam_source` cv2 排干线程+令牌桶），ffmpeg 丢帧结论不影响本项目。剩余待
+实测：USB3 `--set-parm=30` 是否被接受、USB2@120 对照（帧率 vs 端口）。**决定性实测（2026-09-23
+下午）**：① USB3 相机 `--set-parm=30` **被固件打回 120**（get-parm 仍 120/1）→ USB3 口上无软件
+手段拿 30fps；② USB2 相机 `--set-parm=120` 录制 1200 帧（~118-119fps，160MB，帧均 134KB）
+**error dc = 0** → 同样 120fps，USB2 口干净、USB3 口 ~1% 损坏。**判定：损坏跟 USB3/SS 链路相关
+（SS 下相机还超发 ~130fps），不是帧率本身；且 USB3 口无法协商 30fps** → 唯一干净的 720p30 路径是
+**USB2(HS) 链路**：最省事 = USB2-only 数据线（无 SS 对）插同一 USB3 口 usb-0:1.3 → 链路强制 HS →
+相机 HS 描述符出 30fps，且 by-path `usb-0:1.3` 不变 → **label_aliases 零改动**；备选挪 USB2 口 /
+USB2 hub（by-path 变，改一行 label_aliases）。验证：换线后 `--list-formats-ext` 见 30fps、`--set-parm=30`
+生效、录制 error dc=0。
 
 ## 2026-09-22
 
