@@ -2,6 +2,23 @@
 
 ## 2026-09-23
 
+**新增独立 Astral pi0.5 推理包 `src/pi05_standalone/`（最小路径，定位卡顿用）**——
+不导入 `astral_ws` 其他包、不启动 ROS 2；机器人端依赖 `astral_robot_sdk`+OpenCV+websockets，
+GPU 端依赖 `VLA/openpi`，两端可不同 Python 环境。**动机**：在完整 ROS 策略栈（callback 组/融合/
+插值/队列）之外提供一条刻意**无融合、无插值、无 ROS 队列**的最小推理链，JSONL 逐行记录输入年龄、
+控制延迟与实际动作，与 `pi_plan_trace.jsonl` 互相印证，用于定位"换 chunk 拉回"之外的纯链路卡顿。
+**构成**：`serve_pi05.py`（GPU 端 websocket 服务：校验 8 维 state / `base_0_rgb`+`left_wrist_0_rgb`
+双槽 224×224×3 / 非空 prompt，夹爪 ratio 校验并钳 [0,1]，预热一次）+ `infer_astral_single.py`
+（机器人端：`observe`/`infer`/`execute` 三模式，30Hz 主循环 + 后台模型请求 + `replan_after_rows=10`
+提前请求、新 chunk 从首行切换、用尽无新结果即停；每步 `max_joint_vel_rad_s/control_hz` 限速并记原始
+动作与实际命令；`letterbox_bgr_to_rgb` 等比缩放补黑边 224）+ `protocol.py`（msgpack ndarray 线协议）
++ `config.example.yaml`（SDK 板卡地址 + 相机 by-path + 任务文本 + 夹爪初始比例）。**约定**：胸口
+RealSense→`base_0_rgb`、左腕→`left_wrist_0_rgb`；8 维绝对动作前 7 维送左臂电机、末维夹爪
+`2.5*(1-ratio)` rad；夹爪无反馈用启动时初始值/最近下发值。**约束**：与 `astral_robot_driver` 不能
+同时跑（都绑 SDK UDP 端口）；默认不上电/归零，`--ready` 才 `one_click_ready`（使能并归零）。**验证**：
+开发环境无相机/真机，仅离线静态/假设备用例（`test_standalone.py`：wire roundtrip、letterbox 几何/
+RGB、action 校验）；真机按 observe→infer→execute 逐阶段验证。
+
 **USB3@120fps 相机 JPEG 损坏根因定位 + 诊断脚本 `scripts/diag_camera_usb3_fps.sh`**——
 `quest3_video_streamer`。**动机**：同款 WN 相机 USB2 口可选 720p30 无损坏；USB3 口只有 120fps 且
 录像经 ffmpeg 报大量 JPEG 错。**定位（纯离线分析，无相机本机）**：ffmpeg 报错分两类——①
@@ -29,7 +46,14 @@ UVC 传输有 CRC、出错帧默认被 uvcvideo 丢弃（`nodrop=0`）——能�
 **USB2(HS) 链路**：最省事 = USB2-only 数据线（无 SS 对）插同一 USB3 口 usb-0:1.3 → 链路强制 HS →
 相机 HS 描述符出 30fps，且 by-path `usb-0:1.3` 不变 → **label_aliases 零改动**；备选挪 USB2 口 /
 USB2 hub（by-path 变，改一行 label_aliases）。验证：换线后 `--list-formats-ext` 见 30fps、`--set-parm=30`
-生效、录制 error dc=0。
+生效、录制 error dc=0。**受控亮场景补测（2026-09-23 晚，SSH 背靠背录制）**：① 帧大小差异**复现且
+定位机制**——USB2@120 中位 134KB（DQT0[0]=q15 粗量化）vs USB3@120 中位 169KB/均 252KB（q11 细量化，
+胖尾 554KB），场景亮度/细节一致（95-107 / 2335-2513）→ **固件按链路带宽自适应量化档位**（SS 细量化
+高质、HS 粗量化省带宽）；② **USB2@120 亮场景 0 error dc / USB3@120 亮场景 5/400（1.25%）** → 损坏与
+USB3/SS 链路绑定结论用有效内容补强（此前 usb2_at120 文件被黑帧污染，已弃用该数据点）；③ `v4l2-ctl -L`
+确认**无 JPEG 质量/帧率控件**，量化档位不可改 → 相机侧无法"做成 USB2 一样"，但 collect_tap 统一重编码
+quality-90 使训练数据不受原始帧大小影响，且换 USB2 链路后相机自动用 HS 档位（q7@30/q15@120），
+输出与 USB2 相机一致。
 
 ## 2026-09-22
 
