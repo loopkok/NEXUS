@@ -1,5 +1,21 @@
 # Changelog（astral_ws）
 
+## 2026-09-23
+
+**USB3@120fps 相机 JPEG 损坏根因定位 + 诊断脚本 `scripts/diag_camera_usb3_fps.sh`**——
+`quest3_video_streamer`。**动机**：同款 WN 相机 USB2 口可选 720p30 无损坏；USB3 口只有 120fps 且
+录像经 ffmpeg 报大量 JPEG 错。**定位（纯离线分析，无相机本机）**：ffmpeg 报错分两类——①
+`unable to decode APP fields` 为**良性**：相机每帧写空载荷 APP1（`FFE1 0004 0000`），ffmpeg 4.4
+`mjpeg_decode_app` 解析失败即报（删除 APP1 后错误消失）；两相机、每帧都报，libjpeg/OpenCV 全忽略。
+② `error dc`/`overread` 为**真实熵编码损坏**：仅 USB3@120fps 出现，video0_ubs2（USB2,442 帧）0 帧损坏
+vs video9_ubs3（USB3,1563 帧）12 帧（0.77%；前次录像 7/287≈2.4%）。损坏表现为 1-3 个 MCU 行横向条带
+（Huffman 失步到 RST 重同步），帧完整（SOI→EOI 齐全）、非截断、与高码率帧无相关。**机理判断**：
+UVC 传输有 CRC、出错帧默认被 uvcvideo 丢弃（`nodrop=0`）——能完整送达的损坏是相机 JPEG 编码器在
+120fps 下间歇性故障（传感器/编码器跟不上），不是 USB 丢字节。**待实机验证**：`--set-parm=30` 是否
+被 USB3 相机接受；USB2@120fps 对照（损坏跟帧率还是端口）；dmesg 无 USB 错（佐证相机侧）。脚本
+固化以上三步并输出 VERDICT。**做法**：新增 `astral_ws/scripts/diag_camera_usb3_fps.sh`（S_PARM 30
+测试 + USB3 录制 + USB2@120 对照录制 + ffmpeg error dc 计数 + dmesg USB 错误检查）。
+
 ## 2026-09-22
 
 **修复 `TEST_0922-1626` 第二个 chunk 安装崩溃及 planner 静默死亡**——
