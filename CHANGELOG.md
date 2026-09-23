@@ -2,20 +2,6 @@
 
 ## 2026-09-22
 
-**streamer 相机帧率协商守卫（`strict_capture_fps`）+ 采集 tap 时间戳提前到准入时刻**——
-`quest3_video_streamer`。**动机**：USB 相机（腕部）可能忽略 30fps 请求，按 USB3-only 的 120fps
-描述符流式输出——若静默以错误帧率录/推，离线最近邻对齐与推理观测都会错位且无信号。**做法**：
-① `WebcamSourceAdapter.start()` 设置格式后回读 V4L2 实际协商的 fps/fourcc/宽高并打日志；请求 vs
-实际 fps 相对偏差超 `capture_fps_tolerance`（默认 0.15=±15%，未知/0 值 fail-open）时：strict 模式
-（默认 true）释放相机并拒绝启动（提示换 USB2 路径/固件或仅诊断性限速才设 false），非 strict 只
-报错 + 软件限速。② 软件投递门：始终排干物理流避免延迟累积，按配置速率用令牌桶（容量 2、按
-requested_fps 补充）只向下游交付最新帧——120fps 源只贡献最新 ~30fps，不污染预览/采集/推理。
-③ `CAP_PROP_BUFFERSIZE=1` 减少陈旧缓冲帧；5s 诊断新增 `delivered_frames/delivered_fps/
-requested_fps`。④ `collect_tap.py` 时间戳改在**准入时刻**（帧入队时打），不再在 JPEG 编码后打——
-CPU 压力下编码可滞后数十 ms，发布时打戳会掩盖该年龄，导致离线对齐相机/state 错位。左右腕
-params.yaml 已开 `strict_capture_fps: true`（容差 0.15）。新增 FPS/FourCC/strict release 与 tap 准入
-时间戳回归；`quest3_video_streamer` **45 tests passed**，ROS 包构建与 compileall 通过。
-
 **修复 `TEST_0922-1626` 第二个 chunk 安装崩溃及 planner 静默死亡**——
 `astral_policy_inference/engine.py`。本轮 `coeff=0 + anchor_tol=0.05` 在第二次 plan 的 anchor blend
 报 `ValueError: assignment destination is read-only`：msgpack 从不可变 `bytes` 恢复 ndarray，原

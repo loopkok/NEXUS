@@ -115,12 +115,7 @@ class CollectTapPublisher:
             return
         self._tokens -= 1.0
         try:
-            # Stamp at admission (closest available point to capture), not
-            # after JPEG encoding.  Under CPU pressure encoding can lag by tens
-            # of milliseconds; publish-time stamps hide that age and misalign
-            # camera/state during offline nearest-neighbour alignment.
-            stamp = self._node.get_clock().now().to_msg()
-            self._queue.put_nowait((frame, is_rgb, stamp))
+            self._queue.put_nowait((frame, is_rgb))
         except queue.Full:
             self._n_queue_full += 1
 
@@ -183,7 +178,7 @@ class CollectTapPublisher:
 
         while not self._stop.is_set():
             try:
-                frame, is_rgb, stamp = self._queue.get(timeout=0.5)
+                frame, is_rgb = self._queue.get(timeout=0.5)
             except queue.Empty:
                 continue
             try:
@@ -198,7 +193,7 @@ class CollectTapPublisher:
                 self._n_encoded += 1
                 self._encode_ms_sum += (time.monotonic() - t0) * 1000.0
                 msg = self._msg_type()
-                msg.header.stamp = stamp
+                msg.header.stamp = self._node.get_clock().now().to_msg()
                 msg.header.frame_id = self._label
                 msg.format = "jpeg"
                 # 必须走 array.array 快路径：rosidl 的 data setter 对 bytes 会

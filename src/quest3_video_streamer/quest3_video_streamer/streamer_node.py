@@ -58,18 +58,13 @@ def _build_one_source(node: Node, spec: dict[str, Any]) -> VideoSourceAdapter:
 
         device_index = int(spec.get("webcam_index", spec.get("device_index", 0)))
         force_mjpg = bool(spec.get("force_mjpg", True))
-        strict_capture_fps = bool(spec.get("strict_capture_fps", True))
-        capture_fps_tolerance = float(spec.get("capture_fps_tolerance", 0.15))
         _LOG.info(
             f"source=webcam device_index={device_index} {width}x{height}@{fps} "
-            f"fov_h={fov_h} label={label} force_mjpg={force_mjpg} "
-            f"strict_capture_fps={strict_capture_fps}"
+            f"fov_h={fov_h} label={label} force_mjpg={force_mjpg}"
         )
         return WebcamSourceAdapter(
             device_index=device_index, width=width, height=height, fps=fps,
             fov_h_deg=fov_h, label=label, force_mjpg=force_mjpg,
-            strict_capture_fps=strict_capture_fps,
-            capture_fps_tolerance=capture_fps_tolerance,
         )
 
     # default: ros image topic
@@ -253,10 +248,6 @@ def _scan_spec(
     force_mjpg = bool(
         _get_param(node, f"{label}.force_mjpg", bool(dev.get("force_mjpg", role["force_mjpg"])))
     )
-    strict_capture_fps = bool(_get_param(node, f"{label}.strict_capture_fps", True))
-    capture_fps_tolerance = float(
-        _get_param(node, f"{label}.capture_fps_tolerance", 0.15)
-    )
     device = str(dev["device"])  # auto_scan 一律用扫描到的 /dev/videoN（块 device 只作
     # 固定配置/兜底用；覆盖会让 by-path/by-id 路径进 _device_to_index 崩，见 2026-09-20）
     pos = _get_param(node, f"{label}.layout.position", None)
@@ -278,8 +269,6 @@ def _scan_spec(
         "fov_h_deg": fov_h,
         "label": label,
         "force_mjpg": force_mjpg,
-        "strict_capture_fps": strict_capture_fps,
-        "capture_fps_tolerance": capture_fps_tolerance,
         "layout": layout,
     }
     return spec, layout
@@ -294,10 +283,6 @@ def _spec_from_camera_block(node: Node, name: str) -> dict[str, Any]:
     fov_h = float(_get_param(node, f"{name}.fov_h_deg", 69.0))
     label = str(_get_param(node, f"{name}.label", name))
     force_mjpg = bool(_get_param(node, f"{name}.force_mjpg", True))
-    strict_capture_fps = bool(_get_param(node, f"{name}.strict_capture_fps", True))
-    capture_fps_tolerance = float(
-        _get_param(node, f"{name}.capture_fps_tolerance", 0.15)
-    )
     pos = _get_param(node, f"{name}.layout.position", [0.0, -0.1, 1.8])
     distance = float(_get_param(node, f"{name}.layout.distance", 1.8))
     size_mult = float(_get_param(node, f"{name}.layout.size_multiplier", 1.0))
@@ -317,14 +302,10 @@ def _spec_from_camera_block(node: Node, name: str) -> dict[str, Any]:
         spec["type"] = "webcam"
         spec["webcam_index"] = _device_to_index(device)
         spec["force_mjpg"] = force_mjpg
-        spec["strict_capture_fps"] = strict_capture_fps
-        spec["capture_fps_tolerance"] = capture_fps_tolerance
     elif source == "webcam":
         spec["type"] = "webcam"
         spec["webcam_index"] = _device_to_index(device)
         spec["force_mjpg"] = force_mjpg
-        spec["strict_capture_fps"] = strict_capture_fps
-        spec["capture_fps_tolerance"] = capture_fps_tolerance
     else:  # ros
         spec["type"] = "ros"
         spec["topic"] = topic
