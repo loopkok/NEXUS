@@ -48,6 +48,14 @@ policy_node:
     server_infer_timeout_s: 3.0    # 单次推理响应超时；超时后关闭该连接并报错
     engine_mode: "queue_async"  # queue_sync | queue_async | rtc
     action_chunk: 50          # 每个 chunk 消费的行数（openpi action_horizon=50）
+    # 当 model=pi05、backend_type=remote、engine_mode=rtc 时，启用 LeRobot 式
+    # guided RTC：旧块未执行前缀进入 OpenPI 去噪过程。serve.py 须加 --rtc-guided。
+    rtc_execution_horizon: 10     # 与 serve.py --rtc-execution-horizon 一致
+    rtc_queue_threshold: 30        # guided RTC：剩余动作 <=30 行时启动下一次推理
+    rtc_max_guidance_weight: 10.0  # 去噪引导强度上限
+    rtc_prefix_schedule: "linear" # zeros | ones | linear | exp
+    rtc_replan_interval_s: 0.0     # 仅非 pi05 的旧 rtc 生效；0=自动
+    rtc_min_tail: 0                # 仅非 pi05 的旧 rtc 生效；0=自动
     # ACT 时序融合系数（借鉴 lerobot ACTTemporalEnsembler，ACT 论文 Algorithm 2）：
     # >0 时引擎换 chunk 把旧尾段与新头部按 exp(-coeff*i) 权重平均，消除切换跳变
     # （缓解真机"一卡一卡"）。ACT 推荐 0.01；0 = 关闭（硬切换）。开/关可 A/B 对比。

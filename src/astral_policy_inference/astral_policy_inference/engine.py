@@ -1,18 +1,19 @@
 """Action-chunk execution engines: queue_sync / queue_async / rtc.
 
 The engine turns a backend's *chunks* into a stream of single absolute action
-rows at the policy rate. pi0.5/ACT outputs are absolute joint targets, so a
-re-plan can replace the unexecuted tail of the current chunk and simply resume
-at the latency-compensated index — no blending needed, no jumps.
+rows at the policy rate. pi0.5/ACT outputs are absolute joint targets. Guided
+RTC also sends the unexecuted tail into OpenPI's denoiser so the next chunk is
+conditioned before it replaces the current one.
 
 Modes:
 * ``queue_sync``  — refill blocks the calling (control) thread at chunk end.
 * ``queue_async`` — background planner pre-fetches the next chunk once the
   current one is within ``async_prefetch_ahead`` of empty; the control thread
   never blocks after the initial plan.
-* ``rtc``         — rolling re-plan: planner re-infers every
-  ``rtc_replan_interval_s`` and swaps the tail once ≥ ``rtc_min_tail`` rows of
-  the current chunk have executed.
+* ``rtc``         — rolling re-plan. Guided OpenPI pi05 starts inference when
+  remaining rows reach ``rtc_queue_threshold`` and conditions generation on
+  that tail; the legacy unconditioned path uses ``rtc_replan_interval_s`` and
+  ``rtc_min_tail``.
 
 No ROS state here; backend is injected, so the engine is unit-testable with a
 fake backend. Threading is optional (``autostart=False``) for deterministic
@@ -21,6 +22,7 @@ tests.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from typing import Callable, Optional
@@ -109,6 +111,11 @@ class ActionEngine:
         async_prefetch_ahead: Optional[int] = None,
         rtc_replan_interval_s: Optional[float] = None,
         rtc_min_tail: Optional[int] = None,
+        rtc_guided: bool = False,
+        rtc_queue_threshold: int = 30,
+        rtc_execution_horizon: int = 10,
+        rtc_max_guidance_weight: float = 10.0,
+        rtc_prefix_schedule: str = "linear",
         queue_min_replan_interval_s: float = 0.05,
         autostart: bool = True,
         abs_action_min_scale: float = 0.5,
@@ -157,6 +164,22 @@ class ActionEngine:
         self.rtc_min_tail = (
             int(rtc_min_tail) if rtc_min_tail is not None else max(1, self.chunk // 5)
         )
+        self.rtc_guided = bool(rtc_guided)
+        self.rtc_queue_threshold = int(rtc_queue_threshold)
+        self.rtc_execution_horizon = int(rtc_execution_horizon)
+        self.rtc_max_guidance_weight = float(rtc_max_guidance_weight)
+        self.rtc_prefix_schedule = str(rtc_prefix_schedule).lower()
+        if self.rtc_guided and mode != "rtc":
+            raise ValueError("rtc_guided requires engine mode='rtc'")
+        if self.rtc_guided and not 0 <= self.rtc_queue_threshold < self.chunk:
+            raise ValueError("rtc_queue_threshold must be in [0, action_chunk)")
+        if self.rtc_guided and (self.rtc_execution_horizon < 1 or self.rtc_execution_horizon > self.chunk):
+            raise ValueError("rtc_execution_horizon must be in [1, action_chunk]")
+        if not math.isfinite(self.rtc_max_guidance_weight) or self.rtc_max_guidance_weight <= 0:
+            raise ValueError("rtc_max_guidance_weight must be positive")
+        if self.rtc_prefix_schedule not in ("zeros", "ones", "linear", "exp"):
+            raise ValueError("unknown RTC prefix attention schedule")
+        self._rtc_max_latency_ms = 0.0
         self.queue_min_replan_interval_s = float(queue_min_replan_interval_s)
         self._autostart = autostart
 
@@ -237,6 +260,7 @@ class ActionEngine:
             self._i = 0
             self._pops_since_install = 0
             self._last_error = None
+            self._rtc_max_latency_ms = 0.0
             if self._ensembler is not None:
                 # 必须在锁内：planner 线程的 _install 也在锁内改融合计数，锁外清会竞态
                 self._ensembler.reset()
@@ -381,10 +405,30 @@ class ActionEngine:
                 return False
             obs = self._snapshot_obs()
             snap_i = self._i  # 观测时刻的消费位置（时间对齐锚点）
+            rtc = None
+            if self.rtc_guided and self._chunk is not None and snap_i < len(self._chunk):
+                # Prefix is the still-committed absolute command trajectory.
+                # The OpenPI server maps it through Astral's DeltaActions and
+                # Normalize transforms into the model's action space.
+                remaining = self._chunk[snap_i : snap_i + self.rtc_execution_horizon]
+                valid = len(remaining)
+                prefix = np.repeat(remaining[-1:, :], self.rtc_execution_horizon, axis=0)
+                prefix[:valid] = remaining
+                estimated_delay = math.ceil(self._rtc_max_latency_ms * self.policy_fps / 1000.0)
+                rtc = {
+                    "prefix": prefix.astype(np.float32),
+                    "valid": valid,
+                    "delay": min(estimated_delay, valid),
+                    "max_guidance_weight": self.rtc_max_guidance_weight,
+                    "schedule": self.rtc_prefix_schedule,
+                }
         request_t = time.time()
         t0 = time.perf_counter()
         try:
-            full = np.asarray(self.backend.infer(obs), dtype=np.float64)
+            full = np.asarray(
+                self.backend.infer_rtc(obs, rtc) if rtc is not None else self.backend.infer(obs),
+                dtype=np.float64,
+            )
         except PolicyError as exc:
             with self._lock:
                 self._last_error = str(exc)
@@ -435,13 +479,19 @@ class ActionEngine:
             else:
                 install = self._install(full, latency_ms=ms, snap_i=snap_i, consumed=consumed)
                 if install is not None:
+                    if self.rtc_guided:
+                        self._rtc_max_latency_ms = max(self._rtc_max_latency_ms, ms)
                     trace_rec = {
                         "schema": "pi_plan_trace/v1", "event": "plan_installed",
                         "t": round(self._last_accept_t, 6), "mode": self.mode,
                         "plan": self._plans,
                         "snapshot": self._trace_observation(obs),
                         "inference": {"request_t": round(request_t, 6), "rtt_ms": round(ms, 3), "server_timing": self._last_server_timing},
-                        "alignment": install,
+                        "alignment": {**install, "rtc": {
+                            "guided": self.rtc_guided,
+                            "conditioned_delay": rtc["delay"] if rtc is not None else 0,
+                            "prefix_valid": rtc["valid"] if rtc is not None else 0,
+                        }},
                         # This is the complete action chunk received from the remote
                         # policy before any local ensembling/anchor processing.
                         "server_chunk": full.tolist(),
@@ -527,6 +577,9 @@ class ActionEngine:
         rows = min(self.chunk, len(full))
         if rows <= 0:
             self._last_error = "policy returned an empty action chunk"
+            return None
+        if self.rtc_guided and consumed >= rows:
+            self._last_error = "RTC inference latency exceeded the returned action horizon"
             return None
         # The websocket/msgpack decoder reconstructs ndarrays on top of an
         # immutable ``bytes`` buffer.  ``np.asarray(..., dtype=float64)`` keeps
@@ -647,8 +700,13 @@ class ActionEngine:
                         or since < self.queue_min_replan_interval_s
                     )
                 elif self.mode == "rtc":
-                    due = (time.time() - self._last_accept_t) >= self.rtc_replan_interval_s
-                    idle = not (due and self._pops_since_install >= self.rtc_min_tail)
+                    if self.rtc_guided:
+                        # LeRobot RTCInferenceEngine starts a new conditioned
+                        # inference when the action queue reaches its threshold.
+                        idle = self.remaining > self.rtc_queue_threshold
+                    else:
+                        due = (time.time() - self._last_accept_t) >= self.rtc_replan_interval_s
+                        idle = not (due and self._pops_since_install >= self.rtc_min_tail)
                 else:
                     idle = True
                 if not idle:

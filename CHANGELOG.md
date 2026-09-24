@@ -2,6 +2,36 @@
 
 ## 2026-09-24
 
+**OpenPI π0.5 guided RTC：旧块未执行尾段引导去噪（LeRobot RTCInferenceEngine 风格）**——
+`astral_policy_inference`。**动机**：普通 pi05 checkpoint 换块时新块与旧块尾段互不知情，边界拉回/
+内部接缝需靠节点端平滑；guided RTC 把旧块**尚未执行的绝对目标**随请求送到服务端，经 Astral
+`DeltaActions`+归一化+维度填充后，在每个 flow-matching 去噪步约束新块前缀——边界由模型自身平滑，
+**不需要 RTC 专项训练 checkpoint**。**做法**：① `serve.py` 新增 `--rtc-guided`/`--rtc-execution-horizon`
+（默认 10）：预热同时编译普通与 guided 两条 JAX 图（不同图，普通预热不覆盖）；握手 metadata 带
+`rtc_guided/rtc_horizon`；校验 horizon≥1、≤模型 action_horizon、guided 需 model=pi05+warmup。
+② `RemoteBackend` 增 `rtc_guided/rtc_horizon`，`open()` 握手校验服务端须 `model=pi05`+`rtc_guided`+
+horizon 匹配；`infer(rtc=...)` 发送 `rtc_prefix/rtc_prefix_valid/rtc_delay/rtc_max_guidance_weight/
+rtc_schedule`。③ `ActionEngine` 增 `rtc_queue_threshold`(30)/`rtc_execution_horizon`(10)/
+`rtc_max_guidance_weight`(10)/`rtc_prefix_schedule`(linear,zeros|ones|linear|exp)：剩余行≤阈值即启动
+引导推理；prefix=已提交轨迹尾段（不足按末行重复补满 horizon），`delay` 按历史最大 RTT×fps 估；
+`_install` 在 guided 下若 `consumed>=rows`（延迟超返回horizon）拒绝；planner 循环 guided 用
+`remaining>threshold` 判闲（对齐 LeRobot RTCInferenceEngine）。④ 节点：engine_mode=rtc+model=pi05
+自动启用 guided（要求 backend=remote），并**自动关掉时序融合与 anchor 平滑**（避免对模型引导结果再
+叠加轨迹混合）；启动行自报 `rtc_guided/rtc_queue/rtc_horizon`。**验证**：policy 套件（engine RTC
+参数校验/prefix 构造/安装守卫）+ 编译通过；真机部署须服务端/节点 horizon 一致（握手强校验）。
+
+**WN 相机固件更新 + 双相机迁 USB2 后全链路验证通过（30fps ×3 路、0 损坏）**——
+`quest3_video_streamer`/数据采集链路。**背景**：此前 USB3@120fps 下相机编码器 ~1% 坏帧、固件拒绝 30fps
+（详见 09-23 条目）。**本次**：① 厂商更新固件——两 WN 相机在 USB2/USB3 都枚举 MJPG 720p 30/60/120；
+② 用户将两台 WN 相机全部移到 USB2 口（right_wrist=usb-0:2.2.2→video8、left_wrist=usb-0:2.2.3→video6），
+D435i 挪到 USB3（usb-0:1.4，彩色节点 1.4:1.3→video4）；③ `label_aliases` 按新 by-path 更新（base→
+1.4:1.3、left_wrist→2.2.3、right_wrist→2.2.2）。**实测**：两台 WN 720p30 各 200/200 帧、error_dc=0；
+**base 1080p30 全链路**：base 27.3fps/collect 30.04Hz、left 27.8/30.03、right 27.8/29.97，Corrupt JPEG=0；
+**base 720p30 全链路**：base 28.0/29.99、left 27.8/29.98、right 27.8/30.04，Corrupt JPEG=0；端到端
+collect 三路各 40 帧全解码、0 条带伪影。**结论**：坏帧问题随固件更新+USB2 迁址彻底消失（此前 base
+19-26fps 是旧固件右腕 120fps 吃 CPU 所致，现右腕 30fps 释放后 base 1080p30 稳定），**base 无需降档
+720p**，当前配置可正常采数/推理。
+
 **policy_inference 远程协议加固：有界超时 + action_dim 握手校验 + 响应形状/NaN 校验**——
 `astral_policy_inference`。**动机**：服务未启动或推理无响应时 `WebsocketClient` 会一直重连/阻塞读，
 节点无从报错退出；且无法在握手阶段发现"客户端/服务端 action_dim 不一致"（错配要到首帧 infer 才崩）。

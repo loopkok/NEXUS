@@ -17,6 +17,7 @@
 | 驱动层/电机控制坑 | [motor-control-pitfalls.md](motor-control-pitfalls.md) | 陈旧命令流/板端陈旧目标/使能确认位/HOME 归位/夹爪竞态/死区 一整套"电机突然自己动"的定责路径 | `src/astral_robot_control/README.md`、CHANGELOG 08-09 月 |
 | 数采数据质量（卡点治本） | [data-quality-investigation.md](data-quality-investigation.md) | 训练后真机**固定卡点**= 数据走走停停被模型学走；治本在数据修复（repair_aligned 选帧零错位） | `src/astral_data_collect/CLAUDE.md`「质量优化历程」 |
 | 相机/视频回传性能 | [camera-video-performance-investigation.md](camera-video-performance-investigation.md) | 三路相机拖垮进程=rosidl setter 逐字节校验吃 GIL（630× 加速）；编码器线程/限流/设备指纹各有一串坑 | `src/quest3_video_streamer/README.md`、CHANGELOG 08-09 月 |
+| 相机 USB3 坏帧/120fps | [camera-usb3-120fps-corruption-investigation.md](camera-usb3-120fps-corruption-investigation.md) | ffmpeg 三类错误分清真伪；坏帧=SS 120fps 编码器过载（帧率 vs 端口四格表实证）；固件更新+迁 USB2@30 根治；USB2 线强制 HS；`pkill -9` 会脏 xHCI | 本会话 Jetson 实机、CHANGELOG 09-23/24 |
 | 相机 label 语义化/设备指纹 | [camera-label-semanticization.md](camera-label-semanticization.md) | videoN 是"内核号"不是"角色"；label_aliases 按硬件指纹钉死，换口/重插不漂移 | streamer params.yaml、CHANGELOG 09-18 |
 | openpi 训练部署 | [openpi-training-deploy.md](openpi-training-deploy.md) | pi05_base 权重 11.6GB 需 RAM≥32GB（本机 3 次 OOM）；迁移三件套 + 5 个坑 | CHANGELOG 09-11 |
 | NN 臂角 IK（piM-IK）对抗性审查 | [src/astral_pim_ik/docs/adversarial_review.md](../src/astral_pim_ik/docs/adversarial_review.md) | F1-F11 发现：ψ=0 约定一致性、单帧 T_ee 不决定 ψ（训练须时间相干轨迹）、已修 3 个真 bug（9D 行列序/L_elbow 遮蔽/IID 不可学） | `src/astral_pim_ik/CLAUDE.md` §5/§8 |

@@ -66,6 +66,10 @@ class PolicyBackend(ABC):
     def infer(self, obs: ObsBatch) -> np.ndarray:
         """Return an absolute action chunk (>=1, action_dim); never None."""
 
+    def infer_rtc(self, obs: ObsBatch, rtc: dict) -> np.ndarray:
+        """Return a chunk conditioned on an RTC prefix, when supported."""
+        raise PolicyError(f"{self.name} backend does not support guided RTC")
+
     @abstractmethod
     def reset(self) -> None:
         """Drop any queued actions / language context on the policy side."""
@@ -111,6 +115,8 @@ class RemoteBackend(PolicyBackend):
         jpeg_quality: int = 92,
         connect_timeout_s: float = 5.0,
         infer_timeout_s: float = 3.0,
+        rtc_guided: bool = False,
+        rtc_horizon: int = 10,
     ):
         self.host = host
         self.port = int(port)
@@ -129,6 +135,8 @@ class RemoteBackend(PolicyBackend):
         self.jpeg_quality = int(jpeg_quality)
         self.connect_timeout_s = float(connect_timeout_s)
         self.infer_timeout_s = float(infer_timeout_s)
+        self.rtc_guided = bool(rtc_guided)
+        self.rtc_horizon = int(rtc_horizon)
 
     def open(self) -> None:
         if self._client is not None:
@@ -154,6 +162,14 @@ class RemoteBackend(PolicyBackend):
                 raise PolicyError(
                     f"server action_dim {server_dim} != robot action_dim {self.action_dim}"
                 )
+            if self.rtc_guided:
+                if metadata.get("model") != "pi05" or not metadata.get("rtc_guided"):
+                    raise PolicyError("guided RTC requires a pi05 server started with --rtc-guided")
+                if int(metadata.get("rtc_horizon", 0)) != self.rtc_horizon:
+                    raise PolicyError(
+                        f"RTC horizon mismatch: node={self.rtc_horizon}, "
+                        f"server={metadata.get('rtc_horizon')}"
+                    )
         except (AttributeError, TypeError, ValueError, PolicyError) as exc:
             client.close()
             raise PolicyError(f"invalid server metadata: {exc}") from exc
@@ -174,7 +190,7 @@ class RemoteBackend(PolicyBackend):
             except Exception:  # noqa: BLE001
                 pass
 
-    def infer(self, obs: ObsBatch) -> np.ndarray:
+    def infer(self, obs: ObsBatch, *, rtc: dict | None = None) -> np.ndarray:
         if self._client is None:
             raise PolicyError("RemoteBackend not open()ed")
         payload: dict = {self.state_key: obs.state.astype(np.float32)}
@@ -196,6 +212,16 @@ class RemoteBackend(PolicyBackend):
         if self.jpeg_transport:
             payload["image_format"] = "jpeg"
         payload["prompt"] = obs.prompt or self.default_prompt
+        if rtc is not None:
+            if not self.rtc_guided:
+                raise PolicyError("RTC request sent through a non-RTC backend")
+            payload.update({
+                "rtc_prefix": rtc["prefix"],
+                "rtc_prefix_valid": int(rtc["valid"]),
+                "rtc_delay": int(rtc["delay"]),
+                "rtc_max_guidance_weight": float(rtc["max_guidance_weight"]),
+                "rtc_schedule": str(rtc["schedule"]),
+            })
         t0 = time.perf_counter()
         try:
             response = self._client.infer(payload)
@@ -211,6 +237,9 @@ class RemoteBackend(PolicyBackend):
         actions = _actions_from_response(response, self.action_dim, max_rows=1 << 20)
         self.last_infer_s = time.perf_counter() - t0
         return actions
+
+    def infer_rtc(self, obs: ObsBatch, rtc: dict) -> np.ndarray:
+        return self.infer(obs, rtc=rtc)
 
 
 class InprocBackend(PolicyBackend):
@@ -415,6 +444,8 @@ def make_backend(
     jpeg_quality: int = 92,
     connect_timeout_s: float = 5.0,
     infer_timeout_s: float = 3.0,
+    rtc_guided: bool = False,
+    rtc_horizon: int = 10,
 ) -> PolicyBackend:
     """Backend factory. ``backend_type`` = transport: remote | inproc | stub.
 
@@ -434,6 +465,8 @@ def make_backend(
             jpeg_quality=jpeg_quality,
             connect_timeout_s=connect_timeout_s,
             infer_timeout_s=infer_timeout_s,
+            rtc_guided=rtc_guided,
+            rtc_horizon=rtc_horizon,
         )
     if bt == "inproc":
         if not checkpoint_dir:

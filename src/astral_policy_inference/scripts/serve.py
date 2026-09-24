@@ -164,8 +164,25 @@ def _build_pi05_policy(args):
     return policy
 
 
-def _infer_pi05(policy, request: dict) -> dict:
-    resp = policy.infer(request)
+def _infer_pi05(policy, request: dict, *, rtc_guided: bool = False, rtc_horizon: int = 10) -> dict:
+    rtc = None
+    if "rtc_prefix" in request:
+        if not rtc_guided:
+            raise ValueError("server was not started with --rtc-guided")
+        import numpy as np
+
+        prefix = np.asarray(request["rtc_prefix"], dtype=np.float32)
+        if prefix.ndim != 2 or prefix.shape[0] != rtc_horizon:
+            raise ValueError(f"RTC prefix must have {rtc_horizon} rows, got {prefix.shape}")
+        rtc = {
+            "prefix": prefix,
+            "valid": int(request["rtc_prefix_valid"]),
+            "delay": int(request["rtc_delay"]),
+            "max_guidance_weight": float(request["rtc_max_guidance_weight"]),
+            "schedule": str(request["rtc_schedule"]),
+        }
+        request = {k: v for k, v in request.items() if not k.startswith("rtc_")}
+    resp = policy.infer(request, rtc=rtc) if rtc is not None else policy.infer(request)
     actions = resp.get("actions")
     if actions is None:
         raise ValueError("openpi policy returned no actions")
@@ -177,7 +194,10 @@ def _infer_pi05(policy, request: dict) -> dict:
     return response
 
 
-def _warmup_policy(policy, state_dim: int, camera_map: dict[str, str]) -> None:
+def _warmup_policy(
+    policy, state_dim: int, camera_map: dict[str, str],
+    *, rtc_guided: bool = False, rtc_horizon: int = 10,
+) -> None:
     """进程内预热：pi05 首轮推理要 XLA 编译（2-5 分钟），启动时先做一次 dummy
     infer 把编译做掉，真机连上后第一个 chunk 不用干等。"""
     import time
@@ -192,12 +212,23 @@ def _warmup_policy(policy, state_dim: int, camera_map: dict[str, str]) -> None:
         req[f"observation/camera/{slot}"] = np.zeros((224, 224, 3), dtype=np.uint8)
     t0 = time.monotonic()
     policy.infer(req)
+    if rtc_guided:
+        # Guided requests have a different JAX graph.  Compile it before a
+        # robot starts consuming the initial chunk.
+        policy.infer(req, rtc={
+            "prefix": np.zeros((rtc_horizon, state_dim), dtype=np.float32),
+            "valid": rtc_horizon, "delay": min(1, rtc_horizon),
+            "max_guidance_weight": 10.0, "schedule": "linear",
+        })
     print(f"serve[pi05]: warmup done in {time.monotonic() - t0:.1f}s", flush=True)
 
 
 # ------------------------------------------------------------ 协议层
 
-async def _handle(websocket, infer_fn, reset_fn, packer, model: str, action_dim: int) -> None:
+async def _handle(
+    websocket, infer_fn, reset_fn, packer, model: str, action_dim: int,
+    rtc_guided: bool, rtc_horizon: int,
+) -> None:
     import websockets.exceptions
 
     global _CONNECTIONS
@@ -209,7 +240,10 @@ async def _handle(websocket, infer_fn, reset_fn, packer, model: str, action_dim:
     reset_fn()
 
     try:
-        await websocket.send(packer.pack({"model": model, "action_dim": action_dim}))
+        await websocket.send(packer.pack({
+            "model": model, "action_dim": action_dim,
+            "rtc_guided": rtc_guided, "rtc_horizon": rtc_horizon if rtc_guided else 0,
+        }))
         while True:
             data = await websocket.recv()
             if isinstance(data, str):
@@ -230,12 +264,15 @@ async def _handle(websocket, infer_fn, reset_fn, packer, model: str, action_dim:
         pass  # 客户端正常断开，非错误
 
 
-async def _serve(infer_fn, reset_fn, host: str, port: int, model: str, action_dim: int) -> None:
+async def _serve(
+    infer_fn, reset_fn, host: str, port: int, model: str, action_dim: int,
+    rtc_guided: bool = False, rtc_horizon: int = 10,
+) -> None:
     from websockets.asyncio.server import serve
 
     packer = _proto.Packer()
     async with serve(
-        lambda ws: _handle(ws, infer_fn, reset_fn, packer, model, action_dim),
+        lambda ws: _handle(ws, infer_fn, reset_fn, packer, model, action_dim, rtc_guided, rtc_horizon),
         host,
         port,
         compression=None,
@@ -268,6 +305,10 @@ def main() -> None:
         help="pi05 诊断：把每次推理的输入图像(state/图像)与输出首行动作落盘到该目录（每 30 次存图）",
     )
     parser.add_argument("--default-prompt", default="")
+    parser.add_argument("--rtc-guided", action="store_true",
+                        help="pi05：预编译 LeRobot 式 guided RTC 并接受 RTC 前缀请求")
+    parser.add_argument("--rtc-execution-horizon", type=int, default=10,
+                        help="RTC 前缀长度，须与 policy_node 参数一致")
     parser.add_argument(
         "--slot-map",
         # 值 = **模型 input_features 里的图像键**（观察传到 observation.images.<值>），
@@ -277,6 +318,12 @@ def main() -> None:
         help="JSON: model slot -> model feature image key（须与模型 input_features 一致）",
     )
     args = parser.parse_args()
+    if args.rtc_execution_horizon < 1:
+        parser.error("--rtc-execution-horizon must be >= 1")
+    if args.rtc_guided and args.model != "pi05":
+        parser.error("--rtc-guided requires --model pi05")
+    if args.rtc_guided and not args.warmup:
+        parser.error("--rtc-guided requires warmup so the guided graph compiles before robot control")
     try:
         args.slot_map = {str(k): str(v) for k, v in json.loads(args.slot_map).items()}
     except json.JSONDecodeError as exc:
@@ -295,12 +342,17 @@ def main() -> None:
         from openpi.training import config as _config
 
         train_config = _config.get_config(args.policy_config)
+        if args.rtc_guided and args.rtc_execution_horizon > train_config.model.action_horizon:
+            parser.error("RTC execution horizon exceeds the model action horizon")
         policy = _build_pi05_policy(args)
         if args.warmup:
             _warmup_policy(
-                policy, args.action_dim, getattr(train_config.data, "camera_map", {})
+                policy, args.action_dim, getattr(train_config.data, "camera_map", {}),
+                rtc_guided=args.rtc_guided, rtc_horizon=args.rtc_execution_horizon,
             )
-        infer_fn = lambda req: _infer_pi05(policy, req)  # noqa: E731
+        infer_fn = lambda req: _infer_pi05(  # noqa: E731
+            policy, req, rtc_guided=args.rtc_guided, rtc_horizon=args.rtc_execution_horizon
+        )
         reset_fn = lambda: getattr(policy, "reset", lambda: None)()  # noqa: E731
     else:
         backend = _build_act_backend(args)
@@ -309,7 +361,10 @@ def main() -> None:
         reset_fn = backend.reset
     print(f"serve[{args.model}]: loaded; serving over websocket", flush=True)
     try:
-        asyncio.run(_serve(infer_fn, reset_fn, args.host, args.port, args.model, args.action_dim))
+        asyncio.run(_serve(
+            infer_fn, reset_fn, args.host, args.port, args.model, args.action_dim,
+            args.rtc_guided, args.rtc_execution_horizon,
+        ))
     except KeyboardInterrupt:
         print(f"serve[{args.model}] stopped")
 

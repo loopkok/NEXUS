@@ -273,6 +273,10 @@ class PolicyNode(Node):
             callback_group=self._control_callback_group,
         )
         self._last_publish = 0.0
+        guided_rtc = (
+            str(self.get_parameter("engine_mode").value) == "rtc"
+            and str(self.get_parameter("model").value) == "pi05"
+        )
         self.get_logger().info(
             f"policy_node up: schema={self._layout.state_dim}D "
             f"arms={self._schema.arms} ee=({self._schema.end_effector_left},"
@@ -280,8 +284,11 @@ class PolicyNode(Node):
             f"ctrl={self._ctrl_rate}Hz mode={self.get_parameter('engine_mode').value}"
             # 生效参数自报（防 yaml 被静默丢弃/launch 覆盖后无感）：
             # yaml 顶层键≠节点名时整份参数被 rclpy 忽略，节点按代码默认值跑。
-            f" coeff={self.get_parameter('temporal_ensemble_coeff').value} "
-            f"anchor_tol={self.get_parameter('chunk_anchor_tol').value} "
+            f" rtc_guided={guided_rtc} "
+            f"rtc_queue={self.get_parameter('rtc_queue_threshold').value} "
+            f"rtc_horizon={self.get_parameter('rtc_execution_horizon').value} "
+            f"coeff={0.0 if guided_rtc else self.get_parameter('temporal_ensemble_coeff').value} "
+            f"anchor_tol={0.0 if guided_rtc else self.get_parameter('chunk_anchor_tol').value} "
             f"anchor_blend={self.get_parameter('chunk_anchor_blend').value} "
             f"prefetch={self.get_parameter('async_prefetch_ahead').value} "
             f"mute={sorted(self._mute_cameras)} "
@@ -323,6 +330,14 @@ class PolicyNode(Node):
             "server_infer_timeout_s": 3.0,
             "engine_mode": "queue_async",
             "action_chunk": 50,
+            # LeRobot-style guided RTC for remote OpenPI pi05.  A value of 0
+            # for the cadence fields keeps ActionEngine's chunk/fps defaults.
+            "rtc_execution_horizon": 10,
+            "rtc_queue_threshold": 30,
+            "rtc_max_guidance_weight": 10.0,
+            "rtc_prefix_schedule": "linear",
+            "rtc_replan_interval_s": 0.0,
+            "rtc_min_tail": 0,
             "control_interp": 1,
             # ACT 时序融合系数（借鉴 lerobot ACTTemporalEnsembler）：>0 时换 chunk
             # 做指数加权平均消除边界跳变（ACT 推荐 0.01）；0 = 关闭。yaml 默认 0.01。
@@ -810,9 +825,16 @@ class PolicyNode(Node):
             self._engine = None
 
     def _new_engine(self) -> ActionEngine:
+        mode = str(self.get_parameter("engine_mode").value)
+        guided_rtc = mode == "rtc" and str(self.get_parameter("model").value) == "pi05"
+        if guided_rtc and str(self.get_parameter("backend_type").value) != "remote":
+            raise ValueError("OpenPI pi05 guided RTC requires backend_type=remote")
+        rtc_horizon = int(self.get_parameter("rtc_execution_horizon").value)
         return ActionEngine(
-            make_backend(**self._backend_cfg),
-            mode=str(self.get_parameter("engine_mode").value),
+            make_backend(
+                **self._backend_cfg, rtc_guided=guided_rtc, rtc_horizon=rtc_horizon,
+            ),
+            mode=mode,
             action_dim=self._schema.state_dim,
             chunk=int(self.get_parameter("action_chunk").value),
             policy_fps=int(self.get_parameter("dataset_fps").value),
@@ -820,12 +842,14 @@ class PolicyNode(Node):
             abs_action_min_scale=float(
                 self.get_parameter("abs_action_min_scale").value
             ),
-            temporal_ensemble_coeff=float(
+            # Guided denoising already conditions the overlap.  Keep the
+            # queued-action smoothing path for the other engine modes.
+            temporal_ensemble_coeff=(0.0 if guided_rtc else float(
                 self.get_parameter("temporal_ensemble_coeff").value
-            ),
-            chunk_anchor_tol=float(
+            )),
+            chunk_anchor_tol=(0.0 if guided_rtc else float(
                 self.get_parameter("chunk_anchor_tol").value
-            ),
+            )),
             chunk_anchor_blend=int(
                 self.get_parameter("chunk_anchor_blend").value
             ),
@@ -833,6 +857,13 @@ class PolicyNode(Node):
                 int(self.get_parameter("async_prefetch_ahead").value)
                 or None  # 0 = 引擎默认 chunk//2
             ),
+            rtc_guided=guided_rtc,
+            rtc_queue_threshold=int(self.get_parameter("rtc_queue_threshold").value),
+            rtc_execution_horizon=rtc_horizon,
+            rtc_max_guidance_weight=float(self.get_parameter("rtc_max_guidance_weight").value),
+            rtc_prefix_schedule=str(self.get_parameter("rtc_prefix_schedule").value),
+            rtc_replan_interval_s=(float(self.get_parameter("rtc_replan_interval_s").value) or None),
+            rtc_min_tail=(int(self.get_parameter("rtc_min_tail").value) or None),
             plan_trace_hook=(self._write_plan_trace if self._plan_trace_fh is not None else None),
         )
 

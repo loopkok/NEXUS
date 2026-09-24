@@ -117,6 +117,32 @@ ros2 launch astral_policy_inference policy_inference.launch.py \
   camera_image_size:=480
 ```
 
+### OpenPI π0.5 guided RTC
+
+普通 OpenPI π0.5 checkpoint 使用 LeRobot 的 `guided` RTC 路径：旧块尚未执行的绝对
+目标随请求送到服务端，经过 Astral 的 `DeltaActions`、归一化和维度填充后，在每个
+flow-matching 去噪步约束新块前缀。节点继续执行旧块，收到新块后按推理期间实际发出的
+策略行数续播。这个路径不要求 RTC 专项训练 checkpoint。
+
+```bash
+# GPU 主机；--rtc-guided 会同时预编译普通和 guided 两条推理路径
+PYTHONPATH=<sdk>/VLA/openpi/src <openpi-env>/bin/python \
+  astral_ws/src/astral_policy_inference/scripts/serve.py \
+  --model pi05 --checkpoint-dir <openpi_ckpt> --policy-config pi05_astral \
+  --action-dim 8 --port 8001 --rtc-guided --rtc-execution-horizon 10
+
+# 机器人侧；model 和 engine_mode 都要指定
+ros2 launch astral_policy_inference policy_inference.launch.py \
+  backend_type:=remote model:=pi05 engine_mode:=rtc \
+  host:=<gpu-host> port:=8001
+```
+
+`rtc_execution_horizon` 必须与服务端 `--rtc-execution-horizon` 相同，握手时检查；
+`rtc_queue_threshold`（默认剩余 30 行）、`rtc_max_guidance_weight`（默认 10）和
+`rtc_prefix_schedule`（默认 linear）在 YAML 中配置。guided RTC 下节点自动关闭
+引擎的时序融合和换块 anchor 平滑，避免给模型引导结果再次施加轨迹混合。
+服务端没有 `--rtc-guided` 或模型不匹配时，节点在建立 POLICY 会话时直接报错。
+
 **pi0/pi05 消融诊断：`mute_cameras`（yaml，JSON 数组）**——指定 collect label 不进入推理请求，
 例如 `mute_cameras: '["left_wrist"]'` 会让客户端只发送 base。配套 OpenPI `AstralInputs` 对本次
 缺失但配置中存在的固定槽补零，并设置 `image_mask=False`；这不同于 mask 为真的全黑 OOD 图像。
