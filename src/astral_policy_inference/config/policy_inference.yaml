@@ -44,6 +44,8 @@ policy_node:
     checkpoint_dir: ""        # inproc：InprocBackend 加载目录
     host: "127.0.0.1"         # remote：serve.py 主机
     port: 8000                # remote：serve.py 端口
+    server_connect_timeout_s: 5.0  # 服务未启动/握手失败时有界报错，避免一直卡在连接
+    server_infer_timeout_s: 3.0    # 单次推理响应超时；超时后关闭该连接并报错
     engine_mode: "queue_async"  # queue_sync | queue_async | rtc
     action_chunk: 50          # 每个 chunk 消费的行数（openpi action_horizon=50）
     # ACT 时序融合系数（借鉴 lerobot ACTTemporalEnsembler，ACT 论文 Algorithm 2）：

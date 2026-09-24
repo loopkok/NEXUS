@@ -288,6 +288,8 @@ class PolicyNode(Node):
             f"jpeg={self.get_parameter('jpeg_transport').value} "
             f"backend={self.get_parameter('backend_type').value} "
             f"host={self.get_parameter('host').value}:{self.get_parameter('port').value} "
+            f"ws_timeout={self.get_parameter('server_connect_timeout_s').value}/"
+            f"{self.get_parameter('server_infer_timeout_s').value}s "
             f"cmd_topic={self.get_parameter('cmd_topic').value} "
             "callbacks=image-per-camera+command+control"
         )
@@ -317,6 +319,8 @@ class PolicyNode(Node):
             "checkpoint_dir": "",
             "host": "127.0.0.1",
             "port": 8000,
+            "server_connect_timeout_s": 5.0,
+            "server_infer_timeout_s": 3.0,
             "engine_mode": "queue_async",
             "action_chunk": 50,
             "control_interp": 1,
@@ -422,6 +426,8 @@ class PolicyNode(Node):
             "checkpoint_dir": str(self.get_parameter("checkpoint_dir").value),
             "host": str(self.get_parameter("host").value),
             "port": int(self.get_parameter("port").value),
+            "connect_timeout_s": float(self.get_parameter("server_connect_timeout_s").value),
+            "infer_timeout_s": float(self.get_parameter("server_infer_timeout_s").value),
             "default_prompt": str(self.get_parameter("default_prompt").value),
             "action_dim": schema.state_dim,
             "camera_map": self._camera_map,

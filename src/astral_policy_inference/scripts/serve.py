@@ -197,7 +197,7 @@ def _warmup_policy(policy, state_dim: int, camera_map: dict[str, str]) -> None:
 
 # ------------------------------------------------------------ 协议层
 
-async def _handle(websocket, infer_fn, reset_fn, packer, model: str) -> None:
+async def _handle(websocket, infer_fn, reset_fn, packer, model: str, action_dim: int) -> None:
     import websockets.exceptions
 
     global _CONNECTIONS
@@ -209,7 +209,7 @@ async def _handle(websocket, infer_fn, reset_fn, packer, model: str) -> None:
     reset_fn()
 
     try:
-        await websocket.send(packer.pack({"model": model}))  # metadata
+        await websocket.send(packer.pack({"model": model, "action_dim": action_dim}))
         while True:
             data = await websocket.recv()
             if isinstance(data, str):
@@ -230,12 +230,12 @@ async def _handle(websocket, infer_fn, reset_fn, packer, model: str) -> None:
         pass  # 客户端正常断开，非错误
 
 
-async def _serve(infer_fn, reset_fn, host: str, port: int, model: str) -> None:
+async def _serve(infer_fn, reset_fn, host: str, port: int, model: str, action_dim: int) -> None:
     from websockets.asyncio.server import serve
 
     packer = _proto.Packer()
     async with serve(
-        lambda ws: _handle(ws, infer_fn, reset_fn, packer, model),
+        lambda ws: _handle(ws, infer_fn, reset_fn, packer, model, action_dim),
         host,
         port,
         compression=None,
@@ -309,7 +309,7 @@ def main() -> None:
         reset_fn = backend.reset
     print(f"serve[{args.model}]: loaded; serving over websocket", flush=True)
     try:
-        asyncio.run(_serve(infer_fn, reset_fn, args.host, args.port, args.model))
+        asyncio.run(_serve(infer_fn, reset_fn, args.host, args.port, args.model, args.action_dim))
     except KeyboardInterrupt:
         print(f"serve[{args.model}] stopped")
 

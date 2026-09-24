@@ -77,11 +77,12 @@ def _actions_from_response(
     actions = np.asarray(response["actions"], dtype=np.float64)
     if actions.ndim == 1:  # single row → make (1, dim)
         actions = actions.reshape(1, -1)
-    if actions.shape[1] != action_dim:
+    if actions.ndim != 2 or actions.shape[0] == 0 or actions.shape[1] != action_dim:
         raise PolicyError(
-            f"server action_dim {actions.shape[1]} != robot action_dim "
-            f"{action_dim}"
+            f"server actions shape {actions.shape} != (rows>=1, {action_dim})"
         )
+    if not np.isfinite(actions).all():
+        raise PolicyError("server actions contain NaN or infinity")
     return actions[:max_rows]
 
 
@@ -108,6 +109,8 @@ class RemoteBackend(PolicyBackend):
         client_factory: Callable | None = None,  # test seam
         jpeg_transport: bool = False,
         jpeg_quality: int = 92,
+        connect_timeout_s: float = 5.0,
+        infer_timeout_s: float = 3.0,
     ):
         self.host = host
         self.port = int(port)
@@ -124,6 +127,8 @@ class RemoteBackend(PolicyBackend):
         # serve 端 decode_jpeg 还原。像素 = 节点 letterbox 后 RGB 再编码（有损）。
         self.jpeg_transport = bool(jpeg_transport)
         self.jpeg_quality = int(jpeg_quality)
+        self.connect_timeout_s = float(connect_timeout_s)
+        self.infer_timeout_s = float(infer_timeout_s)
 
     def open(self) -> None:
         if self._client is not None:
@@ -134,7 +139,25 @@ class RemoteBackend(PolicyBackend):
         # 自包含 client（vendored __ndarray__ 序列化 + websockets），无需 openpi_client
         from astral_policy_inference.client import WebsocketClient
 
-        self._client = WebsocketClient(self.host, self.port)
+        try:
+            client = WebsocketClient(
+                self.host, self.port,
+                connect_timeout_s=self.connect_timeout_s,
+                infer_timeout_s=self.infer_timeout_s,
+            )
+        except Exception as exc:
+            raise PolicyError(f"remote server connect failed: {exc}") from exc
+        try:
+            metadata = client.get_server_metadata()
+            server_dim = metadata.get("action_dim")
+            if server_dim is not None and int(server_dim) != self.action_dim:
+                raise PolicyError(
+                    f"server action_dim {server_dim} != robot action_dim {self.action_dim}"
+                )
+        except (AttributeError, TypeError, ValueError, PolicyError) as exc:
+            client.close()
+            raise PolicyError(f"invalid server metadata: {exc}") from exc
+        self._client = client
 
     def close(self) -> None:
         if self._client is not None:
@@ -183,6 +206,8 @@ class RemoteBackend(PolicyBackend):
         self.last_server_timing = (
             response.get("server_timing") if isinstance(response, dict) else None
         )
+        if self.last_server_timing is None and isinstance(response, dict) and "server_ms" in response:
+            self.last_server_timing = {"total_ms": float(response["server_ms"])}
         actions = _actions_from_response(response, self.action_dim, max_rows=1 << 20)
         self.last_infer_s = time.perf_counter() - t0
         return actions
@@ -388,6 +413,8 @@ def make_backend(
     device: str | None = None,
     jpeg_transport: bool = False,
     jpeg_quality: int = 92,
+    connect_timeout_s: float = 5.0,
+    infer_timeout_s: float = 3.0,
 ) -> PolicyBackend:
     """Backend factory. ``backend_type`` = transport: remote | inproc | stub.
 
@@ -405,6 +432,8 @@ def make_backend(
             default_prompt=default_prompt,
             jpeg_transport=jpeg_transport,
             jpeg_quality=jpeg_quality,
+            connect_timeout_s=connect_timeout_s,
+            infer_timeout_s=infer_timeout_s,
         )
     if bt == "inproc":
         if not checkpoint_dir:

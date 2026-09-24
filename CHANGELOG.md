@@ -1,5 +1,34 @@
 # Changelog（astral_ws）
 
+## 2026-09-24
+
+**policy_inference 远程协议加固：有界超时 + action_dim 握手校验 + 响应形状/NaN 校验**——
+`astral_policy_inference`。**动机**：服务未启动或推理无响应时 `WebsocketClient` 会一直重连/阻塞读，
+节点无从报错退出；且无法在握手阶段发现"客户端/服务端 action_dim 不一致"（错配要到首帧 infer 才崩）。
+**做法**：① `server_connect_timeout_s`/`server_infer_timeout_s`（默认 5s/3s）：连接在期限内重试
+（0.2s 间隔）、握手与单次推理读取超时即报错；`infer` 超时关闭该连接再抛错。② `RemoteBackend.open()`
+握手读取服务端 metadata 并校验 `action_dim`（不匹配拒绝并关闭连接）；`serve.py` 握手 metadata 补发
+`action_dim`，客户端兼容只发 `model` 的旧服务。③ 动作响应形状严格校验（必须 2-D 且 rows≥1）并拒绝
+NaN/Inf。④ `last_server_timing` 兼容独立 pi0.5 服务的 `server_ms` 字段（缺 `server_timing` 时）。
+**验证**：新增 `test_client.py`（不可达服务有界超时、旧 metadata + infer 超时关闭连接）+
+test_backend 3 例（server_ms 透传、错误 action_dim 握手拒绝并 close、空/NaN 动作拒绝）。
+
+**pi05_standalone execute 模式：初始化路径 + MOVE/START 交互确认 + 安全断开（不下 DISABLE）**——
+`src/pi05_standalone/`。**动机**：原 execute 从任意实测位置直接切模型动作，无安全起始位；`--ready`
+调用 SDK `one_click_ready` 会把所有关节归零（危险）；`close()` 走 SDK 公开 `disconnect()` 会先发
+DISABLE——观察/推理运行后断开也可能让活动中的臂掉落。**做法**：① execute 要求机器人预先
+WORK/POSITION/enabled，从实测位置以 `init_joint_vel_rad_s`(0.6) 每关节上限先走 `init_waypoints` 再走
+`init_pose`（config 新增 init_* 段）；每点须新鲜关节反馈、`init_arrive_tol_rad`(0.05) 内稳定
+`init_settle_s`(0.3s) 才前进，跟随误差超 `init_follow_tol_rad`(0.25) 暂停轨迹，单段超
+`init_timeout_s`(40s) 终止。② 运动前交互终端输入 `MOVE`、到位后再输入 `START`（同一终端）才开始
+推理；`--duration` 从 START 后计；START 前校验臂仍停在 init_pose（偏离 >0.05 拒）。③ `--ready`
+彻底禁用（拒绝）。④ `close()` 绕过 SDK 公开 `disconnect()`（会先 DISABLE），直接停本地线程 + 关
+UDP socket，不下电/运动指令。⑤ Planner 兼容独立服务 metadata（有无 action_dim 均可）并读
+`server_ms` 计时。**部署信息**：GPU 机 `lukang@192.168.1.249`（独立端口 8002，checkpoint
+`pi05_astral_lora/single_pick_place/15000`），机器人 `nvidia@192.168.0.5`。
+**验证**：test_standalone 增 3 例（execute 初始化路径+MOVE/START 顺序、缺 init_* 拒 execute/拒绝
+--ready、未到位前进超时）+ close 不下 DISABLE；离线用例全绿。
+
 ## 2026-09-23
 
 **新增独立 Astral pi0.5 推理包 `src/pi05_standalone/`（最小路径，定位卡顿用）**——

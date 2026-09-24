@@ -4,7 +4,9 @@
 import argparse
 import json
 import logging
+import select
 import signal
+import sys
 import threading
 import time
 from pathlib import Path
@@ -125,11 +127,6 @@ class Robot:
         if age < 0 or age > 1 or not status.is_work_mode or not status.is_position_mode or not status.enabled:
             raise RuntimeError(f"robot not ready: status_age={age:.2f}s status={status.to_dict()}")
 
-    def ready(self):
-        if not self.sdk.one_click_ready(enable_timeout_s=3.0, seed_from_current=True):
-            raise RuntimeError("one_click_ready failed")
-        self.sdk.set_lpf(True, 0.85)
-
     def send(self, action, observed_state, period, max_joint_vel):
         a = validate_actions(action.reshape(1, -1))[0].copy()
         previous = self.last_arm_target
@@ -137,15 +134,26 @@ class Robot:
             previous = np.asarray(observed_state[:7], dtype=np.float32)
         max_step = max_joint_vel * period
         a[:7] = previous + np.clip(a[:7] - previous, -max_step, max_step)
-        self.sdk.set_target_positions({mid: float(q) for mid, q in zip(self.ids, a[:7])})
+        self.send_arm_only(a[:7])
         rad = 2.5 * (1.0 - float(a[7]))
         self.sdk.set_gripper_angle(rad, right_hand=False)
-        self.last_arm_target = a[:7].copy()
         self.gripper_ratio = float(a[7])
         return a
 
+    def send_arm_only(self, joints):
+        q = np.asarray(joints, dtype=np.float32)
+        if q.shape != (7,) or not np.isfinite(q).all():
+            raise ValueError("left arm target must contain seven finite joint angles")
+        self.sdk.set_target_positions({mid: float(value) for mid, value in zip(self.ids, q)})
+        self.last_arm_target = q.copy()
+
     def close(self):
-        self.sdk.disconnect()
+        # SDK's public disconnect() sends DISABLE first. That can make a live
+        # arm drop, including after an observation-only run. Stop local threads
+        # and close the UDP socket directly; this sends no power/motion command.
+        self.sdk._ctx.stop_threads()
+        self.sdk._comm.disconnect()
+        self.sdk._connected = False
 
 
 def validate_actions(actions):
@@ -155,6 +163,86 @@ def validate_actions(actions):
     if np.any((a[:, 7] < 0) | (a[:, 7] > 1)):
         raise ValueError("gripper ratio must be in [0,1]")
     return a
+
+
+def init_path(cfg):
+    """Return hardware-convention left joint targets, without ROS sign changes."""
+    if "init_waypoints" not in cfg or "init_pose" not in cfg:
+        raise ValueError("execute requires init_waypoints and init_pose in config")
+    via = np.asarray(cfg["init_waypoints"], dtype=np.float32)
+    if via.shape == (7,):
+        via = via.reshape(1, 7)
+    pose = np.asarray(cfg["init_pose"], dtype=np.float32)
+    if via.ndim != 2 or via.shape[1] != 7 or len(via) < 1 or pose.shape != (7,):
+        raise ValueError("init_waypoints must be 7D rows and init_pose must be 7D")
+    if not np.isfinite(via).all() or not np.isfinite(pose).all():
+        raise ValueError("initialization joints must be finite")
+    return [*via, pose]
+
+
+def confirm_word(word, stop):
+    if not sys.stdin.isatty():
+        raise RuntimeError(f"{word} confirmation requires an interactive terminal")
+    print(f"Type {word} and press Enter to continue (anything else aborts): ",
+          end="", flush=True)
+    while not stop.is_set():
+        readable, _, _ = select.select([sys.stdin], [], [], 0.1)
+        if readable:
+            if sys.stdin.readline().strip() != word:
+                raise RuntimeError(f"{word} confirmation denied")
+            return
+    raise RuntimeError("interrupted before confirmation")
+
+
+def move_to_init(robot, path, cfg, stop, snapshot):
+    """Slew each segment, then require stable measured arrival before advancing."""
+    hz = float(cfg.get("control_hz", 30))
+    speed = float(cfg.get("init_joint_vel_rad_s", 0.6))
+    tolerance = float(cfg.get("init_arrive_tol_rad", 0.05))
+    follow_tol = float(cfg.get("init_follow_tol_rad", 0.25))
+    timeout = float(cfg.get("init_timeout_s", 40.0))
+    settle = float(cfg.get("init_settle_s", 0.3))
+    if any(not np.isfinite(x) or x <= 0 for x in (hz, speed, tolerance, follow_tol, timeout, settle)):
+        raise ValueError("initialization timing and tolerances must be positive and finite")
+    period = 1.0 / hz
+    state, _ = robot.read(float(cfg.get("max_state_age_s", 0.5)))
+    command = state[:7].copy()
+    for number, target in enumerate(path, 1):
+        LOG.warning("initialization %d/%d target=%s", number, len(path), target.tolist())
+        started = time.monotonic()
+        next_tick = started
+        in_tolerance_since = None
+        while not stop.is_set():
+            now = time.monotonic()
+            if now < next_tick:
+                stop.wait(next_tick - now)
+            if stop.is_set():
+                break
+            now = time.monotonic()
+            if now - started > timeout:
+                raise RuntimeError(f"initialization segment {number} timed out")
+            robot.assert_ready()
+            obs, _ = snapshot()  # joint and both camera streams must stay fresh
+            measured = obs["observation/state"][:7]
+            gap = float(np.max(np.abs(measured - command)))
+            if gap > follow_tol:
+                # Hold the last target until the real arm catches up; never
+                # build a large unseen command lead while feedback is delayed.
+                LOG.warning("initialization segment %d tracking gap %.3f rad; holding", number, gap)
+            else:
+                command = command + np.clip(target - command, -speed * period, speed * period)
+            robot.send_arm_only(command)
+            if np.max(np.abs(command - target)) <= 1e-5 and np.max(np.abs(measured - target)) <= tolerance:
+                if in_tolerance_since is None:
+                    in_tolerance_since = now
+                if now - in_tolerance_since >= settle:
+                    LOG.warning("initialization %d/%d measured at target", number, len(path))
+                    break
+            else:
+                in_tolerance_since = None
+            next_tick = max(next_tick + period, now + period)
+        if stop.is_set():
+            raise RuntimeError("interrupted during initialization")
 
 
 class Planner:
@@ -183,7 +271,10 @@ class Planner:
             with connect(self.url, open_timeout=self.timeout, close_timeout=1,
                          compression=None, max_size=None) as ws:
                 metadata = unpack(ws.recv(timeout=self.timeout))
-                if metadata.get("model") != "pi05" or metadata.get("action_dim") != 8:
+                # The existing astral_ws server sends only {"model": "pi05"};
+                # our standalone server also sends action_dim. Validate the
+                # returned array shape in both cases.
+                if metadata.get("model") != "pi05" or metadata.get("action_dim", 8) != 8:
                     raise RuntimeError(f"unexpected server metadata: {metadata}")
                 while not self._stop.is_set():
                     if not self._request.wait(0.1):
@@ -198,8 +289,11 @@ class Planner:
                             raise RuntimeError(f"server error: {raw}")
                         response = unpack(raw)
                         actions = validate_actions(response["actions"])
+                        server_ms = response.get("server_ms")
+                        if server_ms is None:
+                            server_ms = (response.get("server_timing") or {}).get("infer_ms")
                         result = (actions, (time.monotonic() - started) * 1000,
-                                  response.get("server_ms"), ages)
+                                  server_ms, ages)
                         with self._lock:
                             self._result = result
                     except Exception as exc:
@@ -228,8 +322,9 @@ def run(cfg, mode, ready, duration, log_file):
     max_joint_vel = float(cfg.get("max_joint_vel_rad_s", 6.0))
     if not np.isfinite(max_joint_vel) or max_joint_vel <= 0:
         raise ValueError("max_joint_vel_rad_s must be positive and finite")
-    if ready and mode != "execute":
-        raise ValueError("--ready is only allowed with --mode execute")
+    if ready:
+        raise ValueError("--ready homes all joints and is disabled; prepare WORK/POSITION/enabled externally")
+    path = init_path(cfg) if mode == "execute" else None
     cameras = {name: Camera(name, cfg["cameras"][name]) for name in SLOTS}
     robot = None
     planner = None
@@ -241,9 +336,6 @@ def run(cfg, mode, ready, duration, log_file):
         for camera in cameras.values():
             camera.start()
         robot = Robot(cfg["robot"], ratio)
-        if ready:
-            LOG.warning("one_click_ready will enable the robot and move all joints to zero")
-            robot.ready()
         def snapshot():
             state, state_age = robot.read(float(cfg.get("max_state_age_s", 0.5)))
             obs = {"observation/state": state, "prompt": cfg["prompt"]}
@@ -266,11 +358,22 @@ def run(cfg, mode, ready, duration, log_file):
                     raise RuntimeError(f"initial observation unavailable: {exc}") from exc
                 time.sleep(0.05)
 
-        deadline = time.monotonic() + duration
         fps = float(cfg.get("control_hz", 30))
         if fps <= 0 or fps > 100:
             raise ValueError("control_hz must be in (0,100]")
         period = 1 / fps
+        if mode == "execute":
+            LOG.warning("left arm route: measured pose -> via point(s) -> init pose; gripper is unchanged")
+            confirm_word("MOVE", stop)
+            move_to_init(robot, path, cfg, stop, snapshot)
+            LOG.warning("initialization complete; policy commands remain paused")
+            confirm_word("START", stop)
+            obs, _ = snapshot()
+            robot.assert_ready()
+            error = float(np.max(np.abs(obs["observation/state"][:7] - path[-1])))
+            if error > float(cfg.get("init_arrive_tol_rad", 0.05)):
+                raise RuntimeError(f"left arm left init pose before START: error={error:.3f} rad")
+        deadline = time.monotonic() + duration
         if mode != "observe":
             planner = Planner(cfg["server_url"], snapshot, float(cfg.get("server_timeout_s", 3)))
             planner.request()
@@ -306,7 +409,6 @@ def run(cfg, mode, ready, duration, log_file):
             command = raw_action = None
             if actions is not None and index < len(actions):
                 raw_action = actions[index]
-                command = raw_action
                 index += 1
                 consumed += 1
                 if consumed == rows_per_plan and planner:
@@ -341,7 +443,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default=str(Path(__file__).with_name("config.example.yaml")))
     ap.add_argument("--mode", choices=("observe", "infer", "execute"), default="observe")
-    ap.add_argument("--ready", action="store_true", help="enable robot and home all joints before execution")
+    ap.add_argument("--ready", action="store_true", help="deprecated unsafe option; rejected")
     ap.add_argument("--duration", type=float, default=10)
     ap.add_argument("--log-file", default="")
     args = ap.parse_args()

@@ -1,6 +1,8 @@
 """Offline checks for the standalone wire format and Astral observation layout."""
 
+import json
 import sys
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -61,11 +63,16 @@ class StandaloneTests(unittest.TestCase):
             instance = None
             def __init__(self, settings, ratio):
                 self.commands = []
+                self.init_commands = []
+                self.state = np.zeros(8, np.float32)
                 FakeRobot.instance = self
             def read(self, max_age):
-                return np.zeros(8, np.float32), 0.001
+                return self.state.copy(), 0.001
             def assert_ready(self):
                 pass
+            def send_arm_only(self, joints):
+                self.init_commands.append(np.asarray(joints).copy())
+                self.state[:7] = joints
             def send(self, action, observed_state, period, max_joint_vel):
                 self.commands.append(action.copy())
                 return action
@@ -87,15 +94,62 @@ class StandaloneTests(unittest.TestCase):
 
         config = {"prompt": "red container", "initial_gripper_ratio": 0,
                   "cameras": {"base": {}, "left_wrist": {}}, "robot": {},
-                  "server_url": "ws://unused", "control_hz": 30, "replan_after_rows": 10}
+                  "server_url": "ws://unused", "control_hz": 100, "replan_after_rows": 10,
+                  "init_waypoints": [0.01] * 7, "init_pose": [0.02] * 7,
+                  "init_joint_vel_rad_s": 1, "init_settle_s": 0.01}
         with TemporaryDirectory() as tmp, patch.object(runner, "Camera", FakeCamera), \
                 patch.object(runner, "Robot", FakeRobot), \
-                patch.object(runner, "Planner", FakePlanner):
-            runner.run(config, "execute", False, 0.45, str(Path(tmp) / "log.jsonl"))
+                patch.object(runner, "Planner", FakePlanner), \
+                patch.object(runner, "confirm_word") as confirm:
+            runner.run(config, "execute", False, 0.15, str(Path(tmp) / "log.jsonl"))
+            self.assertEqual([call.args[0] for call in confirm.call_args_list], ["MOVE", "START"])
             self.assertGreaterEqual(len(FakeRobot.instance.commands), 10)
-            self.assertLessEqual(len(FakeRobot.instance.commands), 16)
+            self.assertGreaterEqual(len(FakeRobot.instance.init_commands), 4)
+            np.testing.assert_allclose(FakeRobot.instance.init_commands[-1], [0.02] * 7)
             records = (Path(tmp) / "log.jsonl").read_text().splitlines()
             self.assertEqual(len(records), len(FakeRobot.instance.commands))
+            runner.run(config, "infer", False, 0.2, str(Path(tmp) / "infer.jsonl"))
+            self.assertEqual(FakeRobot.instance.commands, [])
+            infer_records = [json.loads(s) for s in
+                             (Path(tmp) / "infer.jsonl").read_text().splitlines()]
+            self.assertTrue(any(r["raw_action"] is not None for r in infer_records))
+            self.assertTrue(all(r["command"] is None for r in infer_records))
+
+    def test_execute_requires_init_path_and_rejects_ready_before_devices(self):
+        cfg = {"prompt": "task", "initial_gripper_ratio": 0,
+               "cameras": {"base": {}, "left_wrist": {}}, "robot": {}}
+        with self.assertRaisesRegex(ValueError, "init_waypoints"):
+            runner.run(cfg, "execute", False, 1, "")
+        with self.assertRaisesRegex(ValueError, "--ready"):
+            runner.run(cfg, "execute", True, 1, "")
+        cfg["init_waypoints"] = [-1.6, .2, 0, -1.92, -.2, 0, 0]
+        cfg["init_pose"] = [-.35, .2, 0, -1.92, -.2, 0, 0]
+        path = runner.init_path(cfg)
+        self.assertEqual(len(path), 2)
+        np.testing.assert_allclose(path[0], cfg["init_waypoints"])
+        np.testing.assert_allclose(path[1], cfg["init_pose"])
+
+    def test_init_does_not_advance_without_measured_arrival(self):
+        class StalledRobot:
+            def __init__(self):
+                self.commands = []
+            def read(self, max_age):
+                return np.zeros(8, np.float32), 0.001
+            def assert_ready(self):
+                pass
+            def send_arm_only(self, joints):
+                self.commands.append(np.asarray(joints).copy())
+        robot = StalledRobot()
+        cfg = {"control_hz": 100, "init_joint_vel_rad_s": 10,
+               "init_follow_tol_rad": 0.1, "init_timeout_s": 0.08,
+               "init_settle_s": 0.01}
+        snapshot = lambda: ({"observation/state": np.zeros(8, np.float32)}, {})
+        with self.assertRaisesRegex(RuntimeError, "segment 1 timed out"):
+            runner.move_to_init(robot, [np.ones(7, np.float32),
+                                        np.ones(7, np.float32) * 2],
+                                cfg, threading.Event(), snapshot)
+        self.assertTrue(robot.commands)
+        self.assertTrue(all(np.max(command) <= 0.101 for command in robot.commands))
 
     def test_left_arm_command_mapping_and_rate_limit(self):
         class FakeSDK:
@@ -117,6 +171,25 @@ class StandaloneTests(unittest.TestCase):
         np.testing.assert_allclose(actual[:7], 0.2)
         self.assertEqual(robot.sdk.gripper, (0.0, False))
         self.assertEqual(robot.gripper_ratio, 1.0)
+
+    def test_close_never_disables_robot(self):
+        events = []
+        class Context:
+            def stop_threads(self):
+                events.append("stop")
+        class Comm:
+            def disconnect(self):
+                events.append("socket_close")
+        class SDK:
+            _ctx = Context()
+            _comm = Comm()
+            _connected = True
+            def disconnect(self):
+                raise AssertionError("public SDK disconnect sends DISABLE")
+        robot = runner.Robot.__new__(runner.Robot)
+        robot.sdk = SDK()
+        robot.close()
+        self.assertEqual(events, ["stop", "socket_close"])
 
 
 if __name__ == "__main__":

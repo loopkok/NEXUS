@@ -95,6 +95,24 @@ class TestPayloadMapping(unittest.TestCase):
         with self.assertRaises(PolicyError):
             bk.infer(ObsBatch(state=np.zeros(ACT_DIM), images={}, prompt=""))
 
+    def test_standalone_server_timing_is_visible(self):
+        client = FakeClient("h", 8000, response={
+            "actions": np.zeros((2, ACT_DIM)), "server_ms": 88.5,
+        })
+        bk = self._make(client)
+        bk.open()
+        bk.infer(ObsBatch(state=np.zeros(ACT_DIM), images={}, prompt="test"))
+        self.assertEqual(bk.last_server_timing, {"total_ms": 88.5})
+
+    def test_handshake_rejects_wrong_action_dim_and_closes(self):
+        client = FakeClient("h", 8000)
+        client.get_server_metadata = lambda: {"model": "pi05", "action_dim": 9}
+        bk = RemoteBackend(host="h", port=8000, action_dim=ACT_DIM, slot_keys=CAM_MAP)
+        with mock.patch("astral_policy_inference.client.WebsocketClient", return_value=client):
+            with self.assertRaisesRegex(PolicyError, "action_dim"):
+                bk.open()
+        self.assertTrue(client.closed)
+
     def test_close_resets_client(self):
         client = FakeClient("h", 8000)
         bk = self._make(client)
@@ -114,6 +132,11 @@ class TestActionsFromResponse(unittest.TestCase):
     def test_dim_mismatch(self):
         with self.assertRaises(PolicyError):
             _actions_from_response({"actions": np.zeros((4, 9))}, ACT_DIM, 50)
+
+    def test_empty_and_nonfinite_actions_fail(self):
+        for actions in (np.zeros((0, ACT_DIM)), np.full((2, ACT_DIM), np.nan)):
+            with self.subTest(shape=actions.shape), self.assertRaises(PolicyError):
+                _actions_from_response({"actions": actions}, ACT_DIM, 50)
 
 
 class TestFactory(unittest.TestCase):

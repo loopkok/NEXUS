@@ -86,6 +86,10 @@ ros2 topic echo /policy_inference/state
 
 `backend_type` = **传输方式**：`remote`（连 serve.py）/ `inproc`（进程内）/ `stub`（冒烟）。
 `model` = **模型族**：`act`（lerobot）/ `pi05`（openpi）/ 后续扩展——决定 serve/inproc 加载路径。
+远程连接与单次响应分别受 `server_connect_timeout_s`（默认 5 秒）和
+`server_infer_timeout_s`（默认 3 秒）限制。服务未启动或推理无响应时会报错，
+不会无限等待。当前服务握手包含 `action_dim`；客户端也兼容只发送 `model`
+的旧服务，以及独立 pi0.5 服务的 `server_ms` 耗时字段。
 
 | 传输 | model | 改什么 | 说明 |
 |---|---|---|---|
