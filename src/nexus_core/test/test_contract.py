@@ -3,13 +3,20 @@ import json
 import sys
 import tempfile
 import unittest
+from types import ModuleType
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src" / "nexus_core"))
 sys.path.insert(0, str(ROOT / "src" / "astral_data_collect"))
 
 from nexus_core.arbiter import CommandArbiter
+from nexus_core.adapter_registry import (Adapter, CameraAdapter, IKAdapter,
+                                         InputAdapter, RetargeterAdapter,
+                                         CAMERA_ADAPTERS, DRIVERS, IK_ADAPTERS,
+                                         INPUT_ADAPTERS, RETARGETERS, discover_plugins,
+                                         load_target)
 from nexus_core.profile import Profile, ProfileError, verify_model_manifest
 from astral_data_collect.schema import CollectSchema, NexusCollectSchema
 
@@ -98,6 +105,75 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(compatible.dimension, 38)
         self.assertEqual(compatible.input_spec("left", "wrist")["topic"],
                          "/quest3/left_wrist_pose")
+
+    def test_external_plugins_enable_new_robot_and_effector_without_core_switches(self):
+        launch_module = ModuleType("nexus_test_adapter_launchers")
+        launch_module.build_driver = lambda profile, components, path, dry_run: [
+            ("driver", [c.name for c in components], path, dry_run)
+        ]
+        sys.modules[launch_module.__name__] = launch_module
+        self.addCleanup(sys.modules.pop, launch_module.__name__)
+
+        class EntryPoint:
+            def __init__(self, group, name, spec):
+                self.group, self.name, self.spec = group, name, spec
+
+            def load(self):
+                return lambda: self.spec
+
+        entry_points = [
+            EntryPoint("nexus.driver_adapters", "example_robot",
+                       Adapter("example_robot", frozenset({"arm", "finger_tool"}),
+                               feedback=frozenset({"measured", "command_echo"}),
+                               launcher="nexus_test_adapter_launchers:build_driver")),
+            EntryPoint("nexus.ik_adapters", "example_ik",
+                       IKAdapter("example_ik", frozenset({"arm"}),
+                                 "example_adapter.launch:ik")),
+            EntryPoint("nexus.retargeter_adapters", "example_tool_map",
+                       RetargeterAdapter("example_tool_map", frozenset({"finger_tool"}),
+                                         launcher="example_adapter.launch:retargeter")),
+            EntryPoint("nexus.input_adapters", "example_tracker",
+                       InputAdapter("example_tracker", frozenset({"wrist"}),
+                                    "example_adapter.launch:input")),
+            EntryPoint("nexus.camera_adapters", "example_camera",
+                       CameraAdapter("example_camera", "example_adapter.launch:camera")),
+        ]
+        plugins = discover_plugins(entry_points)
+        launched = load_target(plugins["driver"]["example_robot"].launcher)(
+            None, [], "profile.json", True)
+        self.assertEqual(launched, [("driver", [], "profile.json", True)])
+        raw = copy.deepcopy(profile("astral_dual_gripper").raw)
+        raw["components"][0]["driver"] = "example_robot"
+        raw["components"][0]["ik"] = "example_ik"
+        gripper = next(c for c in raw["components"] if c["kind"] == "gripper")
+        gripper["kind"] = "finger_tool"
+        gripper["driver"] = "example_robot"
+        gripper["retargeter"] = "example_tool_map"
+        raw["inputs"]["left"]["wrist"]["source"] = "example_tracker"
+        raw["cameras"][0]["source"] = "example_camera"
+        raw["adapter_config"]["example_robot"] = {"bus": "can0"}
+        raw["adapter_config"]["example_ik"] = {"solver": "cartesian"}
+        raw["adapter_config"]["example_tool_map"] = {"mapping": "vendor_default"}
+        raw["adapter_config"]["example_tracker"] = {"device": "tracker0"}
+        raw["adapter_config"]["example_camera"] = {"serial": "camera0"}
+        with (patch.dict(DRIVERS, plugins["driver"]),
+              patch.dict(IK_ADAPTERS, plugins["ik"]),
+              patch.dict(RETARGETERS, plugins["retargeter"]),
+              patch.dict(INPUT_ADAPTERS, plugins["input"]),
+              patch.dict(CAMERA_ADAPTERS, plugins["camera"])):
+            configured = Profile(raw)
+        self.assertEqual(configured.dimension, 16)
+        self.assertEqual(configured.component(gripper["name"]).kind, "finger_tool")
+        # GPU data processing can validate this frozen layout without vendor
+        # ROS packages or their entry points installed.
+        offline = Profile(raw, validate_plugins=False)
+        self.assertEqual(offline.digest, configured.digest)
+        offline_schema = NexusCollectSchema(offline)
+        restored = CollectSchema.from_dict(json.loads(offline_schema.to_json()))
+        self.assertEqual(restored.state_names(), offline_schema.state_names())
+        verify_model_manifest(offline, offline.frozen_schema())
+        with self.assertRaisesRegex(ProfileError, "unsupported input source"):
+            Profile(raw)
 
     def test_manifest_gate(self):
         p = profile("nero_dual_xhand")

@@ -10,7 +10,9 @@ def main() -> None:
     parser.add_argument("profile")
     parser.add_argument("--model-manifest")
     args = parser.parse_args()
-    profile = Profile.load(args.profile)
+    # Plain profile checks run on the robot and require installed plugins. The
+    # remote training call supplies a manifest and needs only the frozen layout.
+    profile = Profile.load(args.profile, validate_plugins=not bool(args.model_manifest))
     if args.model_manifest:
         with open(args.model_manifest, encoding="utf-8") as fh:
             verify_model_manifest(profile, json.load(fh))

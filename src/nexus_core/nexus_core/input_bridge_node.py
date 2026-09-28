@@ -33,9 +33,10 @@ class InputBridgeNode(Node):
                             f"{ns}/input/{channel}/{output_name}",
                             stable_frame=spec.get("frame_policy") == "stable")
         for camera in self.profile.raw["cameras"]:
-            if camera["source"] == "quest3_video_streamer":
+            capture_topic = camera.get("capture_topic")
+            if capture_topic:
                 role = camera["role"]
-                self._relay(CompressedImage, camera.get("capture_topic", f"/quest3_video_streamer/collect/{role}"),
+                self._relay(CompressedImage, capture_topic,
                             f"{ns}/camera/{role}/image/compressed", stable_frame=True)
         self.get_logger().info(f"input bridge profile={self.profile.profile_id} sha256={self.profile.digest}")
 

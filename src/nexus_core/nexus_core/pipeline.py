@@ -73,7 +73,9 @@ def main() -> None:
     parser.add_argument("--act-output", required=True)
     parser.add_argument("--image-size", type=int, default=224)
     args = parser.parse_args()
-    profile = Profile.load(args.profile)
+    # Training and conversion use the frozen profile layout; the GPU host does
+    # not need to install robot-side ROS driver plugins.
+    profile = Profile.load(args.profile, validate_plugins=False)
     result = process(Path(args.session).expanduser().resolve(), profile,
                      Path(args.pi_output).expanduser().resolve(),
                      Path(args.act_output).expanduser().resolve(),

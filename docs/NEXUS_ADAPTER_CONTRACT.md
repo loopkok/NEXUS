@@ -103,23 +103,148 @@ joint names/order, vector dimensions, limits, finite values, enable state, and
 its local watchdog. Input loss or inference timeout pauses command ownership;
 HITL must reanchor to fresh measured state before teleoperation resumes.
 
+## Adding a hardware plugin package
+
+The core discovers Python entry points from installed ROS packages. A new
+robot package can register its driver, IK, retargeter, input, and camera
+plugins without changing `nexus_core`. Install the package into the same ROS 2
+environment as NEXUS, then build a profile that names those plugin IDs.
+
+For example, the new package's `setup.py` can register an arm driver, IK
+solver, and a custom end-effector mapping:
+
+```python
+entry_points={
+    "nexus.driver_adapters": [
+        "acme_arm = nexus_acme.nexus_plugin:arm_adapter",
+        "acme_tool_driver = nexus_acme.nexus_plugin:tool_driver_adapter",
+    ],
+    "nexus.ik_adapters": [
+        "acme_cartesian = nexus_acme.nexus_plugin:ik_adapter",
+    ],
+    "nexus.retargeter_adapters": [
+        "acme_parallel_gripper = nexus_acme.nexus_plugin:gripper_adapter",
+    ],
+}
+```
+
+Each factory returns one of the NEXUS adapter spec dataclasses. A driver
+adapter example:
+
+```python
+from nexus_core.adapter_registry import Adapter
+
+def arm_adapter():
+    return Adapter(
+        name="acme_arm",
+        kinds=frozenset({"arm"}),
+        joint_names=lambda kind, side: [f"{side}_axis_{i}" for i in range(1, 8)],
+        supports_home=True,
+        launcher="nexus_acme.launchers:launch_driver",
+        preflight="nexus_acme.launchers:check_devices",
+        validate_config="nexus_acme.profile:validate_driver_config",
+    )
+```
+
+The site profile selects those IDs and supplies only hardware-specific
+settings. Adding or removing an arm is adding or removing a component row; a
+tool can use a driver-defined kind such as `parallel_gripper`:
+
+```json
+{
+  "components": [
+    {"name":"left_arm", "kind":"arm", "driver":"acme_arm", "feedback":"measured", "unit":"rad", "ik":"acme_cartesian", "input_channel":"left", "teleop":{"arm_base_frame":"left_base", "vr_to_arm_rot":[1,0,0,0,1,0,0,0,1], "motion_scale":0.5, "tcp_offset":[0,0,0,0,0,0]}, "joints":["left_axis_1", "left_axis_2"], "lower":[-2.0, -2.0], "upper":[2.0, 2.0]},
+    {"name":"left_tool", "kind":"parallel_gripper", "driver":"acme_tool_driver", "feedback":"measured", "unit":"m", "retargeter":"acme_parallel_gripper", "joints":["left_finger"], "lower":[0.0], "upper":[0.08]}
+  ],
+  "adapter_config": {
+    "acme_arm":{"can":"can0"},
+    "acme_cartesian":{"tcp_frame":"tool0"},
+    "acme_tool_driver":{"serial":"/dev/ttyUSB2"},
+    "acme_parallel_gripper":{"close_threshold":0.7}
+  }
+}
+```
+
+The full profile still includes `schema_version`, input channels, cameras,
+dataset and policy sections. If the robot has a second arm, add another arm
+component in the desired vector order and point it at its input channel.
+
+`launcher` and optional validation hooks use `module:callable` strings. They
+are loaded only when needed. This keeps profile inspection and data processing
+independent of ROS launch. IDs must be unique across all adapter families.
+`adapter_config.<plugin_id>` is passed to the plugin and checked by its
+`validate_config(config)` hook when supplied. All launch hooks return ROS
+launch actions and use this signature:
+
+```python
+launch(profile, selected_items, profile_path, dry_run) -> list[LaunchAction]
+```
+
+The robot-side launch and profile command require every referenced plugin to
+be installed and validate its capabilities. GPU-side episode processing and
+manifest checks validate the frozen profile layout without importing vendor
+plugins, so the GPU host does not need the robot's ROS driver packages.
+
+For drivers, `selected_items` is a component list. Component scoped adapters
+receive one component; assembly scoped adapters receive all components using
+that driver. IK and component retargeters receive one component. Assembly
+retargeters receive all matching components. Input adapters receive channel
+names, and camera adapters receive camera profile rows. Optional preflight
+hooks use `(profile, selected_items)` and raise an error before launch when a
+device or calibration is missing.
+
+## ROS adapter contract
+
+A driver plugin owns vendor SDKs, CAN, serial ports, and conversions. It
+publishes measured state on
+`/nexus/<instance>/components/<component>/joint_states`, subscribes only to
+the final mux output at `.../joint_commands`, and exposes ready/enable/home/
+estop services at `/nexus/<instance>/drivers/<component>/<operation>`. Its
+callback checks exact profile joint order, dimensions, limits, finite values,
+enable state, and command timeout. Drivers that manage a whole assembly may
+declare `scope="assembly"` and `lifecycle_namespace` for their aggregate
+services. The common driver manager validates feedback and fans lifecycle
+calls out using that declaration.
+
+An arm IK plugin subscribes to the configured input channel's
+`PoseStamped` wrist target and measured joint state, then publishes only a
+teleop candidate to
+`/nexus/<instance>/candidates/teleop/<component>/joint_commands`. It must
+provide `/<teleop_<component>>/reanchor` as a `Trigger` service; HITL calls it
+before control returns to the human. An end-effector retargeter consumes the
+standard hand/controller inputs and publishes the same candidate contract for
+its component. It must not publish to the final driver command topic.
+
+Input plugins publish their profile-configured source topic using the
+contracted ROS type and stable frame IDs. Camera plugins can publish
+`CompressedImage` to a configured `capture_topic`; the shared input bridge
+relays it to the semantic camera topic. A camera plugin may instead publish
+directly to `/nexus/<instance>/camera/<role>/image/compressed`.
+
+Joint component `kind` values are extensible identifiers. For a new tool kind,
+the driver declares that kind and the retargeter plugin declares support for
+the same kind. The ordered component list remains the data/model vector order;
+the collector, aligner, quality checker, exporters, ACT path, and policy
+service consume it without robot-specific branches. A model is accepted only
+when its frozen layout matches the profile.
+
 ## Adding or changing an assembly
 
-1. Copy the closest profile. Keep the component order explicit; fill in joint
-   names, units, limits, input channels, camera roles, adapter settings, frame
-   transforms, dataset action semantics, and policy camera slots.
-2. Run `ros2 run nexus_core nexus_profile /path/to/profile.json`. Resolve all
-   reported errors before launching. The profile SHA256 printed by launch is
-   the identity to record with the site calibration and model.
-3. Select existing registered adapters by changing profile fields. This is
-   sufficient for supported Astral, Nero, gripper, Wuji, and XHand layouts.
-4. For a new hardware family, implement its driver adapter against canonical
-   `JointState` topics and ready/enable/home/estop services, register its
-   capabilities and ordered joints, and implement an IK/retargeter adapter if
-   its kinematics or hand mapping differ. Keep vendor ROS topics inside that
-   adapter. Do not add driver-specific conversions to data or policy code.
-5. Run the fake-driver, camera replay, data-layout, model-manifest, timeout,
-   takeover, and site hardware acceptance checks in `NEXUS_ACCEPTANCE.md`.
+1. Copy the closest profile. Keep component order explicit and set joint
+   names, units, limits, input channels, camera roles, hardware settings,
+   transforms, data action semantics, and policy camera slots.
+2. Select already installed plugin IDs. A new single-arm or dual-arm assembly
+   can use any number of components, including a custom end-effector `kind`.
+3. For new hardware, put its vendor driver and NEXUS adapter hooks in a
+   separate ROS package, register entry points there, and install it beside
+   NEXUS. Add IK and retargeter plugins when the robot kinematics or tool
+   mapping differ. NEXUS core does not need a new robot switch or core edit.
+4. Run `ros2 run nexus_core nexus_profile /path/to/profile.json` and
+   `ros2 launch nexus_core system.launch.py profile:=/path/to/profile.json
+   dry_run:=true`. Resolve profile and fake-driver checks before enabling
+   hardware.
+5. Run the camera replay, data-layout, model-manifest, timeout, takeover, and
+   site hardware acceptance checks in `NEXUS_ACCEPTANCE.md`.
 
 Launch still runs one assembly at a time in this initial release. The instance
 namespace is part of every NEXUS topic and service so multiple assemblies can

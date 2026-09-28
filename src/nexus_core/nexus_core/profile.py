@@ -16,17 +16,16 @@ from pathlib import Path
 from typing import Any
 
 from .adapter_registry import (
-    CAMERA_SOURCES,
+    CAMERA_ADAPTERS,
     DRIVERS,
     IK_ADAPTERS,
-    INPUT_SOURCES,
+    INPUT_ADAPTERS,
     RETARGETERS,
+    load_target,
 )
 
 _IDENT = re.compile(r"^[a-z][a-z0-9_]*$")
-_KINDS = {"arm", "hand", "gripper", "head", "waist"}
 _FEEDBACK = {"measured", "command_echo"}
-_INPUTS = INPUT_SOURCES | {"none"}
 
 
 class ProfileError(ValueError):
@@ -55,18 +54,19 @@ class Component:
 
 
 class Profile:
-    def __init__(self, raw: dict[str, Any], path: str = ""):
+    def __init__(self, raw: dict[str, Any], path: str = "", *, validate_plugins: bool = True):
         self.raw = raw
         self.path = path
+        self.validate_plugins = validate_plugins
         self._components: tuple[Component, ...] = ()
         self._validate()
 
     @classmethod
-    def load(cls, path: str | Path) -> "Profile":
+    def load(cls, path: str | Path, *, validate_plugins: bool = True) -> "Profile":
         p = Path(path).expanduser().resolve()
         with p.open(encoding="utf-8") as fh:
             raw = json.load(fh)
-        return cls(raw, str(p))
+        return cls(raw, str(p), validate_plugins=validate_plugins)
 
     def _validate_teleop(self, name: str, row: Any) -> dict[str, Any]:
         if not isinstance(row, dict):
@@ -117,8 +117,12 @@ class Profile:
                 if d.get("schema_version") == 2 and not isinstance(spec, dict):
                     raise ProfileError(f"{channel}.{semantic}: schema v2 inputs must declare source and topic")
                 source = spec if isinstance(spec, str) else spec.get("source") if isinstance(spec, dict) else None
-                if source not in _INPUTS:
+                if (source != "none" and self.validate_plugins
+                        and (not isinstance(source, str) or source not in INPUT_ADAPTERS)):
                     raise ProfileError(f"{channel}.{semantic}: unsupported input source {source!r}")
+                input_adapter = INPUT_ADAPTERS.get(source) if isinstance(source, str) else None
+                if input_adapter and semantic not in input_adapter.semantics:
+                    raise ProfileError(f"{channel}.{semantic}: input adapter {source} does not provide this semantic")
                 if isinstance(spec, dict):
                     topic = spec.get("topic")
                     if not isinstance(topic, str) or not topic.startswith("/"):
@@ -146,7 +150,7 @@ class Profile:
             joints = row.get("joints")
             if not _IDENT.fullmatch(name) or name in seen_names:
                 raise ProfileError(f"duplicate or invalid component name {name!r}")
-            if kind not in _KINDS:
+            if not _IDENT.fullmatch(kind):
                 raise ProfileError(f"invalid component kind for {name}")
             if not isinstance(joints, list) or not joints or any(
                     not isinstance(j, str) or not j for j in joints):
@@ -168,12 +172,13 @@ class Profile:
 
             driver = str(row.get("driver", ""))
             driver_adapter = DRIVERS.get(driver)
-            if driver_adapter is None:
+            if driver_adapter is None and self.validate_plugins:
                 raise ProfileError(f"{name}: unknown driver adapter {driver!r}")
-            if kind not in driver_adapter.kinds:
+            if driver_adapter and kind not in driver_adapter.kinds:
                 raise ProfileError(f"{name}: driver {driver} cannot drive component kind {kind}")
             feedback = str(row.get("feedback", ""))
-            if feedback not in _FEEDBACK or feedback not in driver_adapter.feedback:
+            if (feedback not in _FEEDBACK
+                    or (driver_adapter and feedback not in driver_adapter.feedback)):
                 raise ProfileError(f"{name}: feedback {feedback!r} is unsupported by {driver}")
             unit = str(row.get("unit", "rad"))
             if unit not in ("rad", "m"):
@@ -185,7 +190,8 @@ class Profile:
                 side = legacy_side if legacy_side in ("left", "right") else None
             if side is not None and (not isinstance(side, str) or not _IDENT.fullmatch(side)):
                 raise ProfileError(f"{name}: invalid side {side!r}")
-            expected_joints = driver_adapter.joint_names(kind, side) if driver_adapter.joint_names else None
+            expected_joints = (driver_adapter.joint_names(kind, side)
+                               if driver_adapter and driver_adapter.joint_names else None)
             if expected_joints is not None and joints != expected_joints:
                 raise ProfileError(f"{name}: joint names/order do not match {driver} adapter")
             input_channel = row.get("input_channel", side)
@@ -194,15 +200,21 @@ class Profile:
 
             ik = row.get("ik")
             if kind == "arm":
-                if ik not in IK_ADAPTERS or kind not in IK_ADAPTERS[ik]:
+                if (not isinstance(ik, str) or not ik
+                        or (self.validate_plugins and ik not in IK_ADAPTERS)
+                        or (ik in IK_ADAPTERS and kind not in IK_ADAPTERS[ik].kinds)):
                     raise ProfileError(f"{name}: unknown or incompatible IK adapter {ik!r}")
             elif ik is not None:
                 raise ProfileError(f"{name}: IK adapter is only valid for an arm")
 
             retargeter = row.get("retargeter")
             if retargeter is not None:
-                if retargeter not in RETARGETERS or kind not in RETARGETERS[retargeter]:
+                if (not isinstance(retargeter, str) or not retargeter
+                        or (self.validate_plugins and retargeter not in RETARGETERS)
+                        or (retargeter in RETARGETERS and kind not in RETARGETERS[retargeter].kinds)):
                     raise ProfileError(f"{name}: unknown or incompatible retargeter {retargeter!r}")
+            elif kind != "arm" and d.get("schema_version") == 2:
+                raise ProfileError(f"{name}: schema v2 non-arm component requires a retargeter adapter")
             teleop = row.get("teleop")
             if teleop is None and side is not None:
                 teleop = legacy_teleop.get(side)
@@ -232,28 +244,44 @@ class Profile:
             source = camera.get("source")
             if not _IDENT.fullmatch(role) or role in roles or not device or device in devices:
                 raise ProfileError(f"duplicate or invalid camera role/device: {role}/{device}")
-            if source not in CAMERA_SOURCES:
+            if self.validate_plugins and (not isinstance(source, str) or source not in CAMERA_ADAPTERS):
                 raise ProfileError(f"{role}: unknown camera source {source!r}")
+            camera_adapter = CAMERA_ADAPTERS.get(source) if isinstance(source, str) else None
+            validator = camera_adapter.validate_camera if camera_adapter else None
+            if validator and d.get("schema_version") == 2:
+                try:
+                    load_target(validator)(camera)
+                except Exception as exc:
+                    raise ProfileError(f"{role}: {exc}") from exc
             if "topic" in camera and (not isinstance(camera["topic"], str)
                                        or not camera["topic"].startswith("/")):
                 raise ProfileError(f"{role}: source topic must be absolute")
-            if source == "quest3_video_streamer" and d.get("schema_version") == 2:
-                if camera.get("mode") not in ("v4l2", "webcam", "ros"):
-                    raise ProfileError(f"{role}: camera mode must be v4l2, webcam, or ros")
-                capture_topic = camera.get("capture_topic")
-                if not isinstance(capture_topic, str) or not capture_topic.startswith("/"):
-                    raise ProfileError(f"{role}: capture_topic must be an absolute ROS topic")
-                if camera["mode"] == "ros" and not camera.get("topic"):
-                    raise ProfileError(f"{role}: ROS camera mode requires topic")
+            if "capture_topic" in camera and (not isinstance(camera["capture_topic"], str)
+                                               or not camera["capture_topic"].startswith("/")):
+                raise ProfileError(f"{role}: capture_topic must be an absolute ROS topic")
             roles.add(role)
             devices.add(device)
 
         adapter_config = d.get("adapter_config", {})
         if not isinstance(adapter_config, dict):
             raise ProfileError("adapter_config must be an object")
-        unknown_config = set(adapter_config) - set(DRIVERS) - set(INPUT_SOURCES)
+        config_registries = (DRIVERS, IK_ADAPTERS, RETARGETERS,
+                             INPUT_ADAPTERS, CAMERA_ADAPTERS)
+        config_adapters = {name: adapter for registry in config_registries
+                           for name, adapter in registry.items()}
+        unknown_config = set(adapter_config) - set(config_adapters) if self.validate_plugins else set()
         if unknown_config:
             raise ProfileError(f"unknown adapter_config entries: {sorted(unknown_config)}")
+        for name, config in adapter_config.items():
+            if not isinstance(config, dict):
+                raise ProfileError(f"adapter_config.{name} must be an object")
+            adapter = config_adapters.get(name)
+            validator = adapter.validate_config if adapter else None
+            if validator:
+                try:
+                    load_target(validator)(config)
+                except Exception as exc:
+                    raise ProfileError(f"adapter_config.{name}: {exc}") from exc
 
         dataset = d.get("dataset", {})
         if not isinstance(dataset, dict) or dataset.get("action_source") not in ("next_state", "command"):

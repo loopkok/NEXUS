@@ -187,7 +187,7 @@ def main() -> None:
     parser.add_argument("--allow-action-rewrite", action="store_true")
     args = parser.parse_args()
     reports = import_dataset(Path(args.source), Path(args.output_session),
-                             Profile.load(args.profile), json.loads(args.camera_map),
+                             Profile.load(args.profile, validate_plugins=False), json.loads(args.camera_map),
                              task=args.task, allow_action_rewrite=args.allow_action_rewrite)
     print(json.dumps(reports, ensure_ascii=False, indent=2))
 

@@ -307,7 +307,9 @@ class NexusCollectSchema:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "NexusCollectSchema":
         from nexus_core.profile import Profile
-        profile = Profile(raw["nexus_profile"])
+        # Offline episode processing needs the frozen component/data contract,
+        # not the robot vendor's ROS driver plugin installation.
+        profile = Profile(raw["nexus_profile"], validate_plugins=False)
         if raw.get("profile_sha256") != profile.digest:
             raise ValueError("NEXUS episode profile digest mismatch")
         return cls(profile, raw.get("hold_frames", 10), raw.get("max_gap_ms", 100.0))
