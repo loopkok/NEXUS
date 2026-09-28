@@ -99,11 +99,11 @@ async def nexus_profiles() -> ApiEnvelope:
             continue
         try:
             p = Profile.load(path)
-            if p.profile_id != path.stem:
+            if p.profile_id != path.stem or p.raw.get("schema_version") != 2:
                 continue
             seen.add(path.stem)
             items.append({"id": path.stem, "instance": p.instance,
-                          "robot": p.raw["robot"], "sha256": p.digest,
+                          "adapters": sorted({c.driver for c in p.components}), "sha256": p.digest,
                           "state_dim": p.dimension,
                           "cameras": [c["role"] for c in p.raw["cameras"]],
                           "components": [{"name": c.name, "kind": c.kind, "dim": c.dim,
@@ -119,6 +119,8 @@ async def nexus_start(req: dict[str, Any]) -> ApiEnvelope:
     name = str(req.get("profile", ""))
     profile_path = _nexus_profile_file(name)
     profile = Profile.load(profile_path)
+    if profile.raw.get("schema_version") != 2:
+        raise HTTPException(status_code=400, detail="NEXUS 装配启动要求 schema v2 profile")
     if profile.profile_id != name:
         raise HTTPException(status_code=400, detail="profile_id 必须与文件名一致")
     session = str(req.get("session", "default_task"))
@@ -250,43 +252,11 @@ async def nexus_driver(verb: str) -> ApiEnvelope:
     node = get_node()
     if node is None:
         raise HTTPException(status_code=503, detail="ROS 节点未就绪")
-    profile = _nexus_profile
-    if verb in ("ready", "enable"):
-        joints = node.nexus_snapshot().get("joints", {})
-        missing = [component.name for component in profile.components
-                   if component.name not in joints or joints[component.name]["stale"]
-                   or len(joints[component.name]["values"]) != component.dim]
-        if verb == "ready" or missing:
-            return ApiEnvelope(ok=not missing,
-                               message="实测反馈就绪" if not missing else f"反馈缺失或过期: {missing}",
-                               data={"missing": missing})
-    paths = []
-    if verb == "estop":
-        paths.append(f"{profile.namespace}/control/estop")
-    if profile.raw["robot"] == "astral":
-        paths.append(f"/astral_robot_driver/{verb}")
-        paths.extend(f"{profile.namespace}/drivers/{component.name}/{verb}"
-                     for component in profile.components
-                     if component.driver == "wuji_serial" and verb != "home")
-    else:
-        paths.extend(f"{profile.namespace}/drivers/{component.name}/{verb}"
-                     for component in profile.components
-                     if verb != "home" or component.kind == "arm")
-    results = []
-    for path in paths:
-        ok, message = await asyncio.to_thread(node.call_trigger, path)
-        results.append({"service": path, "ok": ok, "message": message})
-        if verb == "enable" and not ok:
-            for completed in results[:-1]:
-                if completed["ok"]:
-                    stop_path = completed["service"].rsplit("/", 1)[0] + "/estop"
-                    stop_ok, stop_message = await asyncio.to_thread(node.call_trigger, stop_path)
-                    results.append({"service": stop_path, "ok": stop_ok,
-                                    "message": f"enable rollback: {stop_message}"})
-            break
-    all_ok = all(r["ok"] for r in results)
-    return ApiEnvelope(ok=all_ok, message="; ".join(r["message"] for r in results),
-                       data=results)
+    path = f"{_nexus_profile.namespace}/drivers/{verb}"
+    ok, message = await asyncio.to_thread(node.call_trigger, path)
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+    return ApiEnvelope(ok=True, message=message, data={"service": path})
 
 
 def _build_ui_state() -> dict[str, Any]:
@@ -499,6 +469,10 @@ async def teleop_start() -> ApiEnvelope:
     node = get_node()
     if node is None:
         raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    if _nexus_profile is not None and _launch_mgr.state == RUNNING:
+        if not await asyncio.to_thread(node.publish_nexus_teleop_start):
+            raise HTTPException(status_code=503, detail="2 秒内未发现 NEXUS 遥操重锚订阅者")
+        return ApiEnvelope(ok=True, message="已请求 NEXUS 遥操重锚")
     # 先发 /teleop/armed=true：工作位/HOME/暂停发过的 latched disarm 会把
     # 夹爪 pinch 仲裁门关死——门只在 armed=true 时重开（arm 节点未校准会
     # 忽略 armed，无害；真正 arm 由随后的 /teleop/start 完成）。
@@ -914,7 +888,12 @@ async def collect_control(req: CollectControlRequest) -> ApiEnvelope:
         raise HTTPException(
             status_code=400, detail=f"未知命令 {cmd!r}，可选 {config.DC_COMMANDS}"
         )
-    node.publish_dc_control(cmd)
+    if _nexus_profile is not None and _launch_mgr.state == RUNNING:
+        published = await asyncio.to_thread(node.publish_nexus_collect_control, cmd)
+        if not published:
+            raise HTTPException(status_code=503, detail="NEXUS 数采节点未发现控制订阅者")
+    else:
+        node.publish_dc_control(cmd)
     return ApiEnvelope(ok=True, message=f"已发送录制命令: {cmd}")
 
 
@@ -926,7 +905,10 @@ async def collect_task(req: CollectTaskRequest) -> ApiEnvelope:
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="任务文本不能为空")
-    node.publish_dc_task(text)
+    if _nexus_profile is not None and _launch_mgr.state == RUNNING:
+        node.publish_nexus_collect_task(text)
+    else:
+        node.publish_dc_task(text)
     return ApiEnvelope(ok=True, message=f"已设置下一段任务: {text}")
 
 
@@ -938,7 +920,10 @@ async def collect_session(req: CollectSessionRequest) -> ApiEnvelope:
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="目录名不能为空")
-    node.publish_dc_session(text)
+    if _nexus_profile is not None and _launch_mgr.state == RUNNING:
+        node.publish_nexus_collect_session(text)
+    else:
+        node.publish_dc_session(text)
     return ApiEnvelope(ok=True, message=f"已切换录制目录: {text}")
 
 
@@ -1063,12 +1048,14 @@ async def infer_cmd(req: InferCmdRequest) -> ApiEnvelope:
             status_code=400,
             detail=f"未知推理命令 {cmd!r}，可选 {config.PI_COMMANDS}（或 playback:<源>）",
         )
-    published = await asyncio.to_thread(node.publish_pi_cmd, cmd)
+    publisher = node.publish_nexus_policy_cmd if (
+        _nexus_profile is not None and _launch_mgr.state == RUNNING) else node.publish_pi_cmd
+    published = await asyncio.to_thread(publisher, cmd)
     if not published:
         raise HTTPException(
             status_code=503,
             detail=(
-                "推理命令未发送：2 秒内未发现 /policy_inference/cmd 订阅者；"
+                "推理命令未发送：2 秒内未发现当前策略节点的控制订阅者；"
                 "请等待推理节点状态显示在线后重试"
             ),
         )
@@ -1083,7 +1070,10 @@ async def infer_task(req: InferTaskRequest) -> ApiEnvelope:
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="任务文本不能为空")
-    node.publish_pi_task(text)
+    if _nexus_profile is not None and _launch_mgr.state == RUNNING:
+        node.publish_nexus_policy_task(text)
+    else:
+        node.publish_pi_task(text)
     return ApiEnvelope(ok=True, message=f"已设置任务: {text}")
 
 

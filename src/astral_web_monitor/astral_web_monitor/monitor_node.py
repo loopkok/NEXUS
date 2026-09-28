@@ -188,6 +188,11 @@ class MonitorNode(Node):
         self._nexus_joints: dict[str, JointSlot] = {}
         self._nexus_expected: dict[str, tuple[str, ...]] = {}
         self._nexus_control: dict[str, Any] = {}
+        self._nexus_data_state: dict[str, Any] | None = None
+        self._nexus_data_state_ts = 0.0
+        self._nexus_policy_state: dict[str, Any] | None = None
+        self._nexus_policy_state_ts = 0.0
+        self._nexus_publishers: dict[str, Any] = {}
         self._nexus_preview_roles: set[str] = set()
         self._nexus_profile: dict[str, str] | None = None
 
@@ -376,6 +381,10 @@ class MonitorNode(Node):
             self._nexus_joints = {c.name: JointSlot() for c in profile.components}
             self._nexus_expected = {c.name: c.joints for c in profile.components}
             self._nexus_control = {}
+            self._nexus_data_state = None
+            self._nexus_data_state_ts = 0.0
+            self._nexus_policy_state = None
+            self._nexus_policy_state_ts = 0.0
             self._nexus_profile = {"id": profile.profile_id, "sha256": profile.digest,
                                    "instance": profile.instance}
         for spec in profile.components:
@@ -383,8 +392,34 @@ class MonitorNode(Node):
                 JointState, profile.topic(spec.name, "joint_states"),
                 lambda msg, n=spec.name: self._on_nexus_joint(n, msg),
                 _qos_best_effort()))
+        state_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST,
+            depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
         self._nexus_subs.append(self.create_subscription(
-            String, f"{profile.namespace}/control/state", self._on_nexus_control, 10))
+            String, f"{profile.namespace}/control/state", self._on_nexus_control, state_qos))
+        self._nexus_subs.append(self.create_subscription(
+            String, f"{profile.namespace}/data/collect/state", self._on_nexus_data_state, state_qos))
+        self._nexus_subs.append(self.create_subscription(
+            String, f"{profile.namespace}/policy/state", self._on_nexus_policy_state, state_qos))
+        for publisher in self._nexus_publishers.values():
+            self.destroy_publisher(publisher)
+        control_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST,
+            depth=10, durability=rclpy.qos.DurabilityPolicy.VOLATILE)
+        latched_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST,
+            depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
+        ns = profile.namespace
+        self._nexus_publishers = {
+            "teleop_start": self.create_publisher(Bool, f"{ns}/control/teleop_start", start_qos),
+            "teleop_disarm": self.create_publisher(Bool, f"{ns}/control/teleop_disarm", qos),
+            "teleop_armed": self.create_publisher(Bool, f"{ns}/control/teleop_armed", qos),
+            "policy_cmd": self.create_publisher(String, f"{ns}/policy/cmd", control_qos),
+            "policy_task": self.create_publisher(String, f"{ns}/policy/task", latched_qos),
+            "collect_control": self.create_publisher(String, f"{ns}/data/collect/control", control_qos),
+            "collect_task": self.create_publisher(String, f"{ns}/data/collect/task", latched_qos),
+            "collect_session": self.create_publisher(String, f"{ns}/data/collect/session", latched_qos),
+        }
         for row in profile.raw["cameras"]:
             role = row["role"]
             self._nexus_subs.append(self.create_subscription(
@@ -410,10 +445,101 @@ class MonitorNode(Node):
             with self._lock:
                 self._nexus_control = data
 
+    def _on_nexus_data_state(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if isinstance(data, dict):
+            with self._lock:
+                self._nexus_data_state = data
+                self._nexus_data_state_ts = time.time()
+
+    def _on_nexus_policy_state(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if isinstance(data, dict):
+            with self._lock:
+                self._nexus_policy_state = data
+                self._nexus_policy_state_ts = time.time()
+
+    def publish_nexus_bool(self, key: str, value: bool = True) -> bool:
+        publisher = self._nexus_publishers.get(key)
+        if publisher is None:
+            return False
+        publisher.publish(Bool(data=value))
+        return True
+
+    def publish_nexus_teleop_start(self, timeout_s: float = 2.0) -> bool:
+        if not self.publish_nexus_bool("teleop_armed", True):
+            return False
+        publisher = self._nexus_publishers.get("teleop_start")
+        if publisher is None:
+            return False
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while publisher.get_subscription_count() < 1:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.02)
+        publisher.publish(Bool(data=True))
+        return True
+
+    def _publish_nexus_command(self, key: str, text: str, timeout_s: float = 2.0) -> bool:
+        publisher = self._nexus_publishers.get(key)
+        if publisher is None:
+            return False
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while publisher.get_subscription_count() < 1:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.02)
+        publisher.publish(String(data=text))
+        return True
+
+    def publish_nexus_collect_control(self, cmd: str) -> bool:
+        return self._publish_nexus_command("collect_control", cmd)
+
+    def publish_nexus_collect_task(self, text: str) -> bool:
+        publisher = self._nexus_publishers.get("collect_task")
+        if publisher is None:
+            return False
+        publisher.publish(String(data=text))
+        return True
+
+    def publish_nexus_collect_session(self, text: str) -> bool:
+        publisher = self._nexus_publishers.get("collect_session")
+        if publisher is None:
+            return False
+        publisher.publish(String(data=text))
+        return True
+
+    def publish_nexus_policy_cmd(self, cmd: str, timeout_s: float = 2.0) -> bool:
+        return self._publish_nexus_command("policy_cmd", cmd, timeout_s)
+
+    def publish_nexus_policy_task(self, text: str) -> bool:
+        publisher = self._nexus_publishers.get("policy_task")
+        if publisher is None:
+            return False
+        publisher.publish(String(data=text))
+        return True
+
     def nexus_snapshot(self) -> dict:
         with self._lock:
+            data_state = dict(self._nexus_data_state) if self._nexus_data_state else None
+            policy_state = dict(self._nexus_policy_state) if self._nexus_policy_state else None
+            data_state_ts = self._nexus_data_state_ts
+            policy_state_ts = self._nexus_policy_state_ts
+            now = time.time()
+            if data_state is not None:
+                data_state["stale"] = now - data_state_ts > STALE_THRESHOLD_S
+            if policy_state is not None:
+                policy_state["stale"] = now - policy_state_ts > STALE_THRESHOLD_S
             return {"profile": self._nexus_profile,
                     "control": self._nexus_control,
+                    "data_collect": data_state,
+                    "infer": policy_state,
                     "joints": {name: {"values": slot.values, "stale": slot.is_stale(threshold=0.5)}
                                for name, slot in self._nexus_joints.items()}}
 
@@ -512,20 +638,29 @@ class MonitorNode(Node):
             dc_state_ts = self._dc_state_ts
             pi_state = dict(self._pi_state) if self._pi_state else None
             pi_state_ts = self._pi_state_ts
+            nexus_data_state = dict(self._nexus_data_state) if self._nexus_data_state else None
+            nexus_data_state_ts = self._nexus_data_state_ts
+            nexus_policy_state = dict(self._nexus_policy_state) if self._nexus_policy_state else None
+            nexus_policy_state_ts = self._nexus_policy_state_ts
+            use_nexus_state = self._nexus_profile is not None
         if dc_state is not None:
             # 采集节点状态龄期：stale 说明节点可能已死（latched 消息会残留）
             dc_state["stale"] = (now - dc_state_ts) > STALE_THRESHOLD_S
         if pi_state is not None:
             # 推理节点状态龄期：stale 说明节点可能已死（latched 消息会残留）
             pi_state["stale"] = (now - pi_state_ts) > STALE_THRESHOLD_S
+        if nexus_data_state is not None:
+            nexus_data_state["stale"] = (now - nexus_data_state_ts) > STALE_THRESHOLD_S
+        if nexus_policy_state is not None:
+            nexus_policy_state["stale"] = (now - nexus_policy_state_ts) > STALE_THRESHOLD_S
         return {
             "joints": joints,
             "rates_hz": cmd_rates,
             "state_rates_hz": state_rates,
             "health": self._health_summary(joints, cmd_rates, state_rates, now),
             "video_gate": video_gate,
-            "data_collect": dc_state,
-            "infer": pi_state,
+            "data_collect": nexus_data_state if use_nexus_state else dc_state,
+            "infer": nexus_policy_state if use_nexus_state else pi_state,
             "latency": self._latency_summary(latency_raw, mocap_rates, now),
         }
 

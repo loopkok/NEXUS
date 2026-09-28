@@ -11,7 +11,7 @@ NEXUS is a ROS 2 Humble workspace for one selected robot assembly per launch. It
 | `astral_gripper_wuji_glove` | 35 | Quest 3 wrists, Wuji glove hand landmarks | Astral dual arms, left gripper, right Wuji hand |
 | `nero_dual_xhand` | 38 | Quest 3 | Nero dual arms and two XHands |
 
-The profile JSON in `src/nexus_core/profiles` is the single assembly definition. The complete profile and SHA256 identity are embedded in each recorded episode. The model manifest must match this identity, state/action joint order, camera slots, frame rate and action semantics before inference starts. A new hardware adapter needs code for its driver and IK boundary; existing assemblies switch by profile.
+The schema v2 profile JSON in `src/nexus_core/profiles` is the single assembly definition: it selects registered drivers, IK and retargeting plugins, input topics, camera roles, joint order/units/limits, and model/data semantics. The core launch, input bridge, driver manager, recorder, processing and policy service consume that same profile; there is no `robot` family switch in the core. The profile digest and frozen component order are embedded in each recorded episode. The model manifest must match this layout before inference starts. Existing adapters combine by changing profile fields; a new hardware family needs its own driver or IK plugin registered once.
 
 ## Build and launch on the robot
 
@@ -32,11 +32,11 @@ ros2 launch nexus_core system.launch.py profile:=nero_dual_xhand dry_run:=true w
 ros2 launch nexus_core system.launch.py profile:=/absolute/path/to/site_profile.json dry_run:=false with_cameras:=true
 ```
 
-The launch prints the active profile ID and SHA256. Run one NEXUS assembly in a ROS domain. Instance namespaces are reserved for future multi-assembly launches; legacy Quest and policy control topics are still global.
+The launch prints the active profile ID and SHA256. This release starts one NEXUS assembly per launch; every NEXUS input, camera, control, policy and driver lifecycle interface is already scoped under `/nexus/<instance>`.
 
 ## ROS control contract
 
-See [docs/NEXUS_ADAPTER_CONTRACT.md](docs/NEXUS_ADAPTER_CONTRACT.md). The sole final command publisher is `nexus_command_mux`; all teleop, policy and playback commands are candidates. The mux validates names, dimensions, nonfinite values, state freshness and limits, and holds measured pose during transitions. On stale feedback it stops publishing to that component so the local adapter's watchdog can take over. `ESTOP` is latched. In real operation, enable drivers explicitly after checking feedback and before requesting motion. The web “检查驱动” operation is read only; Astral's native `/astral_robot_driver/ready` has a different, motion-producing legacy meaning and is not called by that button.
+See [docs/NEXUS_ADAPTER_CONTRACT.md](docs/NEXUS_ADAPTER_CONTRACT.md). The sole final command publisher is `nexus_command_mux`; all teleop, policy and playback commands are candidates. The mux validates names, dimensions, nonfinite values, state freshness and limits, and holds measured pose during transitions. On stale feedback it stops publishing to that component so the local adapter's watchdog can take over. `nexus_driver_manager` exposes one ready/enable/home/estop API for the selected assembly. NEXUS readiness is read-only; Astral's legacy `/astral_robot_driver/ready` performs motion and is not used by the manager.
 
 ## Recording, processing, training and inference
 

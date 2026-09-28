@@ -3,9 +3,9 @@ import type { NormalisedState } from '../lib/mapUiState'
 import { api } from '../api/client'
 import { pushToast } from '../hooks/useToast'
 
-type ProfileItem = { id: string; robot: string; state_dim: number; cameras: string[]; sha256: string }
+type ProfileItem = { id: string; adapters: string[]; state_dim: number; cameras: string[]; sha256: string }
 type Job = { id: string; kind: string; status: string; step: string; logs: string[]; artifacts: Record<string, string> }
-type NexusState = { launch_state: string; profile: { profile_id: string; profile_sha256: string } | null; robot: { control: { mode?: string; fault?: string }; joints: Record<string, { values: number[]; stale: boolean }> } | null; jobs: Job[] }
+type NexusState = { launch_state: string; profile: { profile_id: string; profile_sha256: string } | null; robot: { control: { mode?: string; fault?: string }; data_collect?: { state?: string }; infer?: { state?: string; fault?: string }; joints: Record<string, { values: number[]; stale: boolean }> } | null; jobs: Job[] }
 
 export function NexusTab({ state }: { state: NormalisedState | null }) {
   const [profiles, setProfiles] = useState<ProfileItem[]>([])
@@ -63,7 +63,7 @@ export function NexusTab({ state }: { state: NormalisedState | null }) {
       <h2 style={title}>机器人装配</h2>
       <div style={row}>
         <label>Profile <select value={selected} disabled={running} onChange={(e) => setSelected(e.target.value)}>
-          {profiles.map((p) => <option key={p.id} value={p.id}>{p.id} · {p.robot} · {p.state_dim}D</option>)}
+          {profiles.map((p) => <option key={p.id} value={p.id}>{p.id} · {p.adapters.join('+')} · {p.state_dim}D</option>)}
         </select></label>
         <label>Session <input value={session} disabled={running} onChange={(e) => setSession(e.target.value)} /></label>
         <label><input type="checkbox" checked={dryRun} disabled={running} onChange={(e) => setDryRun(e.target.checked)} /> 仿真驱动</label>
@@ -109,7 +109,7 @@ export function NexusTab({ state }: { state: NormalisedState | null }) {
         <button onClick={() => void act(() => api.collectControl('start'), '开始录制')}>录制</button>
         <button onClick={() => void act(() => api.collectControl('stop'), '录制已保存')}>保存</button>
         <button onClick={() => void act(() => api.collectControl('pause'), '录制暂停')}>暂停录制</button>
-        <span>数采：{state?.dataCollect?.state ?? '未连接'}</span>
+        <span>数采：{snapshot?.robot?.data_collect?.state ?? state?.dataCollect?.state ?? '未连接'}</span>
       </div>
       </fieldset>
     </section>

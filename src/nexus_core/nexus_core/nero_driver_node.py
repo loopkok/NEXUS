@@ -20,12 +20,15 @@ class NeroDriverNode(Node):
         super().__init__("nexus_nero_driver")
         self.declare_parameter("profile_file", "")
         self.declare_parameter("side", "left")
+        self.declare_parameter("component", "")
         self.declare_parameter("dry_run", False)
         self.declare_parameter("state_rate", 20.0)
         self.declare_parameter("command_timeout", 0.5)
         self.profile = Profile.load(str(self.get_parameter("profile_file").value))
-        self.side = str(self.get_parameter("side").value)
-        self.spec = self.profile.component(f"{self.side}_arm")
+        component = str(self.get_parameter("component").value)
+        side_param = str(self.get_parameter("side").value)
+        self.spec = self.profile.component(component) if component else self.profile.component(f"{side_param}_arm")
+        self.side = self.spec.side or side_param
         if self.spec.driver != "nero_can":
             raise ValueError(f"{self.spec.name} is not a Nero CAN component")
         self.dry_run = bool(self.get_parameter("dry_run").value)
@@ -40,7 +43,7 @@ class NeroDriverNode(Node):
         self._robot = None
         if not self.dry_run:
             from pyAgxArm import create_agx_arm_config, AgxArmFactory, ArmModel, NeroFW
-            channel = self.profile.raw["hardware"]["can"][self.side]
+            channel = self.profile.adapter_config("nero_can")["channels"][self.side]
             cfg = create_agx_arm_config(robot=ArmModel.NERO, firmeware_version=NeroFW.DEFAULT,
                                         channel=channel, interface="socketcan")
             self._robot = AgxArmFactory.create_arm(cfg)
@@ -93,7 +96,7 @@ class NeroDriverNode(Node):
     def _home(self, _request, response):
         if not self._enabled or self._last_q is None:
             return self._response(response, False, "enable and read feedback first")
-        target = tuple(float(v) for v in self.profile.raw["hardware"]["home_pose"][self.side])
+        target = tuple(float(v) for v in self.profile.adapter_config("nero_can")["home_pose"][self.side])
         if len(target) != self.spec.dim or any(v < lo or v > hi
                                                for v, lo, hi in zip(target, self.spec.lower, self.spec.upper)):
             return self._response(response, False, "profile home pose is outside joint limits")

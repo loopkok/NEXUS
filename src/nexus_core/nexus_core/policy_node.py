@@ -79,8 +79,11 @@ class NexusPolicyNode(Node):
         self._disarm = self.create_publisher(Bool, "/teleop/disarm", 10)
         self.create_subscription(String, "/policy_inference/cmd", self._on_cmd, 10)
         self.create_subscription(String, "/policy_inference/task", self._on_task, 10)
-        self._reanchor = {side: self.create_client(Trigger, f"/{'astral_arm_teleop' if self.profile.raw['robot'] == 'astral' else 'nero_teleop'}_{side}/reanchor")
-                          for side in ("left", "right")}
+        self._reanchor = {
+            component.name: self.create_client(
+                Trigger, f"/teleop_{component.name}/reanchor")
+            for component in self.profile.components if component.kind == "arm"
+        }
         self.create_timer(1.0 / self.profile.raw["dataset"]["fps"], self._tick)
         self.create_timer(0.05, self._poll)
         self.create_timer(1.0, self._publish_state)

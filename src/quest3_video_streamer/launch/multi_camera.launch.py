@@ -13,6 +13,7 @@ Usage:
 """
 
 import os
+import json
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -56,6 +57,7 @@ def generate_launch_description():
     verbose = LaunchConfiguration("verbose")
     d435i_source_arg = LaunchConfiguration("d435i_source")  # optional CLI override
     cameras_arg = LaunchConfiguration("cameras")  # optional CLI override
+    camera_overrides_arg = LaunchConfiguration("camera_overrides")
 
     params_file = os.path.join(
         get_package_share_directory("quest3_video_streamer"), "config", "params.yaml"
@@ -78,6 +80,22 @@ def generate_launch_description():
             overrides["cameras"] = [c.strip() for c in cams.split(",") if c.strip()]
             overrides["auto_scan"] = False
 
+        camera_overrides_text = camera_overrides_arg.perform(context).strip()
+        if camera_overrides_text:
+            try:
+                camera_overrides = json.loads(camera_overrides_text)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"camera_overrides must be a JSON object: {exc}") from exc
+            if not isinstance(camera_overrides, dict):
+                raise RuntimeError("camera_overrides must be a JSON object keyed by camera role")
+            for role, fields in camera_overrides.items():
+                if not isinstance(role, str) or not isinstance(fields, dict):
+                    raise RuntimeError("each camera override must map a role to an object")
+                for field, value in fields.items():
+                    if field not in {"source", "device", "topic", "preset", "force_mjpg"}:
+                        raise RuntimeError(f"unsupported camera override field {field}")
+                    overrides[f"{role}.{field}"] = value
+
         # d435i_source CLI override (empty -> use yaml value).
         cli_src = d435i_source_arg.perform(context)
         yaml_params = _load_params()
@@ -85,7 +103,8 @@ def generate_launch_description():
             d435i_src = cli_src
             overrides["d435i.source"] = cli_src
         else:
-            d435i_src = str(_camera_field(yaml_params, "d435i", "source", "v4l2"))
+            d435i_src = str(overrides.get(
+                "d435i.source", _camera_field(yaml_params, "d435i", "source", "v4l2")))
 
         nodes = []
         # Only launch realsense2_camera_node when the D435i runs via ROS *and*
@@ -128,5 +147,7 @@ def generate_launch_description():
                               description="Override d435i source: v4l2 | ros (empty = use yaml)"),
         DeclareLaunchArgument("cameras", default_value="",
                               description="Override cameras list: comma-separated labels (empty = use yaml)"),
+        DeclareLaunchArgument("camera_overrides", default_value="",
+                              description="JSON camera role-to-settings map supplied by a NEXUS profile"),
         GroupAction([OpaqueFunction(function=_build)]),
     ])

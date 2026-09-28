@@ -60,7 +60,11 @@ def import_dataset(source: Path, output_session: Path, profile: Profile,
     from astral_data_collect.data_writer import CameraDataWriter, StreamDataWriter
     from astral_data_collect.schema import NexusCollectSchema
 
-    if profile.raw["robot"] != "nero" or profile.dimension != 38:
+    if (profile.dimension != 38
+            or profile.component("left_arm").driver != "nero_can"
+            or profile.component("right_arm").driver != "nero_can"
+            or profile.component("left_ee").driver != "xhand_serial"
+            or profile.component("right_ee").driver != "xhand_serial"):
         raise ProfileError("legacy Nero LeRobot import requires a 38D Nero profile")
     if set(camera_map) != set(profile.frozen_schema()["cameras"]):
         raise ProfileError("camera-map must cover every profile camera role")

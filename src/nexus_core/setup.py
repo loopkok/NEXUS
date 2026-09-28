@@ -16,6 +16,7 @@ setup(
     entry_points={"console_scripts": [
         "nexus_profile = nexus_core.cli:main",
         "nexus_command_mux = nexus_core.command_mux_node:main",
+        "nexus_driver_manager = nexus_core.driver_manager_node:main",
         "nexus_joint_bridge = nexus_core.joint_bridge_node:main",
         "nexus_input_bridge = nexus_core.input_bridge_node:main",
         "nexus_nero_driver = nexus_core.nero_driver_node:main",

@@ -17,22 +17,25 @@ class InputBridgeNode(Node):
         self.profile = Profile.load(str(self.get_parameter("profile_file").value))
         ns = self.profile.namespace
         self._frames: dict[str, str] = {}
-        for side in ("left", "right"):
-            selected = self.profile.raw["inputs"].get(side, {})
-            if selected.get("wrist") == "quest3":
-                self._relay(PoseStamped, f"/quest3/{side}_wrist_pose",
-                            f"{ns}/input/{side}/wrist_pose", stable_frame=True)
-                self._relay(Joy, f"/quest3/{side}_controller_joy",
-                            f"{ns}/input/{side}/controller_joy", stable_frame=True)
-            if selected.get("hand") in ("quest3", "wuji_glove"):
-                self._relay(PoseArray, f"/hand_landmarks/{side}",
-                            f"{ns}/input/{side}/hand_landmarks", stable_frame=True)
-        self._relay(PoseArray, "/quest3/body_joints", f"{ns}/input/body_joints", stable_frame=True)
-        self._relay(String, "/quest3/body_joint_names", f"{ns}/input/body_joint_names")
+        message_types = {
+            "wrist": (PoseStamped, "wrist_pose"),
+            "hand": (PoseArray, "hand_landmarks"),
+            "controller_joy": (Joy, "controller_joy"),
+            "body_joints": (PoseArray, "body_joints"),
+            "body_joint_names": (String, "body_joint_names"),
+        }
+        for channel, selected in self.profile.raw["inputs"].items():
+            for semantic, (message_type, output_name) in message_types.items():
+                spec = self.profile.input_spec(channel, semantic)
+                if spec is None or spec["source"] == "none":
+                    continue
+                self._relay(message_type, spec["topic"],
+                            f"{ns}/input/{channel}/{output_name}",
+                            stable_frame=spec.get("frame_policy") == "stable")
         for camera in self.profile.raw["cameras"]:
             if camera["source"] == "quest3_video_streamer":
                 role = camera["role"]
-                self._relay(CompressedImage, f"/quest3_video_streamer/collect/{role}",
+                self._relay(CompressedImage, camera.get("capture_topic", f"/quest3_video_streamer/collect/{role}"),
                             f"{ns}/camera/{role}/image/compressed", stable_frame=True)
         self.get_logger().info(f"input bridge profile={self.profile.profile_id} sha256={self.profile.digest}")
 

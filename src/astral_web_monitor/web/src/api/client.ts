@@ -30,8 +30,8 @@ async function get<T>(path: string): Promise<ApiEnvelope<T>> {
 }
 
 export const api = {
-  nexusProfiles: () => get<Array<{ id: string; robot: string; state_dim: number; cameras: string[]; sha256: string }>>('/api/v1/nexus/profiles'),
-  nexusState: () => get<{ launch_state: string; profile: { profile_id: string; profile_sha256: string } | null; robot: { control: { mode?: string; fault?: string }; joints: Record<string, { values: number[]; stale: boolean }> } | null; jobs: Array<{ id: string; kind: string; status: string; step: string; logs: string[]; artifacts: Record<string, string> }> }>('/api/v1/nexus/state'),
+  nexusProfiles: () => get<Array<{ id: string; instance: string; adapters: string[]; state_dim: number; cameras: string[]; sha256: string }>>('/api/v1/nexus/profiles'),
+  nexusState: () => get<{ launch_state: string; profile: { profile_id: string; profile_sha256: string } | null; robot: { control: { mode?: string; fault?: string }; data_collect?: { state?: string }; infer?: { state?: string; fault?: string }; joints: Record<string, { values: number[]; stale: boolean }> } | null; jobs: Array<{ id: string; kind: string; status: string; step: string; logs: string[]; artifacts: Record<string, string> }> }>('/api/v1/nexus/state'),
   nexusStart: (cfg: { profile: string; session: string; dry_run: boolean; with_cameras: boolean; model_manifest: string; model: 'act' | 'pi05'; server_host: string; server_port: number }) => post<unknown>('/api/v1/nexus/start', cfg),
   nexusJob: (kind: string, session: string, steps: number) => post<{ job_id: string }>('/api/v1/nexus/jobs', { kind, session, steps }),
   nexusCancel: (id: string) => post<unknown>(`/api/v1/nexus/jobs/${id}/cancel`),

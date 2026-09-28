@@ -51,15 +51,16 @@ class CommandMuxNode(Node):
                                 durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._status_pub = self.create_publisher(String, f"{ns}/control/state", status_qos)
         self.create_subscription(String, f"{ns}/control/cmd", self._control, 10)
-        self.create_subscription(String, "/policy_inference/state", self._policy_state, status_qos)
-        self.create_subscription(Bool, "/teleop/start", self._teleop_start, 10)
-        self.create_subscription(Bool, "/teleop/disarm", self._teleop_disarm, 10)
+        self.create_subscription(String, f"{ns}/policy/state", self._policy_state, status_qos)
+        self.create_subscription(Bool, f"{ns}/control/teleop_start", self._teleop_start, 10)
+        self.create_subscription(Bool, f"{ns}/control/teleop_disarm", self._teleop_disarm, 10)
         self.create_service(Trigger, f"{ns}/control/estop", self._estop)
         rate = float(self.get_parameter("control_rate").value)
         self.create_timer(1.0 / max(1.0, rate), self._tick)
         self.create_timer(1.0, self._publish_status)
         self.get_logger().info(f"NEXUS mux: {self.profile.profile_id} sha256={self.profile.digest} "
                                f"components={[c.name for c in self.profile.components]}")
+        self._publish_status()
 
     def _state(self, name: str, msg: JointState) -> None:
         try:

@@ -25,14 +25,17 @@ class NeroTeleopNode(Node):
         super().__init__("nexus_nero_teleop")
         self.declare_parameter("profile_file", "")
         self.declare_parameter("side", "left")
+        self.declare_parameter("component", "")
         self.declare_parameter("control_rate", 50.0)
         self.declare_parameter("input_timeout", 0.5)
         self.profile = Profile.load(str(self.get_parameter("profile_file").value))
-        self.side = str(self.get_parameter("side").value)
-        self.spec = self.profile.component(f"{self.side}_arm")
+        side_param = str(self.get_parameter("side").value)
+        component = str(self.get_parameter("component").value)
+        self.spec = self.profile.component(component) if component else self.profile.component(f"{side_param}_arm")
+        self.side = self.spec.side or side_param
         if self.spec.ik != "nero_analytic":
             raise ValueError("Nero teleop requires nero_analytic IK adapter")
-        cfg = self.profile.raw["teleop"][self.side]
+        cfg = self.profile.teleop_config(self.spec.name)
         self._solver = IKSolver()
         self._processor = PoseProcessor(
             np.array(cfg["vr_to_arm_rot"], dtype=float).reshape(3, 3),
@@ -54,7 +57,8 @@ class NeroTeleopNode(Node):
         self._pub = self.create_publisher(
             JointState, self.profile.candidate_topic("teleop", self.spec.name),
             qos_profile_sensor_data)
-        self.create_subscription(PoseStamped, f"{ns}/input/{self.side}/wrist_pose",
+        channel = self.spec.input_channel
+        self.create_subscription(PoseStamped, f"{ns}/input/{channel}/wrist_pose",
                                  self._on_vr, qos_profile_sensor_data)
         self.create_subscription(JointState, self.profile.topic(self.spec.name, "joint_states"),
                                  self._on_state, qos_profile_sensor_data)

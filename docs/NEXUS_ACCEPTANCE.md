@@ -4,8 +4,10 @@
 
 - [ ] Record original Astral and Nero topic graph, `ros2 topic hz`, ordered joint names, camera role/serial mapping, physical stop behavior and latency. Save original repository commits from the migration manifest.
 - [ ] Record ROS/SDK/LeRobot/OpenPI versions and vendor binary hashes from the actual robot and GPU hosts; make a deployment lock from those observations.
-- [ ] Run `nexus_profile` for every site profile; reject changed joint order/dimension, missing frames, duplicate camera roles and device identifiers. Confirm printed SHA256 is the same in launch, episode metadata and model manifest.
+- [ ] Run `nexus_profile` for every schema v2 site profile; reject unregistered adapters, incompatible component kinds, changed native joint order/dimension, missing input frames/topics, duplicate camera roles and device identifiers. Confirm there is no robot-family selector and the printed SHA256 is the same in launch, episode metadata and model manifest.
 - [ ] Check each final `components/*/joint_commands` has exactly one publisher (`nexus_command_mux`). Kill duplicate publishers before enabling hardware.
+- [ ] Exercise `/nexus/<instance>/drivers/ready|enable|home|estop`; verify `ready` does not move hardware, unsupported home operations fail explicitly, and partial enable failure estops every selected adapter.
+- [ ] Confirm selected source topics, camera device paths/serials and semantic roles come from the profile, then capture `ros2 node info`/`ros2 topic info -v` output as interface evidence.
 
 ## Dry run and data
 

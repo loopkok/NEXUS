@@ -46,13 +46,58 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ProfileError, "camera"):
             Profile(raw)
         raw = copy.deepcopy(profile("nero_dual_xhand").raw)
-        raw["teleop"]["left"]["arm_base_frame"] = ""
+        raw["components"][0]["teleop"]["arm_base_frame"] = ""
         with self.assertRaisesRegex(ProfileError, "frame"):
             Profile(raw)
         raw = copy.deepcopy(profile("nero_dual_xhand").raw)
-        raw["teleop"]["left"]["vr_to_arm_rot"][0] = 0.5
+        raw["components"][0]["teleop"]["vr_to_arm_rot"][0] = 0.5
         with self.assertRaisesRegex(ProfileError, "orthogonal"):
             Profile(raw)
+
+    def test_profile_is_a_composition_not_a_robot_switch(self):
+        raw = copy.deepcopy(profile("nero_dual_xhand").raw)
+        self.assertNotIn("robot", raw)
+        raw["components"] = [raw["components"][0]]
+        raw["components"][0]["name"] = "manipulator"
+        configured = Profile(raw)
+        self.assertEqual(configured.dimension, 7)
+        self.assertEqual(configured.components[0].driver, "nero_can")
+        self.assertEqual(configured.components[0].ik, "nero_analytic")
+        self.assertEqual(configured.components[0].input_channel, "left")
+        self.assertEqual(configured.input_spec("left", "wrist")["topic"],
+                         "/quest3/left_wrist_pose")
+
+    def test_schema_v2_rejects_robot_selector_and_v1_metadata_stays_readable(self):
+        raw = copy.deepcopy(profile("nero_dual_xhand").raw)
+        raw["robot"] = "nero"
+        with self.assertRaisesRegex(ProfileError, "robot selector"):
+            Profile(raw)
+
+        legacy = copy.deepcopy(profile("nero_dual_xhand").raw)
+        legacy["schema_version"] = 1
+        legacy["robot"] = "nero"
+        config = legacy.pop("adapter_config")
+        legacy["hardware"] = {
+            "can": config["nero_can"]["channels"],
+            "home_pose": config["nero_can"]["home_pose"],
+            "xhand_serial": config["xhand_serial"]["serials"],
+        }
+        for channel, inputs in legacy["inputs"].items():
+            legacy["inputs"][channel] = {
+                semantic: spec["source"] for semantic, spec in inputs.items()
+            }
+        for component in legacy["components"]:
+            for field in ("side", "input_channel", "retargeter", "unit", "teleop"):
+                component.pop(field, None)
+        legacy["teleop"] = {
+            component["name"].split("_", 1)[0]: component["teleop"]
+            for component in profile("nero_dual_xhand").raw["components"]
+            if component["kind"] == "arm"
+        }
+        compatible = Profile(legacy)
+        self.assertEqual(compatible.dimension, 38)
+        self.assertEqual(compatible.input_spec("left", "wrist")["topic"],
+                         "/quest3/left_wrist_pose")
 
     def test_manifest_gate(self):
         p = profile("nero_dual_xhand")

@@ -1,98 +1,46 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "profile_id": "nero_dual_xhand",
   "instance": "nero",
-  "robot": "nero",
   "inputs": {
     "left": {
-      "wrist": "quest3",
-      "hand": "quest3"
+      "wrist": {
+        "source": "quest3",
+        "topic": "/quest3/left_wrist_pose",
+        "frame_policy": "stable"
+      },
+      "hand": {
+        "source": "quest3",
+        "topic": "/hand_landmarks/left",
+        "frame_policy": "stable"
+      }
     },
     "right": {
-      "wrist": "quest3",
-      "hand": "quest3"
+      "wrist": {
+        "source": "quest3",
+        "topic": "/quest3/right_wrist_pose",
+        "frame_policy": "stable"
+      },
+      "hand": {
+        "source": "quest3",
+        "topic": "/hand_landmarks/right",
+        "frame_policy": "stable"
+      }
+    },
+    "body": {
+      "body_joints": {
+        "source": "quest3",
+        "topic": "/quest3/body_joints",
+        "frame_policy": "stable"
+      },
+      "body_joint_names": {
+        "source": "quest3",
+        "topic": "/quest3/body_joint_names"
+      }
     }
   },
   "input_settings": {
     "landmark_preprocess": "mano"
-  },
-  "hardware": {
-    "can": {
-      "left": "can_nero_left",
-      "right": "can_nero_right"
-    },
-    "xhand_serial": {
-      "left": "/dev/ttyUSB0",
-      "right": "/dev/ttyUSB1"
-    },
-    "home_pose": {
-      "left": [
-        -0.405,
-        1.281,
-        -0.957,
-        1.311,
-        2.682,
-        -0.314,
-        -0.163
-      ],
-      "right": [
-        0.405,
-        1.281,
-        0.957,
-        1.311,
-        -2.682,
-        0.314,
-        -0.163
-      ]
-    }
-  },
-  "teleop": {
-    "left": {
-      "arm_base_frame": "left_arm_base",
-      "vr_to_arm_rot": [
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        -1.0,
-        0.0,
-        0.0
-      ],
-      "motion_scale": 0.65,
-      "tcp_offset": [
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ]
-    },
-    "right": {
-      "arm_base_frame": "right_arm_base",
-      "vr_to_arm_rot": [
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        -1.0,
-        1.0,
-        0.0,
-        0.0
-      ],
-      "motion_scale": 0.65,
-      "tcp_offset": [
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ]
-    }
   },
   "components": [
     {
@@ -127,7 +75,33 @@
       ],
       "driver": "nero_can",
       "feedback": "measured",
-      "ik": "nero_analytic"
+      "ik": "nero_analytic",
+      "side": "left",
+      "unit": "rad",
+      "input_channel": "left",
+      "teleop": {
+        "arm_base_frame": "left_arm_base",
+        "vr_to_arm_rot": [
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "motion_scale": 0.65,
+        "tcp_offset": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
     },
     {
       "name": "right_arm",
@@ -161,7 +135,33 @@
       ],
       "driver": "nero_can",
       "feedback": "measured",
-      "ik": "nero_analytic"
+      "ik": "nero_analytic",
+      "side": "right",
+      "unit": "rad",
+      "input_channel": "right",
+      "teleop": {
+        "arm_base_frame": "right_arm_base",
+        "vr_to_arm_rot": [
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "motion_scale": 0.65,
+        "tcp_offset": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
     },
     {
       "name": "left_ee",
@@ -209,7 +209,11 @@
         1.919
       ],
       "driver": "xhand_serial",
-      "feedback": "measured"
+      "feedback": "measured",
+      "side": "left",
+      "unit": "rad",
+      "input_channel": "left",
+      "retargeter": "xhand_dexpilot"
     },
     {
       "name": "right_ee",
@@ -257,7 +261,11 @@
         1.919
       ],
       "driver": "xhand_serial",
-      "feedback": "measured"
+      "feedback": "measured",
+      "side": "right",
+      "unit": "rad",
+      "input_channel": "right",
+      "retargeter": "xhand_dexpilot"
     }
   ],
   "cameras": [
@@ -286,6 +294,40 @@
       "base_0_rgb": "base",
       "left_wrist_0_rgb": "left_wrist",
       "right_wrist_0_rgb": "right_wrist"
+    }
+  },
+  "adapter_config": {
+    "nero_can": {
+      "channels": {
+        "left": "can_nero_left",
+        "right": "can_nero_right"
+      },
+      "home_pose": {
+        "left": [
+          -0.405,
+          1.281,
+          -0.957,
+          1.311,
+          2.682,
+          -0.314,
+          -0.163
+        ],
+        "right": [
+          0.405,
+          1.281,
+          0.957,
+          1.311,
+          -2.682,
+          0.314,
+          -0.163
+        ]
+      }
+    },
+    "xhand_serial": {
+      "serials": {
+        "left": "/dev/ttyUSB0",
+        "right": "/dev/ttyUSB1"
+      }
     }
   }
 }

@@ -1,72 +1,44 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "instance": "astral",
-  "robot": "astral",
-  "hardware": {
-    "control_board_ip": "192.168.10.2",
-    "wuji_serial": {
-      "right": "SET_RIGHT_WUJI_SERIAL"
-    }
-  },
   "input_settings": {
     "landmark_preprocess": "raw"
   },
-  "teleop": {
-    "left": {
-      "arm_base_frame": "left_base_link",
-      "vr_to_arm_rot": [
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0
-      ],
-      "motion_scale": 1.0,
-      "tcp_offset": [
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ]
-    },
-    "right": {
-      "arm_base_frame": "right_base_link",
-      "vr_to_arm_rot": [
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0
-      ],
-      "motion_scale": 1.0,
-      "tcp_offset": [
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
-      ]
-    }
-  },
   "inputs": {
     "left": {
-      "wrist": "quest3",
-      "hand": "quest3"
+      "wrist": {
+        "source": "quest3",
+        "topic": "/quest3/left_wrist_pose",
+        "frame_policy": "stable"
+      },
+      "hand": {
+        "source": "quest3",
+        "topic": "/hand_landmarks/left",
+        "frame_policy": "stable"
+      }
     },
     "right": {
-      "wrist": "quest3",
-      "hand": "quest3"
+      "wrist": {
+        "source": "quest3",
+        "topic": "/quest3/right_wrist_pose",
+        "frame_policy": "stable"
+      },
+      "hand": {
+        "source": "quest3",
+        "topic": "/hand_landmarks/right",
+        "frame_policy": "stable"
+      }
+    },
+    "body": {
+      "body_joints": {
+        "source": "quest3",
+        "topic": "/quest3/body_joints",
+        "frame_policy": "stable"
+      },
+      "body_joint_names": {
+        "source": "quest3",
+        "topic": "/quest3/body_joint_names"
+      }
     }
   },
   "components": [
@@ -102,7 +74,33 @@
       ],
       "driver": "astral_sdk",
       "feedback": "measured",
-      "ik": "astral_geometric"
+      "ik": "astral_geometric",
+      "side": "left",
+      "unit": "rad",
+      "input_channel": "left",
+      "teleop": {
+        "arm_base_frame": "left_base_link",
+        "vr_to_arm_rot": [
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "motion_scale": 1.0,
+        "tcp_offset": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
     },
     {
       "name": "right_arm",
@@ -136,7 +134,33 @@
       ],
       "driver": "astral_sdk",
       "feedback": "measured",
-      "ik": "astral_geometric"
+      "ik": "astral_geometric",
+      "side": "right",
+      "unit": "rad",
+      "input_channel": "right",
+      "teleop": {
+        "arm_base_frame": "right_base_link",
+        "vr_to_arm_rot": [
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "motion_scale": 1.0,
+        "tcp_offset": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
     },
     {
       "name": "left_ee",
@@ -151,7 +175,11 @@
         0.8
       ],
       "driver": "astral_sdk",
-      "feedback": "command_echo"
+      "feedback": "command_echo",
+      "side": "left",
+      "unit": "rad",
+      "input_channel": "left",
+      "retargeter": "pinch_gripper"
     },
     {
       "name": "right_ee",
@@ -223,24 +251,37 @@
         1.6272
       ],
       "driver": "wuji_serial",
-      "feedback": "measured"
+      "feedback": "measured",
+      "side": "right",
+      "unit": "rad",
+      "input_channel": "right",
+      "retargeter": "wuji_hand"
     }
   ],
   "cameras": [
     {
       "role": "base",
       "source": "quest3_video_streamer",
-      "device": "realsense_base"
+      "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.3-video-index0",
+      "mode": "v4l2",
+      "preset": "1080p30",
+      "capture_topic": "/quest3_video_streamer/collect/base"
     },
     {
       "role": "left_wrist",
       "source": "quest3_video_streamer",
-      "device": "usb_left_wrist"
+      "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.2:1.0-video-index0",
+      "mode": "webcam",
+      "preset": "720p30",
+      "capture_topic": "/quest3_video_streamer/collect/left_wrist"
     },
     {
       "role": "right_wrist",
       "source": "quest3_video_streamer",
-      "device": "usb_right_wrist"
+      "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:1.3:1.0-video-index0",
+      "mode": "webcam",
+      "preset": "720p30",
+      "capture_topic": "/quest3_video_streamer/collect/right_wrist"
     }
   ],
   "dataset": {
@@ -254,5 +295,15 @@
       "right_wrist_0_rgb": "right_wrist"
     }
   },
-  "profile_id": "astral_gripper_wuji"
+  "profile_id": "astral_gripper_wuji",
+  "adapter_config": {
+    "astral_sdk": {
+      "control_board_ip": "192.168.10.2"
+    },
+    "wuji_serial": {
+      "serials": {
+        "right": "SET_RIGHT_WUJI_SERIAL"
+      }
+    }
+  }
 }
