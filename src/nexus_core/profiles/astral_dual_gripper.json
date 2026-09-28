@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "instance": "astral",
+  "robot": "astral",
+  "hardware": {
+    "control_board_ip": "192.168.10.2",
+    "wuji_serial": {
+      "right": "SET_RIGHT_WUJI_SERIAL"
+    }
+  },
+  "input_settings": {
+    "landmark_preprocess": "raw"
+  },
+  "teleop": {
+    "left": {
+      "arm_base_frame": "left_base_link",
+      "vr_to_arm_rot": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "motion_scale": 1.0,
+      "tcp_offset": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "right": {
+      "arm_base_frame": "right_base_link",
+      "vr_to_arm_rot": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "motion_scale": 1.0,
+      "tcp_offset": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "inputs": {
+    "left": {
+      "wrist": "quest3",
+      "hand": "quest3"
+    },
+    "right": {
+      "wrist": "quest3",
+      "hand": "quest3"
+    }
+  },
+  "components": [
+    {
+      "name": "left_arm",
+      "kind": "arm",
+      "joints": [
+        "left_shoulder_pitch",
+        "left_shoulder_roll",
+        "left_elbow_roll",
+        "left_elbow_pitch",
+        "left_forearm_roll",
+        "left_wrist_pitch",
+        "left_wrist_roll"
+      ],
+      "lower": [
+        -2.0,
+        -0.3,
+        -2.2689,
+        -2.26,
+        -1.7802,
+        -0.8,
+        -1.57
+      ],
+      "upper": [
+        2.0,
+        2.0,
+        2.2689,
+        0.0,
+        1.7802,
+        0.85,
+        1.57
+      ],
+      "driver": "astral_sdk",
+      "feedback": "measured",
+      "ik": "astral_geometric"
+    },
+    {
+      "name": "right_arm",
+      "kind": "arm",
+      "joints": [
+        "right_shoulder_pitch",
+        "right_shoulder_roll",
+        "right_elbow_roll",
+        "right_elbow_pitch",
+        "right_forearm_roll",
+        "right_wrist_pitch",
+        "right_wrist_roll"
+      ],
+      "lower": [
+        -2.0,
+        -2.0,
+        -2.2689,
+        -2.26,
+        -1.7802,
+        -0.8,
+        -1.57
+      ],
+      "upper": [
+        2.0,
+        0.3,
+        2.2689,
+        0.0,
+        1.7802,
+        0.85,
+        1.57
+      ],
+      "driver": "astral_sdk",
+      "feedback": "measured",
+      "ik": "astral_geometric"
+    },
+    {
+      "name": "left_ee",
+      "kind": "gripper",
+      "joints": [
+        "left_gripper"
+      ],
+      "lower": [
+        0.0
+      ],
+      "upper": [
+        0.8
+      ],
+      "driver": "astral_sdk",
+      "feedback": "command_echo"
+    },
+    {
+      "name": "right_ee",
+      "kind": "gripper",
+      "joints": [
+        "right_gripper"
+      ],
+      "lower": [
+        0.0
+      ],
+      "upper": [
+        0.8
+      ],
+      "driver": "astral_sdk",
+      "feedback": "command_echo"
+    }
+  ],
+  "cameras": [
+    {
+      "role": "base",
+      "source": "quest3_video_streamer",
+      "device": "realsense_base"
+    },
+    {
+      "role": "left_wrist",
+      "source": "quest3_video_streamer",
+      "device": "usb_left_wrist"
+    },
+    {
+      "role": "right_wrist",
+      "source": "quest3_video_streamer",
+      "device": "usb_right_wrist"
+    }
+  ],
+  "dataset": {
+    "fps": 30,
+    "action_source": "next_state"
+  },
+  "policy": {
+    "camera_map": {
+      "base_0_rgb": "base",
+      "left_wrist_0_rgb": "left_wrist",
+      "right_wrist_0_rgb": "right_wrist"
+    }
+  },
+  "profile_id": "astral_dual_gripper"
+}

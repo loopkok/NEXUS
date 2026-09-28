@@ -17,6 +17,7 @@ the teleop stack is handled by LaunchManager via subprocess, not by this node.
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 import time
@@ -183,6 +184,12 @@ class MonitorNode(Node):
         self._preview_jpeg: dict[str, bytes] = {}
         self._preview_seq: dict[str, int] = {}
         self._preview_subs: dict[str, Any] = {}
+        self._nexus_subs: list[Any] = []
+        self._nexus_joints: dict[str, JointSlot] = {}
+        self._nexus_expected: dict[str, tuple[str, ...]] = {}
+        self._nexus_control: dict[str, Any] = {}
+        self._nexus_preview_roles: set[str] = set()
+        self._nexus_profile: dict[str, str] | None = None
 
         # Read-only subscriptions.
         for entity, pair in TOPICS.items():
@@ -355,6 +362,60 @@ class MonitorNode(Node):
     def preview_labels(self) -> list[str]:
         """Labels that have a preview subscription (i.e. known cameras)."""
         return list(self._preview_subs.keys())
+
+    def configure_nexus(self, profile) -> None:
+        """Subscribe to one selected assembly's canonical state and cameras."""
+        from sensor_msgs.msg import CompressedImage
+        for role in self._nexus_preview_roles:
+            self._preview_subs.pop(role, None)
+        self._nexus_preview_roles.clear()
+        for sub in self._nexus_subs:
+            self.destroy_subscription(sub)
+        self._nexus_subs.clear()
+        with self._lock:
+            self._nexus_joints = {c.name: JointSlot() for c in profile.components}
+            self._nexus_expected = {c.name: c.joints for c in profile.components}
+            self._nexus_control = {}
+            self._nexus_profile = {"id": profile.profile_id, "sha256": profile.digest,
+                                   "instance": profile.instance}
+        for spec in profile.components:
+            self._nexus_subs.append(self.create_subscription(
+                JointState, profile.topic(spec.name, "joint_states"),
+                lambda msg, n=spec.name: self._on_nexus_joint(n, msg),
+                _qos_best_effort()))
+        self._nexus_subs.append(self.create_subscription(
+            String, f"{profile.namespace}/control/state", self._on_nexus_control, 10))
+        for row in profile.raw["cameras"]:
+            role = row["role"]
+            self._nexus_subs.append(self.create_subscription(
+                CompressedImage, f"{profile.namespace}/camera/{role}/image/compressed",
+                lambda msg, r=role: self._on_preview(r, msg),
+                _qos_best_effort()))
+            self._preview_subs[role] = self._nexus_subs[-1]
+            self._nexus_preview_roles.add(role)
+
+    def _on_nexus_joint(self, name: str, msg: JointState) -> None:
+        with self._lock:
+            if (name in self._nexus_joints and tuple(msg.name) == self._nexus_expected[name]
+                    and len(msg.position) == len(self._nexus_expected[name])
+                    and all(math.isfinite(v) for v in msg.position)):
+                self._nexus_joints[name] = JointSlot(list(msg.position), time.time())
+
+    def _on_nexus_control(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if isinstance(data, dict):
+            with self._lock:
+                self._nexus_control = data
+
+    def nexus_snapshot(self) -> dict:
+        with self._lock:
+            return {"profile": self._nexus_profile,
+                    "control": self._nexus_control,
+                    "joints": {name: {"values": slot.values, "stale": slot.is_stale(threshold=0.5)}
+                               for name, slot in self._nexus_joints.items()}}
 
     # --- astral_data_collect bridge -----------------------------------------
 
@@ -603,10 +664,15 @@ class MonitorNode(Node):
         srv_name = self._DRIVER_SERVICES.get(name)
         if srv_name is None:
             return False, f"unknown driver service: {name}"
-        cli = self._driver_clients.get(name)
+        return self.call_trigger(srv_name, timeout_s)
+
+    def call_trigger(self, srv_name: str, timeout_s: float = 4.0) -> tuple[bool, str]:
+        """Call a canonical or native Trigger from the web control thread."""
+        from std_srvs.srv import Trigger
+        cli = self._driver_clients.get(srv_name)
         if cli is None:
             cli = self.create_client(Trigger, srv_name)
-            self._driver_clients[name] = cli
+            self._driver_clients[srv_name] = cli
         if not cli.service_is_ready():
             if not cli.wait_for_service(timeout_sec=2.0):
                 return False, f"driver service 未就绪: {srv_name}（driver 未启动？）"

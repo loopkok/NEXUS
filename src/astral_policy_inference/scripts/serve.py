@@ -37,10 +37,10 @@ import argparse
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 # 脚本可直接运行：无论 cwd，先确保包可 import
-sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_policy_inference")
-sys.path.insert(0, "/home/robot/loopkok/sdk/astral_ws/src/astral_data_collect")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from astral_policy_inference import protocol as _proto
 from astral_policy_inference.image_codec import normalize_request_images
@@ -227,7 +227,7 @@ def _warmup_policy(
 
 async def _handle(
     websocket, infer_fn, reset_fn, packer, model: str, action_dim: int,
-    rtc_guided: bool, rtc_horizon: int,
+    rtc_guided: bool, rtc_horizon: int, profile_sha256: str | None = None,
 ) -> None:
     import websockets.exceptions
 
@@ -242,6 +242,7 @@ async def _handle(
     try:
         await websocket.send(packer.pack({
             "model": model, "action_dim": action_dim,
+            "profile_sha256": profile_sha256,
             "rtc_guided": rtc_guided, "rtc_horizon": rtc_horizon if rtc_guided else 0,
         }))
         while True:
@@ -267,12 +268,14 @@ async def _handle(
 async def _serve(
     infer_fn, reset_fn, host: str, port: int, model: str, action_dim: int,
     rtc_guided: bool = False, rtc_horizon: int = 10,
+    profile_sha256: str | None = None,
 ) -> None:
     from websockets.asyncio.server import serve
 
     packer = _proto.Packer()
     async with serve(
-        lambda ws: _handle(ws, infer_fn, reset_fn, packer, model, action_dim, rtc_guided, rtc_horizon),
+        lambda ws: _handle(ws, infer_fn, reset_fn, packer, model, action_dim,
+                           rtc_guided, rtc_horizon, profile_sha256),
         host,
         port,
         compression=None,
@@ -291,6 +294,8 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--action-dim", type=int, default=8, help="act 用")
+    parser.add_argument("--nexus-manifest", default="",
+                        help="NEXUS frozen model layout JSON; checked before loading checkpoint")
     parser.add_argument("--policy-config", default="pi05_astral", help="pi05 用：openpi 训练配置名")
     parser.add_argument("--device", default=None, help="act 用：torch device")
     parser.add_argument(
@@ -318,6 +323,22 @@ def main() -> None:
         help="JSON: model slot -> model feature image key（须与模型 input_features 一致）",
     )
     args = parser.parse_args()
+    profile_sha256 = None
+    if args.nexus_manifest:
+        with open(args.nexus_manifest, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+        profile_sha256 = manifest.get("profile_sha256")
+        if not profile_sha256 or int(manifest.get("action_dim", -1)) != args.action_dim:
+            parser.error("NEXUS manifest profile hash/action_dim mismatch")
+        if args.model not in manifest.get("model_family", [args.model]):
+            parser.error("NEXUS manifest model family mismatch")
+        checkpoint_manifest = Path(args.checkpoint_dir) / "nexus_layout.json"
+        if not checkpoint_manifest.is_file():
+            parser.error(f"NEXUS checkpoint missing {checkpoint_manifest}")
+        with checkpoint_manifest.open(encoding="utf-8") as fh:
+            checkpoint_layout = json.load(fh)
+        if checkpoint_layout != manifest:
+            parser.error("NEXUS checkpoint layout does not match requested manifest")
     if args.rtc_execution_horizon < 1:
         parser.error("--rtc-execution-horizon must be >= 1")
     if args.rtc_guided and args.model != "pi05":
@@ -363,7 +384,7 @@ def main() -> None:
     try:
         asyncio.run(_serve(
             infer_fn, reset_fn, args.host, args.port, args.model, args.action_dim,
-            args.rtc_guided, args.rtc_execution_horizon,
+            args.rtc_guided, args.rtc_execution_horizon, profile_sha256,
         ))
     except KeyboardInterrupt:
         print(f"serve[{args.model}] stopped")

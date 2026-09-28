@@ -169,6 +169,7 @@ export interface InferState {
   latency_ms?: { loop?: DequeStats; obs_age?: DequeStats }
   exec_events?: string[]
   error?: string | null
+  fault?: string | null
   // monitor 后端加注：/policy_inference/state 发布者数量（>1 = web/CLI 双开推理节点）
   node_count?: number
   stale?: boolean

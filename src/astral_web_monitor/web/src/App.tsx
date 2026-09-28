@@ -6,12 +6,14 @@ import { Tabs } from './components/Tabs'
 import { MonitorTab } from './components/MonitorTab'
 import { HealthPanel } from './components/HealthPanel'
 import { SystemTab } from './components/SystemTab'
+import { NexusTab } from './components/NexusTab'
 import { ToastHost } from './components/ToastHost'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { api } from './api/client'
 import { pushSample } from './hooks/historyStore'
 
 const TABS = [
+  { id: 'nexus', label: 'NEXUS' },
   { id: 'monitor', label: '监控' },
   { id: 'health', label: '健康' },
   { id: 'system', label: '系统' },
@@ -21,7 +23,7 @@ export default function App() {
   const state = useRealtime()
   const wsConnected = useWsConnected()
   const { presets } = usePresets()
-  const [active, setActive] = useState('monitor')
+  const [active, setActive] = useState('nexus')
 
   // Feed the chart ring buffer on every telemetry frame.
   useEffect(() => {
@@ -41,8 +43,8 @@ export default function App() {
         <ToastHost />
 
         <header style={headerStyle}>
-        <h1 style={titleStyle}>Astral Web Monitor</h1>
-        <span style={subStyle}>非侵入式遥操作监控</span>
+        <h1 style={titleStyle}>NEXUS</h1>
+        <span style={subStyle}>多机器人遥操与学习控制台</span>
         <div style={spacer} />
         <StatusPill ok={wsConnected} okLabel="WS" badLabel="WS 断" colorOk="#22c55e" />
         <StatusPill ok={!!state} okLabel="ROS" badLabel="ROS 断" colorOk="#3b82f6" />
@@ -55,11 +57,12 @@ export default function App() {
         />
       </header>
 
-      <ControlBar state={state} onAction={() => void api.health()} />
+      {active !== 'nexus' && <ControlBar state={state} onAction={() => void api.health()} />}
 
       <Tabs tabs={TABS} active={active} onChange={setActive} />
 
       <main style={mainStyle}>
+        {active === 'nexus' && <NexusTab state={state} />}
         {active === 'monitor' && <MonitorTab state={state} />}
         {active === 'health' && <HealthPanel state={state} />}
         {active === 'system' && <SystemTab state={state} presets={presets} onAction={() => void api.health()} />}

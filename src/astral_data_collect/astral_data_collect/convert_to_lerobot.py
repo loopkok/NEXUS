@@ -425,7 +425,12 @@ def convert_session(
             tasks.append(task)
     schema = schemas[0]
     for s in schemas[1:]:
-        if s.to_dict()["state_blocks"] != schema.to_dict()["state_blocks"]:
+        if (s.to_dict()["state_blocks"] != schema.to_dict()["state_blocks"]
+                or s.state_names() != schema.state_names()
+                or s.cameras != schema.cameras
+                or s.dataset_fps != schema.dataset_fps
+                or s.action_source != schema.action_source
+                or s.to_dict().get("profile_sha256") != schema.to_dict().get("profile_sha256")):
             raise RuntimeError("episode 间 schema 不一致，无法合并导出（分 session 重录）")
     fps = int(schema.dataset_fps)
     state_dim = schema.state_dim

@@ -1,0 +1,30 @@
+{
+  "nexus_base": {
+    "repository": "astral_ws",
+    "commit": "9db81c57eb34b287b59e9dcb730d4834da84419a",
+    "method": "independent git clone; original repository preserved"
+  },
+  "migrated_source": {
+    "repository": "xnero_ws",
+    "commit": "d60a6e1e7d3fac5800a792816f987561a42756a2",
+    "method": "source copy; original repository preserved",
+    "paths": [
+      "src/nero_quest_teleop",
+      "src/nero_dual_data_collect",
+      "src/xhand_retargeting",
+      "src/xhand_control_ros2",
+      "src/xhand_nero_description",
+      "src/pyAgxArm"
+    ],
+    "camera_utility": "adapted the Orbbec frame conversion from src/参考文件/camera/utils.py into src/nero_dual_data_collect/nero_dual_data_collect/orbbec_utils.py",
+    "duplicate_quest_package": "kept Astral's src/quest3_hand_mocap only"
+  },
+  "platform": "ROS 2 Humble / Ubuntu 22.04 / Python 3.10",
+  "external_runtime_requirements": [
+    "Astral control board SDK and calibrated device",
+    "Wuji serial SDK when Wuji hand is selected",
+    "XHand bundled libxhand_control.so and matching serial devices",
+    "Orbbec pyorbbecsdk v2 for Gemini cameras",
+    "LeRobot and optional OpenPI on the GPU host"
+  ]
+}

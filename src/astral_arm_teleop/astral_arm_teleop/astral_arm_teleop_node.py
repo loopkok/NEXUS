@@ -209,6 +209,7 @@ class AstralTeleopArmNode(Node):
         # 方案A 的 EMA 过渡被感知为"卡一下/臂自己在动"，0.07-0.42 rad/1s）。
         # <=0 关闭保持（回方案A 的即时 EMA 过渡）。
         self.declare_parameter("reanchor_elbow_hold", True)
+        self.declare_parameter("reanchor_require_measured", False)
         self.declare_parameter("reanchor_elbow_release_thresh", 0.2)
         # Straightness gate: when the human arm is nearly straight (elbow
         # within ~sin*upper-arm-length of the shoulder-wrist line), psi is
@@ -288,6 +289,9 @@ class AstralTeleopArmNode(Node):
         # 方案B：reanchor 后保持臂角直到操作者手臂方向变化超阈值。
         self._reanchor_elbow_hold = bool(
             self.get_parameter("reanchor_elbow_hold").value
+        )
+        self._reanchor_require_measured = bool(
+            self.get_parameter("reanchor_require_measured").value
         )
         self._reanchor_elbow_release_thresh = float(
             self.get_parameter("reanchor_elbow_release_thresh").value
@@ -1072,6 +1076,15 @@ class AstralTeleopArmNode(Node):
             return False, msg
         if self.pose.vr_current_pos is None or self.pose.vr_current_rot is None:
             msg = "no VR wrist pose yet; start Quest stream, place hand, then re-anchor"
+            self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
+            self._tlog_event("reanchor", ok=False, reason=msg)
+            return False, msg
+        if getattr(self, "_reanchor_require_measured", False) and (
+            not self._got_state or self.state_q is None
+            or time.monotonic() - self._state_t > self.data_timeout
+            or not np.isfinite(self.state_q).all()
+        ):
+            msg = "fresh measured joint state required for NEXUS takeover"
             self.get_logger().warn(f"[{self.side}] reanchor: {msg}")
             self._tlog_event("reanchor", ok=False, reason=msg)
             return False, msg

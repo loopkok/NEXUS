@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "profile_id": "nero_dual_xhand",
+  "instance": "nero",
+  "robot": "nero",
+  "inputs": {
+    "left": {
+      "wrist": "quest3",
+      "hand": "quest3"
+    },
+    "right": {
+      "wrist": "quest3",
+      "hand": "quest3"
+    }
+  },
+  "input_settings": {
+    "landmark_preprocess": "mano"
+  },
+  "hardware": {
+    "can": {
+      "left": "can_nero_left",
+      "right": "can_nero_right"
+    },
+    "xhand_serial": {
+      "left": "/dev/ttyUSB0",
+      "right": "/dev/ttyUSB1"
+    },
+    "home_pose": {
+      "left": [
+        -0.405,
+        1.281,
+        -0.957,
+        1.311,
+        2.682,
+        -0.314,
+        -0.163
+      ],
+      "right": [
+        0.405,
+        1.281,
+        0.957,
+        1.311,
+        -2.682,
+        0.314,
+        -0.163
+      ]
+    }
+  },
+  "teleop": {
+    "left": {
+      "arm_base_frame": "left_arm_base",
+      "vr_to_arm_rot": [
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        -1.0,
+        0.0,
+        0.0
+      ],
+      "motion_scale": 0.65,
+      "tcp_offset": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "right": {
+      "arm_base_frame": "right_arm_base",
+      "vr_to_arm_rot": [
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "motion_scale": 0.65,
+      "tcp_offset": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "components": [
+    {
+      "name": "left_arm",
+      "kind": "arm",
+      "joints": [
+        "left_joint1",
+        "left_joint2",
+        "left_joint3",
+        "left_joint4",
+        "left_joint5",
+        "left_joint6",
+        "left_joint7"
+      ],
+      "lower": [
+        -2.705261,
+        -1.74533,
+        -2.757621,
+        -1.012291,
+        -2.757621,
+        -0.733039,
+        -1.570797
+      ],
+      "upper": [
+        2.705261,
+        1.74533,
+        2.757621,
+        2.146755,
+        2.757621,
+        0.959932,
+        1.570797
+      ],
+      "driver": "nero_can",
+      "feedback": "measured",
+      "ik": "nero_analytic"
+    },
+    {
+      "name": "right_arm",
+      "kind": "arm",
+      "joints": [
+        "right_joint1",
+        "right_joint2",
+        "right_joint3",
+        "right_joint4",
+        "right_joint5",
+        "right_joint6",
+        "right_joint7"
+      ],
+      "lower": [
+        -2.705261,
+        -1.74533,
+        -2.757621,
+        -1.012291,
+        -2.757621,
+        -0.733039,
+        -1.570797
+      ],
+      "upper": [
+        2.705261,
+        1.74533,
+        2.757621,
+        2.146755,
+        2.757621,
+        0.959932,
+        1.570797
+      ],
+      "driver": "nero_can",
+      "feedback": "measured",
+      "ik": "nero_analytic"
+    },
+    {
+      "name": "left_ee",
+      "kind": "hand",
+      "joints": [
+        "left_hand_thumb_bend_joint",
+        "left_hand_thumb_rota_joint1",
+        "left_hand_thumb_rota_joint2",
+        "left_hand_index_bend_joint",
+        "left_hand_index_joint1",
+        "left_hand_index_joint2",
+        "left_hand_mid_joint1",
+        "left_hand_mid_joint2",
+        "left_hand_ring_joint1",
+        "left_hand_ring_joint2",
+        "left_hand_pinky_joint1",
+        "left_hand_pinky_joint2"
+      ],
+      "lower": [
+        0.0,
+        -0.698,
+        0.0,
+        -0.174,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "upper": [
+        1.832,
+        1.57,
+        1.57,
+        0.174,
+        1.919,
+        1.919,
+        1.919,
+        1.919,
+        1.919,
+        1.919,
+        1.919,
+        1.919
+      ],
+      "driver": "xhand_serial",
+      "feedback": "measured"
+    },
+    {
+      "name": "right_ee",
+      "kind": "hand",
+      "joints": [
+        "right_hand_thumb_bend_joint",
+        "right_hand_thumb_rota_joint1",
+        "right_hand_thumb_rota_joint2",
+        "right_hand_index_bend_joint",
+        "right_hand_index_joint1",
+        "right_hand_index_joint2",
+        "right_hand_mid_joint1",
+        "right_hand_mid_joint2",
+        "right_hand_ring_joint1",
+        "right_hand_ring_joint2",
+        "right_hand_pinky_joint1",
+        "right_hand_pinky_joint2"
+      ],
+      "lower": [
+        0.0,
+        -0.698,
+        0.0,
+        -0.174,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "upper": [
+        1.832,
+        1.57,
+        1.57,
+        0.174,
+        1.919,
+        1.919,
+        1.919,
+        1.919,
+        1.919,
+        1.919,
+        1.919,
+        1.919
+      ],
+      "driver": "xhand_serial",
+      "feedback": "measured"
+    }
+  ],
+  "cameras": [
+    {
+      "role": "base",
+      "source": "orbbec",
+      "device": "CP02653000VE"
+    },
+    {
+      "role": "left_wrist",
+      "source": "orbbec",
+      "device": "CV284600002L"
+    },
+    {
+      "role": "right_wrist",
+      "source": "orbbec",
+      "device": "CV28460000FV"
+    }
+  ],
+  "dataset": {
+    "fps": 30,
+    "action_source": "next_state"
+  },
+  "policy": {
+    "camera_map": {
+      "base_0_rgb": "base",
+      "left_wrist_0_rgb": "left_wrist",
+      "right_wrist_0_rgb": "right_wrist"
+    }
+  }
+}

@@ -1,0 +1,67 @@
+# Nero Teleop Configuration (Left Arm)
+nero_teleop_left:
+  ros__parameters:
+
+    # ---- Arm selection ----
+    arm_side: "left"
+
+    # ---- CAN connection ----
+    can_channel: "can_nero_left"
+    firmware_version: "default"    # "default" (<=1.10) or "v111" (>=1.11)
+    can_interface: "socketcan"     # "socketcan" (Linux) or "slcan" (macOS)
+
+    # ---- Control loop ----
+    control_rate: 125.0             # Hz (50-100 recommended)
+
+    # ---- IK Solver ----
+    solver_type: "analytic_dh"     # "analytic_dh" or "urdf_numerical"
+    ik_service_name: "/ik_solver/solve_ik"
+
+    # URDF / numerical IK params (used when solver_type="urdf_numerical")
+    urdf_package: "agx_arm_description"
+    urdf_relative_path: "agx_arm_urdf/nero/urdf/nero_description.urdf"
+    ik_w_pos: 20.0
+    ik_w_ori: 2.0
+    ik_w_reg: 0.01
+    ik_w_smooth: 2.0
+    ik_max_iter: 4
+    ik_tol: 0.0001
+
+    # ---- VR pose processing ----
+    # 3x3 rotation matrix from VR frame to robot arm base frame (row-major)
+    # Left arm: VR X+(forward) -> Arm Y+(forward)
+    #           VR Y+(outward) -> Arm Z+(outward)
+    #           VR Z+(down)    -> Arm X-(down)
+    vr_to_arm_rot: [0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0,
+                    -1.0, 0.0, 0.0]
+    pos_smoothing: 0.8 #0.5            # EMA alpha (0=full smooth, 1=no smooth)
+    rot_smoothing: 0.8            # SLERP alpha
+    motion_scale: 0.65             # VR-to-robot position scale
+    flip_pitch: false         # Flip VR pitch axis
+
+    # ---- TCP offset ----
+    # Tool Center Point offset from flange [x, y, z, roll, pitch, yaw] (m / rad)
+    tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # ---- Safety ----
+    max_joint_vel: 0.065 #0.05            # Max joint angle change per control step (rad)
+    print_metrics: false
+    dry_run: false
+    require_clench_to_start: true          # Print latency/accuracy to console
+    workspace_radius: 0.58         # EE spherical radius limit (m) — Nero ~580mm reach
+    data_timeout: 5.0              # VR data timeout before holding position (s)
+
+    # Per-axis workspace box bounds (-.inf / .inf = inactive, set values to activate)
+    workspace_x_min: -.inf
+    workspace_x_max: .inf
+    workspace_y_min: -.inf
+    workspace_y_max: .inf
+    workspace_z_min: -.inf
+    workspace_z_max: .inf
+
+    # ---- Startup initialization ----
+    # init_pose: [-1.4486, 1.4835, -0.2618, 1.1170, 1.9897, -0.70, 0.1571]
+    init_pose: [-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163]
+    init_speed_percent: 10
+    move_to_init_pose: true

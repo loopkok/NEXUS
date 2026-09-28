@@ -18,8 +18,9 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+import re
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -48,6 +49,9 @@ from .schemas import (
     VideoCamerasRequest,
     VideoPushRequest,
 )
+from nexus_core.profile import Profile, ProfileError
+from nexus_core.remote_jobs import JobRegistry, RemoteJob
+from ament_index_python.packages import get_package_share_directory
 
 
 # --- globals ---------------------------------------------------------------
@@ -63,6 +67,226 @@ _policy_mgr = LaunchManager(lane_name="推理")
 _policy_cfg: dict = {}
 _presets = load_presets()
 _web_dist = Path(os.environ.get("ASTRAL_WEB_MONITOR_DIST", ""))
+_nexus_profile: Profile | None = None
+_nexus_jobs = JobRegistry()
+_nexus_router = APIRouter()
+
+
+def _nexus_profile_file(name: str) -> Path:
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+        raise HTTPException(status_code=400, detail="无效 profile 名称")
+    roots = []
+    if os.environ.get("NEXUS_PROFILES_DIR"):
+        roots.append(Path(os.environ["NEXUS_PROFILES_DIR"]).expanduser())
+    roots.append(Path(get_package_share_directory("nexus_core")) / "profiles")
+    for root in roots:
+        path = root / f"{name}.json"
+        if path.is_file():
+            return path
+    raise HTTPException(status_code=404, detail=f"未找到 profile: {name}")
+
+
+@_nexus_router.get("/api/v1/nexus/profiles")
+async def nexus_profiles() -> ApiEnvelope:
+    roots = []
+    if os.environ.get("NEXUS_PROFILES_DIR"):
+        roots.append(Path(os.environ["NEXUS_PROFILES_DIR"]).expanduser())
+    roots.append(Path(get_package_share_directory("nexus_core")) / "profiles")
+    items = []
+    seen = set()
+    for path in (path for root in roots for path in sorted(root.glob("*.json"))):
+        if path.stem in seen:
+            continue
+        try:
+            p = Profile.load(path)
+            if p.profile_id != path.stem:
+                continue
+            seen.add(path.stem)
+            items.append({"id": path.stem, "instance": p.instance,
+                          "robot": p.raw["robot"], "sha256": p.digest,
+                          "state_dim": p.dimension,
+                          "cameras": [c["role"] for c in p.raw["cameras"]],
+                          "components": [{"name": c.name, "kind": c.kind, "dim": c.dim,
+                                          "feedback": c.feedback} for c in p.components]})
+        except (ProfileError, ValueError):
+            continue
+    return ApiEnvelope(ok=True, data=items)
+
+
+@_nexus_router.post("/api/v1/nexus/start")
+async def nexus_start(req: dict[str, Any]) -> ApiEnvelope:
+    global _nexus_profile
+    name = str(req.get("profile", ""))
+    profile_path = _nexus_profile_file(name)
+    profile = Profile.load(profile_path)
+    if profile.profile_id != name:
+        raise HTTPException(status_code=400, detail="profile_id 必须与文件名一致")
+    session = str(req.get("session", "default_task"))
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", session):
+        raise HTTPException(status_code=400, detail="无效 session 名称")
+    if _collect_mgr.state != STOPPED or _policy_mgr.state != STOPPED:
+        raise HTTPException(status_code=409, detail="先停止旧版独立数采和推理进程")
+    model_manifest = str(req.get("model_manifest", ""))
+    data_root = Path(os.environ.get("NEXUS_DATA_ROOT", "~/nexus_data")).expanduser()
+    if not model_manifest:
+        layout_dir = data_root / "layouts"
+        layout_dir.mkdir(parents=True, exist_ok=True)
+        layout_path = layout_dir / f"{profile.digest}.json"
+        layout_path.write_text(json.dumps(profile.frozen_schema(), ensure_ascii=False, indent=2) + "\n",
+                               encoding="utf-8")
+        model_manifest = str(layout_path)
+    if model_manifest and not Path(model_manifest).is_file():
+        raise HTTPException(status_code=400, detail="模型清单文件不存在")
+    if model_manifest:
+        from nexus_core.profile import verify_model_manifest
+        try:
+            with open(model_manifest, encoding="utf-8") as fh:
+                verify_model_manifest(profile, json.load(fh))
+        except (OSError, ValueError, ProfileError) as exc:
+            raise HTTPException(status_code=400, detail=f"模型清单与 profile 不匹配: {exc}") from exc
+    model = str(req.get("model", "act"))
+    backend = str(req.get("backend_type", "remote"))
+    server_host = str(req.get("server_host", os.environ.get("NEXUS_MODEL_HOST", "127.0.0.1")))
+    try:
+        server_port = int(req.get("server_port", 8001))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="模型服务端口无效") from exc
+    if model not in ("act", "pi05") or backend not in ("remote", "stub") or not re.fullmatch(r"[A-Za-z0-9.:-]+", server_host) or not 1 <= server_port <= 65535:
+        raise HTTPException(status_code=400, detail="模型类型、后端或服务地址无效")
+    args = {"profile": str(profile_path),
+            "dry_run": str(bool(req.get("dry_run", True))).lower(),
+            "with_cameras": str(bool(req.get("with_cameras", False))).lower(),
+            "with_recording": "true", "with_policy": "true",
+            "data_root": str(data_root),
+            "session": session, "model_manifest": model_manifest,
+            "model": model, "backend_type": backend,
+            "server_host": server_host, "server_port": str(server_port)}
+    preset = Preset(name=f"NEXUS {name}", package="nexus_core",
+                    launch="system.launch.py", args=args)
+    ok, message = _launch_mgr.start(preset)
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+    _nexus_profile = profile
+    node = get_node()
+    if node is not None:
+        node.configure_nexus(profile)
+    return ApiEnvelope(ok=True, message=message,
+                       data={"profile_sha256": profile.digest})
+
+
+@_nexus_router.get("/api/v1/nexus/state")
+async def nexus_state() -> ApiEnvelope:
+    node = get_node()
+    return ApiEnvelope(ok=True, data={
+        "launch_state": _launch_mgr.state,
+        "profile": _nexus_profile.frozen_schema() if _nexus_profile else None,
+        "robot": node.nexus_snapshot() if node else None,
+        "jobs": _nexus_jobs.list(),
+    })
+
+
+@_nexus_router.post("/api/v1/nexus/jobs")
+async def nexus_submit_job(req: dict[str, Any]) -> ApiEnvelope:
+    if _nexus_profile is None:
+        raise HTTPException(status_code=409, detail="先选择 NEXUS profile")
+    host = os.environ.get("NEXUS_GPU_HOST", "")
+    root = os.environ.get("NEXUS_GPU_ROOT", "")
+    python = os.environ.get("NEXUS_GPU_PYTHON", "")
+    if not host or not root or not python:
+        raise HTTPException(status_code=503, detail="请配置 NEXUS_GPU_HOST/ROOT/PYTHON")
+    kind = str(req.get("kind", ""))
+    session = str(req.get("session", "default_task"))
+    try:
+        job = RemoteJob(kind, _nexus_profile, session, host, root, python)
+        kwargs = {"steps": int(req.get("steps", 1000)),
+                  "act_script": os.environ.get("NEXUS_GPU_ACT_SCRIPT", "")}
+        if kwargs["steps"] < 1:
+            raise ValueError("训练步数必须大于零")
+        if kind == "train_act" and not kwargs["act_script"].startswith("/"):
+            raise ValueError("请配置 GPU 机上的 NEXUS_GPU_ACT_SCRIPT 绝对路径")
+        if kind == "sync_process":
+            local_root = Path(os.environ.get("NEXUS_DATA_ROOT", "~/nexus_data")).expanduser()
+            local_session = local_root / session
+        else:
+            local_session = None
+        if kind == "train_pi05":
+            command = os.environ.get(f"NEXUS_PI05_TRAIN_{_nexus_profile.profile_id.upper()}", "")
+            import shlex
+            kwargs["pi05_command"] = shlex.split(command) if command else None
+            if not kwargs["pi05_command"]:
+                raise ValueError(f"请配置 NEXUS_PI05_TRAIN_{_nexus_profile.profile_id.upper()}")
+        job_id = _nexus_jobs.submit(job, local_session, **kwargs)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiEnvelope(ok=True, data={"job_id": job_id})
+
+
+@_nexus_router.get("/api/v1/nexus/jobs/{job_id}")
+async def nexus_job(job_id: str) -> ApiEnvelope:
+    try:
+        return ApiEnvelope(ok=True, data=_nexus_jobs.get(job_id).snapshot())
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="未知作业") from exc
+
+
+@_nexus_router.post("/api/v1/nexus/jobs/{job_id}/cancel")
+async def nexus_cancel_job(job_id: str) -> ApiEnvelope:
+    try:
+        job = _nexus_jobs.get(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="未知作业") from exc
+    await asyncio.to_thread(job.cancel)
+    return ApiEnvelope(ok=True, message="已请求取消", data=job.snapshot())
+
+
+@_nexus_router.post("/api/v1/nexus/driver/{verb}")
+async def nexus_driver(verb: str) -> ApiEnvelope:
+    if verb not in ("ready", "enable", "home", "estop"):
+        raise HTTPException(status_code=400, detail="不支持的驱动操作")
+    if _nexus_profile is None:
+        raise HTTPException(status_code=409, detail="未选择 NEXUS profile")
+    if verb != "estop" and _launch_mgr.state != RUNNING:
+        raise HTTPException(status_code=409, detail="NEXUS 装配未运行")
+    node = get_node()
+    if node is None:
+        raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    profile = _nexus_profile
+    if verb in ("ready", "enable"):
+        joints = node.nexus_snapshot().get("joints", {})
+        missing = [component.name for component in profile.components
+                   if component.name not in joints or joints[component.name]["stale"]
+                   or len(joints[component.name]["values"]) != component.dim]
+        if verb == "ready" or missing:
+            return ApiEnvelope(ok=not missing,
+                               message="实测反馈就绪" if not missing else f"反馈缺失或过期: {missing}",
+                               data={"missing": missing})
+    paths = []
+    if verb == "estop":
+        paths.append(f"{profile.namespace}/control/estop")
+    if profile.raw["robot"] == "astral":
+        paths.append(f"/astral_robot_driver/{verb}")
+        paths.extend(f"{profile.namespace}/drivers/{component.name}/{verb}"
+                     for component in profile.components
+                     if component.driver == "wuji_serial" and verb != "home")
+    else:
+        paths.extend(f"{profile.namespace}/drivers/{component.name}/{verb}"
+                     for component in profile.components
+                     if verb != "home" or component.kind == "arm")
+    results = []
+    for path in paths:
+        ok, message = await asyncio.to_thread(node.call_trigger, path)
+        results.append({"service": path, "ok": ok, "message": message})
+        if verb == "enable" and not ok:
+            for completed in results[:-1]:
+                if completed["ok"]:
+                    stop_path = completed["service"].rsplit("/", 1)[0] + "/estop"
+                    stop_ok, stop_message = await asyncio.to_thread(node.call_trigger, stop_path)
+                    results.append({"service": stop_path, "ok": stop_ok,
+                                    "message": f"enable rollback: {stop_message}"})
+            break
+    all_ok = all(r["ok"] for r in results)
+    return ApiEnvelope(ok=all_ok, message="; ".join(r["message"] for r in results),
+                       data=results)
 
 
 def _build_ui_state() -> dict[str, Any]:
@@ -164,6 +388,7 @@ async def _ui_state_broadcaster() -> None:
 
 # --- app -------------------------------------------------------------------
 app = FastAPI(title="astral_web_monitor", version="0.1.0", lifespan=_lifespan)
+app.include_router(_nexus_router)
 
 
 @app.get("/api/v1/health")

@@ -117,6 +117,8 @@ class RemoteBackend(PolicyBackend):
         infer_timeout_s: float = 3.0,
         rtc_guided: bool = False,
         rtc_horizon: int = 10,
+        expected_profile_sha256: str | None = None,
+        expected_model: str | None = None,
     ):
         self.host = host
         self.port = int(port)
@@ -137,6 +139,8 @@ class RemoteBackend(PolicyBackend):
         self.infer_timeout_s = float(infer_timeout_s)
         self.rtc_guided = bool(rtc_guided)
         self.rtc_horizon = int(rtc_horizon)
+        self.expected_profile_sha256 = expected_profile_sha256
+        self.expected_model = expected_model
 
     def open(self) -> None:
         if self._client is not None:
@@ -162,6 +166,11 @@ class RemoteBackend(PolicyBackend):
                 raise PolicyError(
                     f"server action_dim {server_dim} != robot action_dim {self.action_dim}"
                 )
+            if (self.expected_profile_sha256 is not None
+                    and metadata.get("profile_sha256") != self.expected_profile_sha256):
+                raise PolicyError("server profile hash does not match robot profile")
+            if self.expected_model is not None and metadata.get("model") != self.expected_model:
+                raise PolicyError(f"server model {metadata.get('model')} != requested {self.expected_model}")
             if self.rtc_guided:
                 if metadata.get("model") != "pi05" or not metadata.get("rtc_guided"):
                     raise PolicyError("guided RTC requires a pi05 server started with --rtc-guided")
@@ -446,6 +455,7 @@ def make_backend(
     infer_timeout_s: float = 3.0,
     rtc_guided: bool = False,
     rtc_horizon: int = 10,
+    expected_profile_sha256: str | None = None,
 ) -> PolicyBackend:
     """Backend factory. ``backend_type`` = transport: remote | inproc | stub.
 
@@ -467,6 +477,8 @@ def make_backend(
             infer_timeout_s=infer_timeout_s,
             rtc_guided=rtc_guided,
             rtc_horizon=rtc_horizon,
+            expected_profile_sha256=expected_profile_sha256,
+            expected_model=model if expected_profile_sha256 is not None else None,
         )
     if bt == "inproc":
         if not checkpoint_dir:

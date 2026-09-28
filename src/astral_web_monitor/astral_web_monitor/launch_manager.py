@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import signal
 import subprocess
 import threading
@@ -51,9 +52,9 @@ class Preset:
     description: str = ""
 
     def command(self) -> str:
-        arg_str = " ".join(f"{k}:={v}" for k, v in self.args.items())
-        tail = f" {arg_str}" if arg_str else ""
-        return f"exec ros2 launch {self.package} {self.launch}{tail}"
+        argv = ["ros2", "launch", self.package, self.launch,
+                *(f"{k}:={v}" for k, v in self.args.items())]
+        return "exec " + shlex.join(argv)
 
 
 def load_presets() -> dict[str, Preset]:

@@ -1,4 +1,8 @@
-# astral_ws
+# NEXUS
+
+多机器人遥操、数采、训练与推理工作空间。请从 [README_NEXUS.md](README_NEXUS.md) 开始；下文保留 Astral 主干的原始说明。
+
+## Astral 主干原始说明
 
 Quest3 → **Astral 双臂** + **Wuji 双手** 的 ROS 2 工作空间。  
 从 `xnero_ws-main` 迁出，**不含** Nero / XHand / pyAgxArm。

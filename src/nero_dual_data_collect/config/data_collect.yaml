@@ -1,0 +1,5 @@
+# Data collection configuration
+data_collect_node:
+  ros__parameters:
+    data_base_path: "~/xnero_data"
+    task_name: "default_task"

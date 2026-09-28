@@ -229,6 +229,8 @@ class CollectSchema:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "CollectSchema":
+        if "nexus_profile" in d:
+            return NexusCollectSchema.from_dict(d)
         known = {
             "arms", "end_effector_left", "end_effector_right", "include_waist",
             "include_head", "cameras", "dataset_fps", "action_source",
@@ -239,3 +241,73 @@ class CollectSchema:
     @classmethod
     def from_json(cls, s: str) -> "CollectSchema":
         return cls.from_dict(json.loads(s))
+
+
+class NexusCollectSchema:
+    """Profile-derived layout using the same raw/align/export machinery.
+
+    The complete profile is frozen in every episode. Joint ordering and camera
+    roles are therefore identical at recording, processing, and inference.
+    """
+
+    def __init__(self, profile, hold_frames: int = 10, max_gap_ms: float = 100.0):
+        self.profile = profile
+        self.cameras = [row["role"] for row in profile.raw["cameras"]]
+        self.dataset_fps = int(profile.raw["dataset"]["fps"])
+        self.action_source = profile.raw["dataset"]["action_source"]
+        self.hold_frames = int(hold_frames)
+        self.max_gap_ms = float(max_gap_ms)
+
+    def state_blocks(self) -> list[StateBlock]:
+        return [StateBlock(c.name, c.dim, f"{c.name}_state", f"{c.name}_cmd")
+                for c in self.profile.components]
+
+    @property
+    def state_dim(self) -> int:
+        return self.profile.dimension
+
+    @property
+    def action_dim(self) -> int:
+        return self.profile.dimension
+
+    def state_names(self) -> list[str]:
+        return [joint for c in self.profile.components for joint in c.joints]
+
+    def required_streams(self) -> dict[str, int]:
+        return {f"{c.name}_{leaf}": c.dim for c in self.profile.components
+                for leaf in ("state", "cmd")}
+
+    def stream_topic(self, stream: str) -> str:
+        name, leaf = stream.rsplit("_", 1)
+        return self.profile.topic(name, "joint_states" if leaf == "state" else "joint_commands")
+
+    def expected_names(self, stream: str) -> list[str]:
+        name, _ = stream.rsplit("_", 1)
+        return list(self.profile.component(name).joints)
+
+    def camera_topic(self, role: str) -> str:
+        if role not in self.cameras:
+            raise ValueError(f"unknown camera role {role}")
+        return f"{self.profile.namespace}/camera/{role}/image/compressed"
+
+    def action_block_stream(self, block: StateBlock) -> str:
+        return block.cmd_stream or block.state_stream
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"nexus_profile": self.profile.raw, "profile_sha256": self.profile.digest,
+                "schema_version": 2, "dataset_fps": self.dataset_fps,
+                "action_source": self.action_source, "cameras": self.cameras,
+                "hold_frames": self.hold_frames, "max_gap_ms": self.max_gap_ms,
+                "state_dim": self.state_dim, "state_blocks": [
+                    {"name": b.name, "dim": b.dim} for b in self.state_blocks()]}
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "NexusCollectSchema":
+        from nexus_core.profile import Profile
+        profile = Profile(raw["nexus_profile"])
+        if raw.get("profile_sha256") != profile.digest:
+            raise ValueError("NEXUS episode profile digest mismatch")
+        return cls(profile, raw.get("hold_frames", 10), raw.get("max_gap_ms", 100.0))

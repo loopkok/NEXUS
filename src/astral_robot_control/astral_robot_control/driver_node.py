@@ -118,6 +118,7 @@ class AstralRobotDriverNode(Node):
         self.declare_parameter("left_gripper_ns", LEFT_GRIPPER_NS)
         self.declare_parameter("right_gripper_ns", RIGHT_GRIPPER_NS)
         self.declare_parameter("enable_gripper_cmd", True)
+        self.declare_parameter("enable_gripper_ratio_cmd", True)
         # Float64 0–1 → set_gripper_angle (CMD 0x97/0x98；不是 0x31/0x32)
         # 真机方向：0.8=张开, 0.0=合拢。
         self.declare_parameter("left_gripper_open_rad", 0.8)
@@ -152,6 +153,7 @@ class AstralRobotDriverNode(Node):
         right_g_ns = str(self.get_parameter("right_gripper_ns").value).strip("/")
         self.enable_head_cmd = bool(self.get_parameter("enable_head_cmd").value)
         self.enable_gripper_cmd = bool(self.get_parameter("enable_gripper_cmd").value)
+        self.enable_gripper_ratio_cmd = bool(self.get_parameter("enable_gripper_ratio_cmd").value)
         self._grip_open_rad = {
             "left": float(self.get_parameter("left_gripper_open_rad").value),
             "right": float(self.get_parameter("right_gripper_open_rad").value),
@@ -223,18 +225,19 @@ class AstralRobotDriverNode(Node):
                 partial(self._on_grip_js, "right"),
                 qos,
             )
-            self.create_subscription(
-                Float64,
-                self._left_grip_ratio_topic,
-                partial(self._on_grip_ratio, "left"),
-                qos,
-            )
-            self.create_subscription(
-                Float64,
-                self._right_grip_ratio_topic,
-                partial(self._on_grip_ratio, "right"),
-                qos,
-            )
+            if self.enable_gripper_ratio_cmd:
+                self.create_subscription(
+                    Float64,
+                    self._left_grip_ratio_topic,
+                    partial(self._on_grip_ratio, "left"),
+                    qos,
+                )
+                self.create_subscription(
+                    Float64,
+                    self._right_grip_ratio_topic,
+                    partial(self._on_grip_ratio, "right"),
+                    qos,
+                )
 
         self.create_service(Trigger, "~/ready", self._srv_ready)
         self.create_service(Trigger, "~/enable", self._srv_enable)

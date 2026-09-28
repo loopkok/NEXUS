@@ -45,6 +45,7 @@ from astral_data_collect.schema import (
     EE_GRIPPER,
     STREAM_TOPICS,
     CollectSchema,
+    NexusCollectSchema,
 )
 
 STATE_IDLE = "IDLE"
@@ -147,6 +148,7 @@ class DataCollectNode(Node):
         self._save_root = os.path.expanduser(str(p("save_root", "~/astral_data")))
         self._session = str(p("session", "default_task"))
         self._camera_prefix = str(p("camera_topic_prefix", "/quest3_video_streamer/collect"))
+        profile_file = str(p("profile_file", "")).strip()
 
         arms_param = p("arms", ["left", "right"])
         if isinstance(arms_param, str):
@@ -169,6 +171,11 @@ class DataCollectNode(Node):
             max_gap_ms=float(p("max_gap_ms", 100.0)),
             jpeg_quality=int(p("jpeg_quality", 90)),
         )
+        if profile_file:
+            from nexus_core.profile import Profile
+            self._schema = NexusCollectSchema(Profile.load(profile_file))
+            self.get_logger().info(
+                f"NEXUS frozen profile sha256={self._schema.profile.digest}")
         self._streams = self._schema.required_streams()
 
         # 单例锁：/data_collect/control 是全局单例控制面——任何第二个采集
@@ -272,8 +279,10 @@ class DataCollectNode(Node):
         from sensor_msgs.msg import CompressedImage, JointState
 
         for name, dim in self._streams.items():
-            topic = STREAM_TOPICS[name][0]
-            if name.endswith("_gripper_ratio"):
+            topic = (self._schema.stream_topic(name)
+                     if isinstance(self._schema, NexusCollectSchema)
+                     else STREAM_TOPICS[name][0])
+            if name.endswith("_gripper_ratio") and not isinstance(self._schema, NexusCollectSchema):
                 self.create_subscription(
                     Float64, topic,
                     self._mk_float_cb(name), _SENSOR_QOS,
@@ -284,7 +293,9 @@ class DataCollectNode(Node):
                     self._mk_joint_cb(name, dim), _SENSOR_QOS,
                 )
         for cam in self._schema.cameras:
-            topic = f"{self._camera_prefix}/{cam}"
+            topic = (self._schema.camera_topic(cam)
+                     if isinstance(self._schema, NexusCollectSchema)
+                     else f"{self._camera_prefix}/{cam}")
             self.create_subscription(
                 CompressedImage, topic, self._mk_cam_cb(cam), _IMAGE_QOS
             )
@@ -311,6 +322,10 @@ class DataCollectNode(Node):
                 return
             now = time.time()
             pos = list(msg.position)
+            if isinstance(self._schema, NexusCollectSchema):
+                if list(msg.name) != self._schema.expected_names(name) or len(pos) != dim:
+                    self._drop_counts[f"invalid:{name}"] = self._drop_counts.get(f"invalid:{name}", 0) + 1
+                    return
             if len(pos) > dim:
                 pos = pos[:dim]
             elif len(pos) < dim:

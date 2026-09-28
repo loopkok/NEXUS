@@ -30,6 +30,7 @@ WujiHandDriverNode::WujiHandDriverNode() : Node("wujihand_driver"), hardware_con
   this->declare_parameter("serial_number", "");
   this->declare_parameter("hand_side", "");
   this->declare_parameter("name_by_handedness", false);
+  this->declare_parameter("auto_enable", true);
   this->declare_parameter("publish_rate", 1000.0);
   this->declare_parameter("filter_cutoff_freq", 10.0);
   this->declare_parameter("diagnostics_rate", 10.0);
@@ -137,8 +138,11 @@ bool WujiHandDriverNode::connect_hardware() {
     // Disable thread safety check for multi-threaded access
     hand_->disable_thread_safe_check();
 
-    // Enable all joints
-    hand_->write<wujihandcpp::data::joint::Enabled>(true);
+    // NEXUS keeps motors disabled until its explicit enable gate. The
+    // legacy launch retains the historical default of auto-enable.
+    if (this->get_parameter("auto_enable").as_bool()) {
+      hand_->write<wujihandcpp::data::joint::Enabled>(true);
+    }
 
     // Read handedness (0 = right, 1 = left)
     auto handedness_value = hand_->read<wujihandcpp::data::hand::Handedness>();

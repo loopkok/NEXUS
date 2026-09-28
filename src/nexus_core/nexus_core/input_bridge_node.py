@@ -1,0 +1,71 @@
+"""Normalize the selected input and camera sources into NEXUS topics."""
+
+import rclpy
+from geometry_msgs.msg import PoseArray, PoseStamped
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import CompressedImage, Joy
+from std_msgs.msg import String
+
+from .profile import Profile
+
+
+class InputBridgeNode(Node):
+    def __init__(self):
+        super().__init__("nexus_input_bridge")
+        self.declare_parameter("profile_file", "")
+        self.profile = Profile.load(str(self.get_parameter("profile_file").value))
+        ns = self.profile.namespace
+        self._frames: dict[str, str] = {}
+        for side in ("left", "right"):
+            selected = self.profile.raw["inputs"].get(side, {})
+            if selected.get("wrist") == "quest3":
+                self._relay(PoseStamped, f"/quest3/{side}_wrist_pose",
+                            f"{ns}/input/{side}/wrist_pose", stable_frame=True)
+                self._relay(Joy, f"/quest3/{side}_controller_joy",
+                            f"{ns}/input/{side}/controller_joy", stable_frame=True)
+            if selected.get("hand") in ("quest3", "wuji_glove"):
+                self._relay(PoseArray, f"/hand_landmarks/{side}",
+                            f"{ns}/input/{side}/hand_landmarks", stable_frame=True)
+        self._relay(PoseArray, "/quest3/body_joints", f"{ns}/input/body_joints", stable_frame=True)
+        self._relay(String, "/quest3/body_joint_names", f"{ns}/input/body_joint_names")
+        for camera in self.profile.raw["cameras"]:
+            if camera["source"] == "quest3_video_streamer":
+                role = camera["role"]
+                self._relay(CompressedImage, f"/quest3_video_streamer/collect/{role}",
+                            f"{ns}/camera/{role}/image/compressed", stable_frame=True)
+        self.get_logger().info(f"input bridge profile={self.profile.profile_id} sha256={self.profile.digest}")
+
+    def _relay(self, msg_type, input_topic: str, output_topic: str,
+               stable_frame: bool = False) -> None:
+        publisher = self.create_publisher(msg_type, output_topic, qos_profile_sensor_data)
+
+        def forward(msg):
+            if hasattr(msg, "header"):
+                stamp = msg.header.stamp
+                if stamp.sec == 0 and stamp.nanosec == 0:
+                    msg.header.stamp = self.get_clock().now().to_msg()
+                if stable_frame:
+                    frame = msg.header.frame_id
+                    if not frame:
+                        self.get_logger().error(f"missing frame_id on {input_topic}", throttle_duration_sec=2.0)
+                        return
+                    previous = self._frames.get(input_topic)
+                    if previous and previous != frame:
+                        self.get_logger().error(f"frame switch {input_topic}: {previous} -> {frame}; dropped",
+                                                throttle_duration_sec=2.0)
+                        return
+                    self._frames[input_topic] = frame
+            publisher.publish(msg)
+
+        self.create_subscription(msg_type, input_topic, forward, qos_profile_sensor_data)
+
+
+def main() -> None:
+    rclpy.init()
+    node = InputBridgeNode()
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()

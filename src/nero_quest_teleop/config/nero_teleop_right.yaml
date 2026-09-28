@@ -1,0 +1,64 @@
+# Nero Teleop Configuration (Right Arm) — Overrides
+nero_teleop_right:
+  ros__parameters:
+
+    # ---- Arm selection ----
+    arm_side: "right"
+
+    # ---- CAN connection ----
+    can_channel: "can_nero_right"
+    firmware_version: "default"
+    can_interface: "socketcan"
+
+    # ---- Control loop ----
+    control_rate: 125.0
+
+    # ---- IK Solver ----
+    solver_type: "analytic_dh"
+    ik_service_name: "/ik_solver_right/solve_ik"
+
+    urdf_package: "agx_arm_description"
+    urdf_relative_path: "urdf/nero/urdf/nero_description.urdf"
+    ik_w_pos: 20.0
+    ik_w_ori: 2.0
+    ik_w_reg: 0.01
+    ik_w_smooth: 2.0
+    ik_max_iter: 8
+    ik_tol: 0.001
+
+    # ---- VR pose processing ----
+    # Right arm: VR X+(forward) -> Arm Y-(forward, since arm Y+ is backward)
+    #            VR Y+(right)   -> Arm Z+(outward)
+    #            VR Z+(down)    -> Arm X-(down)
+    vr_to_arm_rot: [0.0, 1.0, 0.0,
+                    0.0, 0.0, -1.0,
+                    1.0, 0.0, 0.0]
+    pos_smoothing: 0.8 #0.5
+    rot_smoothing: 0.8
+    motion_scale: 0.65
+    flip_pitch: false
+
+    # ---- TCP offset ----
+    tcp_offset: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    # ---- Safety ----
+    max_joint_vel: 0.065 #0.05
+    print_metrics: false
+    dry_run: false
+    require_clench_to_start: true
+    workspace_radius: 0.58
+    data_timeout: 5.0
+
+    workspace_x_min: -.inf
+    workspace_x_max: .inf
+    workspace_y_min: -.inf
+    workspace_y_max: .inf
+    workspace_z_min: -.inf
+    workspace_z_max: .inf
+
+    # ---- Startup initialization ----
+    # init_pose: [1.4486, 1.4835, 0.2618, 1.1170, -1.9897, 0.9425, 0.1571]
+    init_pose: [0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163]
+    init_speed_percent: 10
+    move_to_init_pose: true
+    
