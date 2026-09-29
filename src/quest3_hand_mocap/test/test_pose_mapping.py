@@ -5,9 +5,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from quest3_hand_mocap.pose_mapping import (
-    map_wrist_pose, quaternion_to_matrix, rotate_pose,
-)
+from quest3_hand_mocap.pose_mapping import map_wrist_pose, quaternion_to_matrix, rotate_pose  # noqa: E402
 
 
 LEFT = np.array([[0, 1, 0], [0, 0, 1], [-1, 0, 0]], dtype=float)

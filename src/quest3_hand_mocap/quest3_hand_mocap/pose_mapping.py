@@ -46,7 +46,8 @@ def matrix_to_quaternion(matrix: np.ndarray) -> np.ndarray:
 def rotate_pose(
     position: np.ndarray, quaternion_xyzw: np.ndarray, rotation: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Express a pose in a rotated basis, preserving the pose's origin.
+    """
+    Express a pose in a rotated basis, preserving the pose's origin.
 
     ``rotation`` maps input-frame vector components to output-frame components;
     it may change handedness when converting between coordinate conventions.
@@ -75,7 +76,8 @@ def map_wrist_pose(
     side_rotation: np.ndarray,
     global_rotation: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Apply either the per-side arm mapping or the generic Quest mapping.
+    """
+    Apply either the per-side arm mapping or the generic Quest mapping.
 
     The side-specific route is an override: it never composes with
     ``global_rotation``. This avoids applying Astral's generic conversion and
