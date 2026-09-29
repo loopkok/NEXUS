@@ -38,6 +38,7 @@ Contract (default)::
 from __future__ import annotations
 
 from functools import partial
+import json
 import threading
 import time
 from typing import List, Optional
@@ -89,7 +90,7 @@ class AstralRobotDriverNode(Node):
         super().__init__("astral_robot_driver")
 
         # --- hardware / SDK ---
-        self.declare_parameter("control_board_ip", "192.168.10.2")
+        self.declare_parameter("control_board_ip", "")
         self.declare_parameter("board_cmd_port", 5001)
         self.declare_parameter("local_ip", "0.0.0.0")
         self.declare_parameter("local_port", 8081)

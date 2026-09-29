@@ -116,6 +116,12 @@ Quest3 接收沿用 mocap 配置的有线 TCP 端口 8000，使用前在主机�
 桌面，不嵌入浏览器。窗口开关只作用于该次仿真进程，不改变装配 profile
 及其布局哈希。若 Web 服务以无图形会话的方式运行，关闭窗口选项仍可
 启动无头仿真。
+
+### NEXUS Astral 真机 profile
+
+Astral 真机 profile 从环境变量 `ASTRAL_CONTROL_BOARD_IP` 读取控制板地址，
+启动 Web 服务前在桌面终端设置该变量。`dry_run` 仿真不需要该变量。
+
 | POST | `/api/v1/pause` | 发 `/teleop/disarm`（软暂停，节点保持运行） |
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
 | POST | `/api/v1/teleop/start` | 发 `/teleop/start`（一次性，记录 `vr_init` 并 arm；配合 `require_start_signal`；无条件发送，臂节点自行判断有效性） |

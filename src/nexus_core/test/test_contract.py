@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ from nexus_core.adapter_registry import (Adapter, CameraAdapter, IKAdapter,
                                          INPUT_ADAPTERS, RETARGETERS, discover_plugins,
                                          load_target)
 from nexus_core.profile import Profile, ProfileError, verify_model_manifest
+from nexus_core.builtin_launchers import _astral_control_board_ip
 from astral_data_collect.schema import CollectSchema, NexusCollectSchema
 
 
@@ -26,6 +28,25 @@ def profile(name):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_astral_gripper_limits_and_board_ip_environment(self):
+        for name in ("astral_dual_gripper", "astral_gripper_wuji",
+                     "astral_gripper_wuji_glove"):
+            p = profile(name)
+            self.assertEqual(p.adapter_config("astral_sdk")["control_board_ip"],
+                             "${ASTRAL_CONTROL_BOARD_IP}")
+            for component in p.components:
+                if component.kind == "gripper":
+                    self.assertEqual(component.lower, (0.0,))
+                    self.assertEqual(component.upper, (2.5,))
+
+        p = profile("astral_gripper_wuji")
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_astral_control_board_ip(p, required=False), "")
+            with self.assertRaisesRegex(RuntimeError, "ASTRAL_CONTROL_BOARD_IP"):
+                _astral_control_board_ip(p, required=True)
+        with patch.dict(os.environ, {"ASTRAL_CONTROL_BOARD_IP": "192.0.2.10"}):
+            self.assertEqual(_astral_control_board_ip(p, required=True), "192.0.2.10")
+
     def test_builtins_and_schema_roundtrip(self):
         for name, dimension in (("astral_dual_gripper", 16),
                                 ("astral_gripper_wuji", 35),

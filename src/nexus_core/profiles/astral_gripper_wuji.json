@@ -172,7 +172,7 @@
         0.0
       ],
       "upper": [
-        0.8
+        2.5
       ],
       "driver": "astral_sdk",
       "feedback": "command_echo",
@@ -298,7 +298,9 @@
   "profile_id": "astral_gripper_wuji",
   "adapter_config": {
     "astral_sdk": {
-      "control_board_ip": "192.168.10.2"
+      "control_board_ip": "${ASTRAL_CONTROL_BOARD_IP}",
+      "gripper_open_rad": 2.5,
+      "gripper_closed_rad": 0.0
     },
     "wuji_serial": {
       "serials": {

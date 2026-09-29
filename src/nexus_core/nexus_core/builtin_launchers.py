@@ -37,10 +37,19 @@ def _node_name(prefix: str, component) -> str:
     return f"{prefix}_{_safe(component.name)}"
 
 
+def _astral_control_board_ip(profile, required: bool) -> str:
+    value = str(profile.adapter_config("astral_sdk").get("control_board_ip", "")).strip()
+    if value.startswith("${") and value.endswith("}"):
+        value = os.environ.get(value[2:-1], "").strip()
+    if required and (not value or value.startswith("SET_")):
+        raise RuntimeError(
+            "set ASTRAL_CONTROL_BOARD_IP for Astral hardware startup"
+        )
+    return value
+
+
 def preflight_astral(profile, components) -> None:
-    address = profile.adapter_config("astral_sdk").get("control_board_ip", "")
-    if not address or str(address).startswith("SET_"):
-        raise RuntimeError("configure adapter_config.astral_sdk.control_board_ip")
+    _astral_control_board_ip(profile, required=True)
     from astral_robot_control.joint_layout import ASTRAL_SDK_IDS_AVAILABLE
     if not ASTRAL_SDK_IDS_AVAILABLE:
         raise RuntimeError(
@@ -100,12 +109,17 @@ def launch_astral_driver(profile, components, path: str, dry_run: bool):
             for side in ("left", "right")}
     grippers = {side: next((c for c in components if c.kind == "gripper" and c.side == side), None)
                 for side in ("left", "right")}
+    astral_config = profile.adapter_config("astral_sdk")
     cfg = _share("astral_robot_control", "config", "astral_robot.yaml")
     params = {
-        "control_board_ip": profile.adapter_config("astral_sdk")["control_board_ip"],
+        "control_board_ip": _astral_control_board_ip(profile, required=not dry_run),
         "dry_run": dry_run, "auto_ready": False,
         "enable_full_body_cmd": False, "enable_head_cmd": False,
         "enable_gripper_cmd": any(grippers.values()), "enable_gripper_ratio_cmd": False,
+        "left_gripper_open_rad": float(astral_config.get("gripper_open_rad", 2.5)),
+        "right_gripper_open_rad": float(astral_config.get("gripper_open_rad", 2.5)),
+        "left_gripper_closed_rad": float(astral_config.get("gripper_closed_rad", 0.0)),
+        "right_gripper_closed_rad": float(astral_config.get("gripper_closed_rad", 0.0)),
         "left_arm_ns": f"{ns}/components/{arms['left'].name}" if arms["left"] else f"{ns}/unused/left_arm",
         "right_arm_ns": f"{ns}/components/{arms['right'].name}" if arms["right"] else f"{ns}/unused/right_arm",
         "left_gripper_ns": f"{ns}/components/{grippers['left'].name}" if grippers['left'] else f"{ns}/unused/left_gripper",

@@ -3,11 +3,19 @@
 import rclpy
 from geometry_msgs.msg import PoseArray, PoseStamped
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
+                       ReliabilityPolicy, qos_profile_sensor_data)
 from sensor_msgs.msg import CompressedImage, Joy
 from std_msgs.msg import String
 
 from .profile import Profile
+
+_LATCHED_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+)
 
 
 class InputBridgeNode(Node):
@@ -31,7 +39,9 @@ class InputBridgeNode(Node):
                     continue
                 self._relay(message_type, spec["topic"],
                             f"{ns}/input/{channel}/{output_name}",
-                            stable_frame=spec.get("frame_policy") == "stable")
+                            stable_frame=spec.get("frame_policy") == "stable",
+                            publisher_qos=_LATCHED_QOS if semantic == "body_joint_names" else None,
+                            subscriber_qos=_LATCHED_QOS if semantic == "body_joint_names" else None)
         for camera in self.profile.raw["cameras"]:
             capture_topic = camera.get("capture_topic")
             if capture_topic:
@@ -41,8 +51,9 @@ class InputBridgeNode(Node):
         self.get_logger().info(f"input bridge profile={self.profile.profile_id} sha256={self.profile.digest}")
 
     def _relay(self, msg_type, input_topic: str, output_topic: str,
-               stable_frame: bool = False) -> None:
-        publisher = self.create_publisher(msg_type, output_topic, qos_profile_sensor_data)
+               stable_frame: bool = False, publisher_qos=None, subscriber_qos=None) -> None:
+        publisher = self.create_publisher(
+            msg_type, output_topic, publisher_qos or qos_profile_sensor_data)
 
         def forward(msg):
             if hasattr(msg, "header"):
@@ -62,7 +73,8 @@ class InputBridgeNode(Node):
                     self._frames[input_topic] = frame
             publisher.publish(msg)
 
-        self.create_subscription(msg_type, input_topic, forward, qos_profile_sensor_data)
+        self.create_subscription(msg_type, input_topic, forward,
+                                 subscriber_qos or qos_profile_sensor_data)
 
 
 def main() -> None:
