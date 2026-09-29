@@ -60,14 +60,22 @@ ros2 launch nexus_core system.launch.py \
   data_root:=/home/loopkok/NEXUS/data/simulation session:=smoke
 ```
 
-In another sourced shell, run `python3 scripts/nexus_sim_acceptance.py --profile
-src/nexus_core/profiles/nero_dual_xhand_mujoco.json` for recording and rerun it
-with `--phase policy` for policy/HITL. Use a new `data_root` and `session` for
-each recording. Then align and validate the episode and export the training
-layout. Save command output and the profile hash under `docs/test_logs/` before
-publishing the test report. The full test suite currently contains legacy lint
-failures and CAN-dependent `pyAgxArm` demos; avoid running those demos on a host
-with live robot CAN interfaces until they are marked as hardware tests.
+In another sourced shell, run the synthetic recording and policy checks:
+
+```bash
+python3 scripts/nexus_sim_acceptance.py \
+  --profile src/nexus_core/profiles/nero_dual_xhand_mujoco.json
+python3 scripts/nexus_sim_acceptance.py \
+  --profile src/nexus_core/profiles/nero_dual_xhand_mujoco.json \
+  --phase policy
+```
+
+Use a new `data_root` and `session` for each recording. Then align and validate
+the episode and export the training layout. Save command output and the profile
+hash under `docs/test_logs/` before publishing the test report. The full test
+suite currently contains legacy lint failures and CAN-dependent `pyAgxArm`
+demos; avoid running those demos on a host with live robot CAN interfaces until
+they are marked as hardware tests.
 
 ## Real hardware gate
 

@@ -1,0 +1,71 @@
+Starting >>> wujihand_msgs
+Starting >>> xhand_control_interfaces
+Starting >>> quest3_hand_mocap
+Starting >>> astral_robot_description
+Starting >>> astral_robot_control
+Starting >>> wuji_glove
+Starting >>> wujihand_retargeting
+Starting >>> astral_gripper_teleop
+Starting >>> quest3_video_streamer
+Starting >>> astral_arm_description
+Starting >>> nero_quest_teleop
+Starting >>> xhand_nero_description
+Starting >>> astral_web_monitor
+Starting >>> pyAgxArm
+Finished <<< astral_robot_description [2.37s]
+Finished <<< astral_arm_description [2.36s]
+Starting >>> astral_arm_clean_description
+Finished <<< xhand_control_interfaces [2.42s]
+Finished <<< wujihand_msgs [2.44s]
+Finished <<< xhand_nero_description [2.41s]
+Starting >>> wujihand_driver
+Starting >>> nexus_core
+Starting >>> nero_dual_data_collect
+Starting >>> xhand_control_ros2
+Starting >>> xhand_retargeting
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'script-dir' will not be supported in future versions. Please use the underscore name 'script_dir' instead
+  warnings.warn(
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'install-scripts' will not be supported in future versions. Please use the underscore name 'install_scripts' instead
+  warnings.warn(
+Finished <<< astral_arm_clean_description [0.88s]
+Finished <<< wujihand_driver [0.84s]
+Starting >>> wujihand_bringup
+Finished <<< xhand_control_ros2 [0.85s]
+Finished <<< wujihand_bringup [0.08s]
+Finished <<< astral_web_monitor [3.67s]
+Finished <<< astral_robot_control [3.71s]
+Finished <<< quest3_video_streamer [3.70s]
+Finished <<< quest3_hand_mocap [3.74s]
+Finished <<< wuji_glove [3.73s]
+Finished <<< nero_quest_teleop [3.72s]
+Finished <<< astral_gripper_teleop [3.74s]
+Finished <<< pyAgxArm [3.72s]
+Finished <<< wujihand_retargeting [3.75s]
+Starting >>> astral_arm_teleop
+Starting >>> wujihand_control
+Starting >>> wujihand_mujoco_sim
+Finished <<< nexus_core [1.61s]
+Starting >>> astral_data_collect
+Starting >>> nero_mujoco_sim
+Finished <<< nero_dual_data_collect [2.15s]
+--- stderr: xhand_retargeting
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'script-dir' will not be supported in future versions. Please use the underscore name 'script_dir' instead
+  warnings.warn(
+---
+Finished <<< xhand_retargeting [2.15s]
+Finished <<< wujihand_mujoco_sim [1.84s]
+Finished <<< astral_arm_teleop [1.86s]
+Finished <<< wujihand_control [1.87s]
+Starting >>> astral_teleop
+Starting >>> astral_pim_ik
+Finished <<< astral_data_collect [1.63s]
+Finished <<< nero_mujoco_sim [1.63s]
+Starting >>> astral_policy_inference
+Finished <<< astral_pim_ik [1.36s]
+Finished <<< astral_teleop [1.41s]
+Starting >>> astral_mujoco_sim
+Finished <<< astral_policy_inference [1.16s]
+Finished <<< astral_mujoco_sim [1.16s]
+
+Summary: 30 packages finished [8.82s]
+  1 package had stderr output: xhand_retargeting

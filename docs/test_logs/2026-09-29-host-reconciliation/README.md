@@ -1,62 +1,76 @@
-# Host reconciliation and verification — 2026-09-29
+# Deployment sync and verification — 2026-09-29
 
-The tested source revision was `adf722232f2715372fccdf033fe6dfc3e61cbd72`
-(`build: declare MuJoCo simulator test dependencies`). The commit added only
-the simulator test dependency declaration on top of the Quest pose-mapping fix.
-This report and its raw logs are documentation-only follow-up changes.
+The final source revision built and exercised from the canonical host path was
+`c9953d36d9bf324edda901e35f8230a6ff766b4c`. Local `main`, GitHub `origin/main`,
+and `/home/loopkok/NEXUS` were verified at this same revision. Commits after
+`adf7222` changed documentation, logs, and data ignore rules only; the full
+workspace test result below is from the same functional source tree.
 
-## Source reconciliation
+## Source reconciliation and host layout
 
-- Local `main`, GitHub `origin/main`, and the clean host candidate checkout were
-  all at `adf722232f2715372fccdf033fe6dfc3e61cbd72` before this report was
-  prepared.
+- The original dirty checkout is preserved at
+  `/home/loopkok/NEXUS_archive_b276065_20260929`. The canonical
+  `/home/loopkok/NEXUS` is a clean `main` checkout with the SSH remote
+  `git@github.com:loopkok/NEXUS.git`.
+- Original `data` and `test_artifacts` remain accessible through symlinks from
+  the canonical checkout into the archive. This run's raw episode and ACT
+  export are saved under `/home/loopkok/NEXUS/data/simulation/`.
 - Compared the old host working tree to the NEXUS migration commit after
   normalizing CRLF/LF line endings. 791 checked source files matched. The five
-  remaining paths were old/superseded host versions of the Quest mapping and
-  policy regression test, plus a newline-only package file difference. The
-  current candidate contains their later committed replacements. The old host
-  checkout and its data are retained intact during the final path switch.
-- HTTPS ref listing works, but an HTTPS pack fetch stalls on this host even
-  with HTTP/1.1. GitHub SSH authentication succeeded, and the candidate
-  checkout fast-forwarded to the published documentation/test-log commit over
-  SSH. The canonical host checkout will use the SSH remote.
+  remaining files were superseded Quest mapping/policy tests or a newline-only
+  package-file difference; the final checkout contains their newer versions.
+- HTTPS ref listing works, but HTTPS pack fetching stalls on this host. GitHub
+  SSH authentication and `git pull --ff-only origin main` were verified.
 
-## Passed on the Ubuntu 22.04 / ROS 2 Humble host
+## Final-path checks at `c9953d3`
 
-- Full workspace build: **30 packages finished**.
-- Relevant pure/unit tests: **28 passed** across NEXUS contracts, Nero MuJoCo
-  model construction, and Quest pose mapping (`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`).
-- Nero dual-arm + dual-XHand simulation, with synthetic Quest 3 and JPEG camera
-  input, passed recording acceptance. Final command topics each had one
-  publisher. Arm command flow was 94.5–94.6 Hz; all three synthetic camera
-  streams produced 757 frames. Link7 translation tracking was 9.83–9.86 mm
-  against 10.4 mm expected, input/output correlation 0.962–0.964, and measured
-  rotation drift 0.035°. Input-to-candidate latency was 3.5/10.0 ms median and
-  6.2/12.8 ms p95 for left/right. Wrist loss paused arbitration in 856 ms.
-- The recording produced one 15.07 s episode with 452 aligned frames at 30 Hz,
-  state dimension 38, and base/left-wrist/right-wrist camera roles. The raw
-  quality check reported **1 pass, 0 warnings, 0 failures**.
-- ACT LeRobot v3 export completed with 452 frames; its structural checks passed
-  for statistics, camera dimensions, task metadata, Parquet, and video decoding.
-- The stub policy/HITL run passed POLICY → HUMAN takeover → POLICY return → IDLE.
-- No physical robot driver or real camera was launched. The simulator used
-  `ROS_DOMAIN_ID=73`, `ROS_LOCALHOST_ONLY=1`, and synthetic sensor publishers.
+- Clean-login full workspace build: **30 packages finished**.
+- Targeted NEXUS contract, Nero MuJoCo model, and Quest pose-mapping tests:
+  **28 passed** (`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`).
+- Nero dual-arm + dual-XHand MuJoCo teleoperation with synthetic Quest 3 and
+  JPEG camera input: **PASS**. Every final arm/hand command topic had one
+  publisher. Arm command flow was about 95.5 Hz; synthetic camera counts were
+  743/743/742. Link7 translation tracked 9.83/9.86 mm against 10.4 mm expected,
+  with input/output correlation 0.967/0.962 and orientation drift 0.0355/0.0353°.
+  Input-to-candidate latency p50/p95 was 13.4/19.4 ms left and 1.9/5.6 ms right.
+  Wrist loss paused arbitration in 832 ms.
+- The saved episode is 14.53 s, 436 frames at 30 Hz, state dimension 38, with
+  base/left-wrist/right-wrist camera roles. Alignment reported no missing state
+  blocks, state gaps, or distant image frames. Data quality reported **1 pass,
+  0 warnings, 0 failures**.
+- ACT LeRobot v3 export completed for 436 frames. Structural checks passed for
+  statistics, camera dimensions, task metadata, Parquet, and video decoding.
+- Stub-policy HITL passed POLICY → HUMAN takeover → POLICY return → IDLE.
+- No real robot driver, servo enable, or physical camera launch occurred. These
+  runs used `ROS_DOMAIN_ID=73`, `ROS_LOCALHOST_ONLY=1`, the MuJoCo profile, and
+  synthetic sensor publishers.
 
 ## Remaining test gates
 
-- A full `colcon test` is **not green**. The legacy Quest package still fails
-  flake8/pep257 checks, and the imported XHand ROS driver has copyright,
-  flake8, CMake line-length, and uncrustify failures. `pyAgxArm`'s demo tests
-  also fail because `can0` is down and `can_nero_left` does not exist on this
-  test host. They were not retried after that full test run, to avoid repeated
-  CAN access attempts.
-- The host does not have `lerobot-train` or an OpenPI training environment, so
-  this sync verified ACT export and stub policy control, not a new ACT/pi0.5
-  training job or a real checkpoint service handshake.
-- This is simulated acceptance only. Real driver enablement, real camera
-  capture, and real-robot release checks remain separate gates.
+- The full `colcon test` run is **not green**. The legacy Quest package fails
+  flake8/pep257 checks. The imported XHand ROS driver fails copyright, flake8,
+  CMake line-length, and uncrustify checks. `pyAgxArm` demo tests failed before
+  connecting because `can0` is down and `can_nero_left` does not exist. Those
+  CAN tests were not repeated. No motor command was issued.
+- The deployment host has no `lerobot-train` or OpenPI training environment.
+  This verification covers ACT export and stub policy control, not a new
+  ACT/pi0.5 training run or a real checkpoint service handshake.
+- Physical camera capture and real-robot safety/release checks remain separate
+  acceptance gates.
 
 ## Raw logs
+
+Final-path logs from `c9953d3`:
+
+- [`nexus_c9953d3_final_cleanenv_build.log`](final-c9953d3/nexus_c9953d3_final_cleanenv_build.log)
+- [`nexus_c9953d3_final_targeted_tests.log`](final-c9953d3/nexus_c9953d3_final_targeted_tests.log)
+- [`nexus_c9953d3_final_record.json`](final-c9953d3/nexus_c9953d3_final_record.json)
+- [`nexus_c9953d3_final_policy.json`](final-c9953d3/nexus_c9953d3_final_policy.json)
+- [`nexus_c9953d3_final_align.log`](final-c9953d3/nexus_c9953d3_final_align.log)
+- [`nexus_c9953d3_final_validate.log`](final-c9953d3/nexus_c9953d3_final_validate.log)
+- [`nexus_c9953d3_final_act_export.log`](final-c9953d3/nexus_c9953d3_final_act_export.log)
+
+Earlier broad suite and preliminary candidate logs:
 
 - [`nexus_adf7222_full_build.log`](nexus_adf7222_full_build.log)
 - [`nexus_adf7222_full_test.log`](nexus_adf7222_full_test.log)

@@ -2,18 +2,19 @@
 
 ## 2026-09-29 — Reconcile local, GitHub, and deployment host
 
-- Selected GitHub `origin/main` as the source of truth. Local `main` and the
-  clean host candidate were synchronized to `adf722232f2715372fccdf033fe6dfc3e61cbd72`;
-  the previous dirty host checkout was reviewed and will be preserved as an
-  archive when `/home/loopkok/NEXUS` is switched to the clean checkout.
-- Rechecked all 30 ROS packages with a full build. Targeted NEXUS contract,
-  MuJoCo model and Quest mapping tests passed 28/28. MuJoCo recording, measured
-  link7 tracking, dropout pause, data alignment/quality, ACT v3 export, and
-  stub-policy HITL results are in the linked [host reconciliation report](docs/test_logs/2026-09-29-host-reconciliation/README.md).
+- Selected GitHub `origin/main` as the source of truth. The canonical host
+  checkout `/home/loopkok/NEXUS` now tracks `main` over SSH; local and GitHub
+  were verified at the same commit. The previous dirty host checkout and its
+  data are preserved at `/home/loopkok/NEXUS_archive_b276065_20260929`.
+- At source revision `c9953d36d9bf324edda901e35f8230a6ff766b4c`, rebuilt all 30
+  ROS packages and reran 28 targeted tests from the final host path. MuJoCo
+  recording, link7 tracking, dropout pause, data alignment/quality, ACT v3
+  export, and stub-policy HITL results are in the [host reconciliation report](docs/test_logs/2026-09-29-host-reconciliation/README.md).
 - Full `colcon test` still reports legacy Quest/XHand style and metadata lint
   failures and hardware-dependent `pyAgxArm` demo tests that require CAN
-  interfaces. No real driver or camera was launched. ACT/pi0.5 training was not
-  repeated because this host has no LeRobot training command or OpenPI runtime.
+  interfaces. No robot driver, servo enable, or physical camera was launched.
+  ACT/pi0.5 training was not repeated because this host has no LeRobot training
+  command or OpenPI runtime.
 - Added [the deployment workflow](docs/DEVELOPMENT_WORKFLOW.md): local edits
   push to GitHub, then the host fast-forwards over its verified GitHub SSH key
   and runs build/simulation gates. HTTPS pack fetching stalled on the host.

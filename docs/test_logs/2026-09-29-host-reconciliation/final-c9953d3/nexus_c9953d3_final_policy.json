@@ -1,0 +1,36 @@
+[INFO] [1790661057.551486667] [nexus_sim_acceptance]: simulation acceptance profile=nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc
+{
+  "initial_mode": "POLICY",
+  "takeover_mode": "HUMAN",
+  "returned_mode": "POLICY",
+  "final_mode": "IDLE",
+  "counts": {
+    "teleop:left_ee": 236,
+    "teleop:right_ee": 236,
+    "policy:left_arm": 45,
+    "policy:right_arm": 45,
+    "policy:left_ee": 45,
+    "policy:right_ee": 45,
+    "teleop:left_arm": 13,
+    "teleop:right_arm": 13
+  },
+  "policy_state": {
+    "state": "IDLE",
+    "fault": "",
+    "model": "act",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+    "ready": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ],
+    "cameras": [
+      "base",
+      "left_wrist",
+      "right_wrist"
+    ]
+  },
+  "result": "PASS"
+}
