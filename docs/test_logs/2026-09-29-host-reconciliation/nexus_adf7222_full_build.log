@@ -1,0 +1,97 @@
+Starting >>> wujihand_msgs
+Starting >>> xhand_control_interfaces
+Starting >>> quest3_hand_mocap
+Starting >>> astral_robot_description
+Starting >>> astral_robot_control
+Starting >>> wuji_glove
+Starting >>> wujihand_retargeting
+Starting >>> astral_gripper_teleop
+Starting >>> quest3_video_streamer
+Starting >>> astral_arm_description
+Starting >>> nero_quest_teleop
+Starting >>> xhand_nero_description
+Starting >>> astral_web_monitor
+Starting >>> pyAgxArm
+Finished <<< xhand_nero_description [2.48s]
+Finished <<< wujihand_msgs [2.56s]
+Starting >>> wujihand_driver
+Finished <<< xhand_control_interfaces [2.57s]
+Starting >>> nexus_core
+Starting >>> nero_dual_data_collect
+Starting >>> xhand_control_ros2
+Starting >>> xhand_retargeting
+Finished <<< astral_robot_description [3.14s]
+Finished <<< astral_arm_description [3.12s]
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'script-dir' will not be supported in future versions. Please use the underscore name 'script_dir' instead
+  warnings.warn(
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'install-scripts' will not be supported in future versions. Please use the underscore name 'install_scripts' instead
+  warnings.warn(
+Starting >>> astral_arm_clean_description
+Finished <<< wuji_glove [3.92s]
+Finished <<< quest3_hand_mocap [3.94s]
+Finished <<< astral_gripper_teleop [3.93s]
+Finished <<< wujihand_retargeting [3.94s]
+Finished <<< astral_web_monitor [3.92s]
+Finished <<< astral_robot_control [3.97s]
+Finished <<< nero_quest_teleop [3.94s]
+Finished <<< quest3_video_streamer [3.96s]
+Finished <<< pyAgxArm [3.94s]
+Starting >>> astral_arm_teleop
+Starting >>> wujihand_mujoco_sim
+Finished <<< nexus_core [2.00s]
+Finished <<< nero_dual_data_collect [2.00s]
+--- stderr: xhand_retargeting
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'script-dir' will not be supported in future versions. Please use the underscore name 'script_dir' instead
+  warnings.warn(
+---
+Finished <<< xhand_retargeting [2.00s]
+Starting >>> astral_data_collect
+Starting >>> nero_mujoco_sim
+Finished <<< astral_arm_clean_description [1.44s]
+Finished <<< astral_arm_teleop [1.67s]
+Starting >>> astral_pim_ik
+Finished <<< wujihand_mujoco_sim [1.68s]
+Finished <<< astral_data_collect [1.39s]
+Starting >>> astral_policy_inference
+Finished <<< nero_mujoco_sim [1.41s]
+Finished <<< astral_pim_ik [1.14s]
+Finished <<< astral_policy_inference [1.12s]
+--- stderr: wujihand_driver
+In file included from /home/loopkok/.local/opt/wujihandcpp/include/wujihandcpp/device/finger.hpp:10,
+                 from /home/loopkok/.local/opt/wujihandcpp/include/wujihandcpp/device/hand.hpp:20,
+                 from /home/loopkok/NEXUS_candidate/src/wujihandros2/wujihand_driver/include/wujihand_driver/wujihand_driver_node.hpp:28,
+                 from /home/loopkok/NEXUS_candidate/src/wujihandros2/wujihand_driver/src/main.cpp:15:
+/home/loopkok/.local/opt/wujihandcpp/include/wujihandcpp/device/joint.hpp:26:61: warning: ‘using CurrentLimit = struct wujihandcpp::data::joint::EffortLimit’ is deprecated: Use EffortLimit instead [-Wdeprecated-declarations]
+   26 |         data::joint::TorqueSlopeLimitPerCycle, data::joint::CurrentLimit, data::joint::BusVoltage,
+      |                                                             ^~~~~~~~~~~~
+In file included from /home/loopkok/NEXUS_candidate/src/wujihandros2/wujihand_driver/include/wujihand_driver/wujihand_driver_node.hpp:26,
+                 from /home/loopkok/NEXUS_candidate/src/wujihandros2/wujihand_driver/src/main.cpp:15:
+/home/loopkok/.local/opt/wujihandcpp/include/wujihandcpp/data/joint.hpp:35:7: note: declared here
+   35 | using CurrentLimit [[deprecated("Use EffortLimit instead")]] = EffortLimit;
+      |       ^~~~~~~~~~~~
+In file included from /home/loopkok/.local/opt/wujihandcpp/include/wujihandcpp/device/finger.hpp:10,
+                 from /home/loopkok/.local/opt/wujihandcpp/include/wujihandcpp/device/hand.hpp:20,
+                 from /home/loopkok/NEXUS_candidate/src/wujihandros2/wujihand_driver/include/wujihand_driver/wujihand_driver_node.hpp:28,
+                 from /home/loopkok/NEXUS_candidate/src/wujihandros2/wujihand_driver/src/wujihand_driver_node.cpp:15:
+/home/loopkok/.local/opt/wujihandcpp/include/wujihandcpp/device/joint.hpp:26:61: warning: ‘using CurrentLimit = struct wujihandcpp::data::joint::EffortLimit’ is deprecated: Use EffortLimit instead [-Wdeprecated-declarations]
+   26 |         data::joint::TorqueSlopeLimitPerCycle, data::joint::CurrentLimit, data::joint::BusVoltage,
+      |                                                             ^~~~~~~~~~~~
+In file included from /home/loopkok/NEXUS_candidate/src/wujihandros2/wujihand_driver/include/wujihand_driver/wujihand_driver_node.hpp:26,
+                 from /home/loopkok/NEXUS_candidate/src/wujihandros2/wujihand_driver/src/wujihand_driver_node.cpp:15:
+/home/loopkok/.local/opt/wujihandcpp/include/wujihandcpp/data/joint.hpp:35:7: note: declared here
+   35 | using CurrentLimit [[deprecated("Use EffortLimit instead")]] = EffortLimit;
+      |       ^~~~~~~~~~~~
+---
+Finished <<< wujihand_driver [11.1s]
+Starting >>> wujihand_control
+Starting >>> wujihand_bringup
+Finished <<< wujihand_bringup [0.97s]
+Finished <<< wujihand_control [1.13s]
+Starting >>> astral_teleop
+Finished <<< xhand_control_ros2 [12.5s]
+Finished <<< astral_teleop [1.17s]
+Starting >>> astral_mujoco_sim
+Finished <<< astral_mujoco_sim [1.18s]
+
+Summary: 30 packages finished [17.7s]
+  2 packages had stderr output: wujihand_driver xhand_retargeting

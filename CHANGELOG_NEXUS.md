@@ -1,5 +1,22 @@
 # NEXUS Changelog
 
+## 2026-09-29 — Reconcile local, GitHub, and deployment host
+
+- Selected GitHub `origin/main` as the source of truth. Local `main` and the
+  clean host candidate were synchronized to `adf722232f2715372fccdf033fe6dfc3e61cbd72`;
+  the previous dirty host checkout was reviewed and will be preserved as an
+  archive when `/home/loopkok/NEXUS` is switched to the clean checkout.
+- Rechecked all 30 ROS packages with a full build. Targeted NEXUS contract,
+  MuJoCo model and Quest mapping tests passed 28/28. MuJoCo recording, measured
+  link7 tracking, dropout pause, data alignment/quality, ACT v3 export, and
+  stub-policy HITL results are in the linked [host reconciliation report](docs/test_logs/2026-09-29-host-reconciliation/README.md).
+- Full `colcon test` still reports legacy Quest/XHand style and metadata lint
+  failures and hardware-dependent `pyAgxArm` demo tests that require CAN
+  interfaces. No real driver or camera was launched. ACT/pi0.5 training was not
+  repeated because this host has no LeRobot training command or OpenPI runtime.
+- Added [the deployment workflow](docs/DEVELOPMENT_WORKFLOW.md): local edits
+  push to GitHub, then the host fast-forwards and runs build/simulation gates.
+
 ## 2026-09-29 — Correct Nero Quest frame contract
 
 - Nero Quest wrist/controller input is the Nero `link7` flange pose. Teleoperation
@@ -17,9 +34,9 @@
   geometry independently from Quest teleoperation.
 - Invalidated the previous Quest-to-TCP tracking and motion-amplitude metrics; they
   measured the wrong input/output frames. Raw prior logs remain unchanged and are
-  marked superseded in the acceptance log. A corrected-hash MuJoCo rerun validates
-  link7 tracking; corrected-hash episode quality/export and checkpoint validation
-  remain pending.
+  marked superseded in the acceptance log. The corrected-hash MuJoCo rerun validates
+  link7 tracking and the later host reconciliation run validates episode quality
+  and ACT export. Real checkpoint validation remains pending.
 
 ## 2026-09-29 — Nero MuJoCo frame and lifecycle validation
 

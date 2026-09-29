@@ -1,0 +1,84 @@
+[1/4] 对齐 raw session: /tmp/nexus_adf7222_sim_data/nexus_adf7222_smoke
+aligning 1 episodes in /tmp/nexus_adf7222_sim_data/nexus_adf7222_smoke
+  aligned episode000000: 452 frames (15.07s), missing=[], state_gap=0, img_far=0
+done: 1/1 aligned
+[2/4] 转 v2.1 中间产物（image_size=224）-> /tmp/act_v21_oovhmmgr
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v4.1.0
+Svt[info]: SVT [build]  :	GCC 14.2.1 20250110 (Red Hat 14.2.1-11)	 64 bit
+Svt[info]: LIB Build date: Jan  1 1970 00:00:00
+Svt[info]: -------------------------------------------
+Svt[info]: Level of Parallelism: 2
+Svt[info]: Number of PPCS 41
+Svt[info]: [asm level on system : up to avx2]
+Svt[info]: [asm level selected : up to avx2]
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
+Svt[info]: SVT [config]: width / height / fps numerator / fps denominator 		: 224 / 224 / 30 / 1
+Svt[info]: SVT [config]: bit-depth / color format 					: 8 / YUV420
+Svt[info]: SVT [config]: preset / tune / pred struct 					: 8 / PSNR / random access
+Svt[info]: SVT [config]: gop size / mini-gop size / key-frame type 			: 2 / 32 / key frame
+Svt[info]: SVT [config]: BRC mode / rate factor 					: CRF / 30.00 
+Svt[info]: SVT [config]: AQ mode / Variance Boost 					: 2 / 0
+Svt[info]: SVT [config]: sharpness / luminance-based QP bias 				: 0 / 0
+Svt[info]: SVT [config]: QP scale compress strength 					: 0
+Svt[info]: -------------------------------------------
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v4.1.0
+Svt[info]: SVT [build]  :	GCC 14.2.1 20250110 (Red Hat 14.2.1-11)	 64 bit
+Svt[info]: LIB Build date: Jan  1 1970 00:00:00
+Svt[info]: -------------------------------------------
+Svt[info]: Level of Parallelism: 2
+Svt[info]: Number of PPCS 41
+Svt[info]: [asm level on system : up to avx2]
+Svt[info]: [asm level selected : up to avx2]
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
+Svt[info]: SVT [config]: width / height / fps numerator / fps denominator 		: 224 / 224 / 30 / 1
+Svt[info]: SVT [config]: bit-depth / color format 					: 8 / YUV420
+Svt[info]: SVT [config]: preset / tune / pred struct 					: 8 / PSNR / random access
+Svt[info]: SVT [config]: gop size / mini-gop size / key-frame type 			: 2 / 32 / key frame
+Svt[info]: SVT [config]: BRC mode / rate factor 					: CRF / 30.00 
+Svt[info]: SVT [config]: AQ mode / Variance Boost 					: 2 / 0
+Svt[info]: SVT [config]: sharpness / luminance-based QP bias 				: 0 / 0
+Svt[info]: SVT [config]: QP scale compress strength 					: 0
+Svt[info]: -------------------------------------------
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v4.1.0
+Svt[info]: SVT [build]  :	GCC 14.2.1 20250110 (Red Hat 14.2.1-11)	 64 bit
+Svt[info]: LIB Build date: Jan  1 1970 00:00:00
+Svt[info]: -------------------------------------------
+Svt[info]: Level of Parallelism: 2
+Svt[info]: Number of PPCS 41
+Svt[info]: [asm level on system : up to avx2]
+Svt[info]: [asm level selected : up to avx2]
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
+Svt[info]: SVT [config]: width / height / fps numerator / fps denominator 		: 224 / 224 / 30 / 1
+Svt[info]: SVT [config]: bit-depth / color format 					: 8 / YUV420
+Svt[info]: SVT [config]: preset / tune / pred struct 					: 8 / PSNR / random access
+Svt[info]: SVT [config]: gop size / mini-gop size / key-frame type 			: 2 / 32 / key frame
+Svt[info]: SVT [config]: BRC mode / rate factor 					: CRF / 30.00 
+Svt[info]: SVT [config]: AQ mode / Variance Boost 					: 2 / 0
+Svt[info]: SVT [config]: sharpness / luminance-based QP bias 				: 0 / 0
+Svt[info]: SVT [config]: QP scale compress strength 					: 0
+Svt[info]: -------------------------------------------
+  episode 000000: 452 frames task='NEXUS synthetic Quest3 teleoperation acceptance'
+LeRobot v2.1 dataset -> /tmp/act_v21_oovhmmgr
+  1 episodes / 452 frames @ 30Hz, state_dim=38, cams=3, codec=libsvtav1
+[3/4] 升版 v3（= ACT 输入布局）-> /tmp/nexus_adf7222_act
+升版 v2.1 → v3.0: /tmp/act_v21_oovhmmgr
+  1 episodes, cams=['observation.images.base', 'observation.images.left_wrist', 'observation.images.right_wrist']
+  tasks -> meta/tasks.parquet
+  data chunk-000/file-000: 1 段
+  videos -> 串接为 chunk/file.mp4
+LeRobot v3.0 dataset -> /tmp/nexus_adf7222_act
+  1 episodes / 452 frames, cams=3
+[4/4] 结构级自检...
+  通过: stats 齐全 / 相机同 shape / tasks 非空 / parquet+视频可读可解码
+
+ACT 数据集就绪。官方 lerobot 训练命令:
+  HF_LEROBOT_HOME=~/lerobot_home lerobot-train \
+      --dataset.root=/tmp/nexus_adf7222_act \
+      --dataset.repo_id=astral/nexus_adf7222_smoke \
+      --policy.type=act --steps=100000 --batch_size=64 --job_name=astral_act
