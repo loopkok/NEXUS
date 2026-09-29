@@ -406,14 +406,17 @@ class MonitorNode(Node):
         control_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST,
             depth=10, durability=rclpy.qos.DurabilityPolicy.VOLATILE)
+        start_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST,
+            depth=1, durability=rclpy.qos.DurabilityPolicy.VOLATILE)
         latched_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST,
             depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
         ns = profile.namespace
         self._nexus_publishers = {
             "teleop_start": self.create_publisher(Bool, f"{ns}/control/teleop_start", start_qos),
-            "teleop_disarm": self.create_publisher(Bool, f"{ns}/control/teleop_disarm", qos),
-            "teleop_armed": self.create_publisher(Bool, f"{ns}/control/teleop_armed", qos),
+            "teleop_disarm": self.create_publisher(Bool, f"{ns}/control/teleop_disarm", latched_qos),
+            "teleop_armed": self.create_publisher(Bool, f"{ns}/control/teleop_armed", latched_qos),
             "policy_cmd": self.create_publisher(String, f"{ns}/policy/cmd", control_qos),
             "policy_task": self.create_publisher(String, f"{ns}/policy/task", latched_qos),
             "collect_control": self.create_publisher(String, f"{ns}/data/collect/control", control_qos),

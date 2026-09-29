@@ -193,10 +193,14 @@ async def nexus_start(req: dict[str, Any]) -> ApiEnvelope:
     ok, message = _launch_mgr.start(preset)
     if not ok:
         raise HTTPException(status_code=409, detail=message)
+    try:
+        node = get_node()
+        if node is not None:
+            node.configure_nexus(profile)
+    except Exception:
+        _launch_mgr.stop()
+        raise
     _nexus_profile = profile
-    node = get_node()
-    if node is not None:
-        node.configure_nexus(profile)
     return ApiEnvelope(ok=True, message=message,
                        data={"profile_sha256": profile.digest, "viewer": viewer})
 
