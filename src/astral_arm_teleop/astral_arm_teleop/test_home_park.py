@@ -83,6 +83,13 @@ class _FakeLog:
         self.infos.append(msg)
 
 
+class _FakeTlog:
+    enabled = False
+
+    def write(self, _record):
+        pass
+
+
 INIT_Q = np.array([0.32, 0.11, -0.53, -0.80, 0.28, 0.00, 0.00])
 WAY1 = np.array([0.20, 0.10, -0.30, -0.50, 0.10, 0.00, 0.00])
 WAY2 = np.array([0.05, 0.05, -0.10, -0.20, 0.00, 0.00, 0.00])
@@ -128,6 +135,7 @@ def _make_node():
     node.pose = _FakePose()
     node.safety = _FakeSafety()
     node._log = _FakeLog()
+    node._tlog = _FakeTlog()
     node.get_logger = lambda: node._log
     node.get_parameter = lambda name: _Param(WAYPOINTS)
     node._homing_target = lambda: node._homing_path[node._homing_i]

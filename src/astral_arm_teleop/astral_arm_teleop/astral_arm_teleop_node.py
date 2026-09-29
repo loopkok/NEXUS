@@ -421,7 +421,8 @@ class AstralTeleopArmNode(Node):
                 f"tune topics: /teleop/{self.side}/tune/ee_{{vr,filt,cmd}} + xyz"
             )
         self.create_subscription(
-            PoseStamped, f"quest3/{self.side}_wrist_pose", self._on_wrist, qos
+            PoseStamped, f"quest3/{self.side}_wrist_pose", self._on_wrist,
+            _sensor_qos(),
         )
         self._ensure_body_subs()
         if self._homing or bool(self.get_parameter("use_joint_state_seed").value):
@@ -429,7 +430,7 @@ class AstralTeleopArmNode(Node):
                 JointState,
                 f"/{self.side}_arm/joint_states",
                 self._on_state,
-                qos,
+                _sensor_qos(),
             )
 
         require = bool(self.get_parameter("require_clench_to_start").value)
