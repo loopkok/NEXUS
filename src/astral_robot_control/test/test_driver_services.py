@@ -20,6 +20,8 @@ import sys
 import threading
 import time
 
+import pytest
+
 try:
     import rclpy  # noqa: F401
 except ImportError:
@@ -340,6 +342,8 @@ def test_control_timer_left_only_does_not_zero_right():
     # 单臂预设（no right arm）：只左臂有新鲜指令时，右臂**不得**被补零下发
     # （否则停在任何位姿的实体右臂会被 100Hz 零目标拽向零位——症状：工作位/
     # HOME/遥操一发流右臂抽一下）。缺席侧不命令 = 板端位置保持原位。
+    if not LEFT_ARM_IDS:
+        pytest.skip("arm motor IDs require astral_robot_sdk")
     node, robot = _ctrl_node(left=[0.3] * 7)
     node._on_control_timer()
     stp = [c for c in robot.calls if c[0] == "set_target_positions"]
@@ -350,6 +354,8 @@ def test_control_timer_left_only_does_not_zero_right():
 
 
 def test_control_timer_right_only_sends_right():
+    if not RIGHT_ARM_IDS:
+        pytest.skip("arm motor IDs require astral_robot_sdk")
     node, robot = _ctrl_node(right=[-0.5] * 7)
     node._on_control_timer()
     stp = [c for c in robot.calls if c[0] == "set_target_positions"]

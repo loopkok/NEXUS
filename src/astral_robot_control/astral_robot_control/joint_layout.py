@@ -15,9 +15,10 @@ from typing import List, Sequence, Tuple
 # package still imports for docs / dry-run without the native SDK.
 try:
     from astral_robot_sdk import ROBOT_JOINT_NAMES as _SDK_NAMES
-    from astral_robot_sdk import LEFT_ARM_IDS, RIGHT_ARM_IDS  # noqa: F401
+    from astral_robot_sdk import LEFT_ARM_IDS, RIGHT_ARM_IDS
 
     ROBOT_JOINT_NAMES: List[str] = list(_SDK_NAMES)
+    ASTRAL_SDK_IDS_AVAILABLE = len(LEFT_ARM_IDS) > 0 and len(RIGHT_ARM_IDS) > 0
 except ImportError:  # pragma: no cover
     ROBOT_JOINT_NAMES = [
         "left_shoulder_pitch",
@@ -39,6 +40,11 @@ except ImportError:  # pragma: no cover
         "head_yaw",
         "head_pitch",
     ]
+    # Dry-run and offline IK do not use motor IDs. Never invent fallback IDs:
+    # the hardware path is gated on ASTRAL_SDK_IDS_AVAILABLE below.
+    LEFT_ARM_IDS = ()
+    RIGHT_ARM_IDS = ()
+    ASTRAL_SDK_IDS_AVAILABLE = False
 
 NUM_JOINTS = 18
 NUM_ARM_JOINTS = 7

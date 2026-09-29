@@ -51,6 +51,7 @@ from std_msgs.msg import Float64
 from std_srvs.srv import Trigger
 
 from astral_robot_control.joint_layout import (
+    ASTRAL_SDK_IDS_AVAILABLE,
     ASTRAL_NS,
     CMD_RATIO_SUFFIX,
     CMD_SUFFIX,
@@ -304,6 +305,10 @@ class AstralRobotDriverNode(Node):
                 "dry_run=true — SDK not connected; commands logged only"
             )
             return
+        if not ASTRAL_SDK_IDS_AVAILABLE:
+            raise RuntimeError(
+                "Astral hardware startup requires astral_robot_sdk with arm motor IDs"
+            )
         try:
             from astral_robot_sdk import (
                 RobotFactory,

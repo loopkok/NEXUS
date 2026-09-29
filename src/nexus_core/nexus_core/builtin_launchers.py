@@ -41,6 +41,12 @@ def preflight_astral(profile, components) -> None:
     address = profile.adapter_config("astral_sdk").get("control_board_ip", "")
     if not address or str(address).startswith("SET_"):
         raise RuntimeError("configure adapter_config.astral_sdk.control_board_ip")
+    from astral_robot_control.joint_layout import ASTRAL_SDK_IDS_AVAILABLE
+    if not ASTRAL_SDK_IDS_AVAILABLE:
+        raise RuntimeError(
+            "Astral hardware startup requires astral_robot_sdk with arm motor IDs; "
+            "install the robot SDK or use dry_run:=true"
+        )
 
 
 def preflight_nero(profile, components) -> None:
