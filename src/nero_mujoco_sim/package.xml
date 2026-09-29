@@ -15,5 +15,7 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>nexus_core</exec_depend>
   <exec_depend>xhand_nero_description</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>nero_quest_teleop</test_depend>
   <export><build_type>ament_python</build_type></export>
 </package>
