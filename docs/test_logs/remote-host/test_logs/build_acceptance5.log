@@ -1,0 +1,12 @@
+Starting >>> wujihand_msgs
+Starting >>> xhand_control_interfaces
+Starting >>> xhand_nero_description
+Finished <<< xhand_nero_description [0.10s]
+Finished <<< wujihand_msgs [0.43s]
+Finished <<< xhand_control_interfaces [0.44s]
+Starting >>> nexus_core
+Finished <<< nexus_core [1.04s]
+Starting >>> nero_mujoco_sim
+Finished <<< nero_mujoco_sim [1.05s]
+
+Summary: 5 packages finished [3.11s]

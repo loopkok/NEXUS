@@ -12,8 +12,12 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from .arbiter import CommandArbiter
+from .arbiter import CommandArbiter, policy_idle_should_release
 from .profile import Profile, ProfileError
+
+# Candidate commands are latest-value control data: avoid reliable DDS
+# backpressure and let the mux stale-command watchdog reject a stalled stream.
+_CANDIDATE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
 
 
 class CommandMuxNode(Node):
@@ -43,7 +47,7 @@ class CommandMuxNode(Node):
                 self.create_subscription(
                     JointState, self.profile.candidate_topic(source, name),
                     lambda msg, s=source, n=name: self._candidate(s, n, msg),
-                    qos_profile_sensor_data)
+                    _CANDIDATE_QOS)
             self._outputs[name] = self.create_publisher(
                 JointState, self.profile.topic(name, "joint_commands"),
                 qos_profile_sensor_data)
@@ -86,6 +90,9 @@ class CommandMuxNode(Node):
         if verb == "TELEOP" and self.mux.mode in ("POLICY", "PLAYBACK"):
             self.get_logger().error("request takeover through policy_inference/cmd; reanchor is required")
             return
+        if verb == "HOMING" and self.mux.mode not in ("IDLE", "PAUSED", "HOMING"):
+            self.get_logger().error(f"homing requires IDLE or PAUSED; current mode is {self.mux.mode}")
+            return
         self._select(verb)
 
     def _policy_state(self, msg: String) -> None:
@@ -97,7 +104,7 @@ class CommandMuxNode(Node):
                   "POLICY_PAUSED": "PAUSED", "PLAYBACK_PAUSED": "PAUSED"}.get(state)
         if mapped and mapped != self.mux.mode:
             self._select(mapped)
-        elif state == "IDLE" and self.mux.mode in ("POLICY", "PLAYBACK", "PAUSED"):
+        elif state == "IDLE" and policy_idle_should_release(self.mux.mode, self.mux.resume_mode):
             self._select("IDLE")
 
     def _teleop_start(self, msg: Bool) -> None:
@@ -115,6 +122,7 @@ class CommandMuxNode(Node):
         return response
 
     def _tick(self) -> None:
+        previous_status = (self.mux.mode, self.mux.fault)
         for spec in self.profile.components:
             topic = self.profile.topic(spec.name, "joint_commands")
             if self.count_publishers(topic) > 1:
@@ -128,6 +136,8 @@ class CommandMuxNode(Node):
             msg.name = list(self.profile.component(name).joints)
             msg.position = list(values)
             self._outputs[name].publish(msg)
+        if (self.mux.mode, self.mux.fault) != previous_status:
+            self._publish_status()
 
     def _publish_status(self) -> None:
         msg = String()

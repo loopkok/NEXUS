@@ -1,0 +1,68 @@
+Nero Teleop — VR-to-Arm Coordinate Mapping Validation
+============================================================
+TCP offset: [0.175, 0.0, -0.0235, 0, 0, 0]
+
+============================================================
+TEST: LEFT arm — VR position → arm position mapping
+============================================================
+  Hand forward   : VR[1 0 0] → Arm[0 1 0] | expect [0 1 0] → PASS
+  Hand outward   : VR[0 1 0] → Arm[0 0 1] | expect [0 0 1] → PASS
+  Hand downward  : VR[0 0 1] → Arm[-1  0  0] | expect [-1  0  0] → PASS
+  Hand backward  : VR[-1  0  0] → Arm[ 0 -1  0] | expect [ 0 -1  0] → PASS
+  Hand inward    : VR[ 0 -1  0] → Arm[ 0  0 -1] | expect [ 0  0 -1] → PASS
+  Hand upward    : VR[ 0  0 -1] → Arm[1 0 0] | expect [1 0 0] → PASS
+  Overall: PASS
+
+============================================================
+TEST: RIGHT arm — VR position → arm position mapping
+============================================================
+  Hand forward   : VR[1 0 0] → Arm[ 0 -1  0] | expect [ 0 -1  0] → PASS
+  Hand outward   : VR[0 1 0] → Arm[0 0 1] | expect [0 0 1] → PASS
+  Hand downward  : VR[0 0 1] → Arm[-1  0  0] | expect [-1  0  0] → PASS
+  Hand backward  : VR[-1  0  0] → Arm[0 1 0] | expect [0 1 0] → PASS
+  Hand inward    : VR[ 0 -1  0] → Arm[ 0  0 -1] | expect [ 0  0 -1] → PASS
+  Hand upward    : VR[ 0  0 -1] → Arm[1 0 0] | expect [1 0 0] → PASS
+  Overall: PASS
+
+============================================================
+TEST: TCP offset gripper→flange→gripper round-trip
+============================================================
+  TCP offset: [0.175, 0.0, -0.0235, 0, 0, 0]
+  Round-trip: pos_err=0.00e+00m, rot_err=0.00e+00 → PASS
+
+============================================================
+TEST: IK chain with TCP offset compensation
+============================================================
+  Gripper FK check: pos_err=0.00mm, rot_err=0.0000
+  Joints (deg): [-135.8, 71.5, 34.8, 75.8, -140.4, 49.6, 16.4]
+  Result: PASS
+
+============================================================
+TEST: End-to-end VR→arm→IK→FK chain (left arm)
+============================================================
+  forward 5cm    : gripper_pos_err=0.00mm rot_err=0.0000 → PASS
+  outward 5cm    : gripper_pos_err=0.00mm rot_err=0.0000 → PASS
+  down 5cm       : gripper_pos_err=0.00mm rot_err=0.0000 → PASS
+  Overall: PASS
+
+============================================================
+TEST: End-to-end VR→arm→IK→FK chain (right arm)
+============================================================
+  forward 5cm    : gripper_pos_err=0.00mm rot_err=0.0000 → PASS
+  outward 5cm    : gripper_pos_err=0.00mm rot_err=0.0000 → PASS
+  down 5cm       : gripper_pos_err=0.00mm rot_err=0.0000 → PASS
+  Overall: PASS
+
+============================================================
+MAPPING VALIDATION SUMMARY
+============================================================
+  left_position_map: PASS
+  right_position_map: PASS
+  tcp_roundtrip: PASS
+  ik_tcp_chain: PASS
+  e2e_left: PASS
+  e2e_right: PASS
+
+  6/6 tests passed
+
+All mapping tests PASSED — VR-to-arm matrices are correct.

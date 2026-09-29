@@ -119,17 +119,26 @@ def nero():
         "schema_version": 1, "profile_id": "nero_dual_xhand", "instance": "nero",
         "robot": "nero", "inputs": {side: {"wrist": "quest3", "hand": "quest3"}
                                      for side in ("left", "right")},
-        "input_settings": {"landmark_preprocess": "mano"},
+        "input_settings": {
+            "landmark_preprocess": "mano",
+            "quest3_wrist_pose_mapping": {
+                "mode": "per_side",
+                "left_rotation": [0.0, 1.0, 0.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0],
+                "right_rotation": [0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 1.0, 0.0, 0.0],
+                "left_frame_id": "nero_left_wrist_mapped",
+                "right_frame_id": "nero_right_wrist_mapped",
+            },
+        },
         "hardware": {"can": {"left": "can_nero_left", "right": "can_nero_right"},
                      "xhand_serial": {"left": "/dev/ttyUSB0", "right": "/dev/ttyUSB1"},
                      "home_pose": {
                          "left": [-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163],
                          "right": [0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163]}},
         "teleop": {"left": {"arm_base_frame": "left_arm_base",
-                            "vr_to_arm_rot": [0.0, 1.0, 0.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0],
+                            "vr_to_arm_rot": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
                             "motion_scale": 0.65, "tcp_offset": [0.0] * 6},
                    "right": {"arm_base_frame": "right_arm_base",
-                             "vr_to_arm_rot": [0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 1.0, 0.0, 0.0],
+                             "vr_to_arm_rot": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
                              "motion_scale": 0.65, "tcp_offset": [0.0] * 6}},
         "components": components,
         "cameras": [

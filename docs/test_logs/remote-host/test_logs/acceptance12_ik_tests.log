@@ -1,0 +1,44 @@
+
+============================================================
+TESTING: analytic_dh
+============================================================
+  nq=7, limits OK
+
+  --- FK -> IK round-trip ---
+  Config 0: pos=0.0000mm rot=0.0000 t=111.1ms -> PASS
+  Config 1: pos=0.0000mm rot=0.0000 t=3.8ms -> PASS
+  Config 2: pos=0.0000mm rot=0.0000 t=3.6ms -> PASS
+  Config 3: pos=0.0000mm rot=0.0000 t=3.6ms -> PASS
+  Max pos error: 0.0000mm, Overall: PASS
+
+  --- Large jump stress (6cm, 15deg between frames) ---
+  Jumps=30, fails=6, rate=80.0%
+  Max pos error: 0.0000mm
+  Time: mean=8.1ms, max=112.8ms
+  Result: FAIL
+
+  --- Extreme / near-boundary poses ---
+  Cases=32, fails=3, rate=90.6%
+  Max pos error: 0.0000mm
+  Time: mean=24.4ms, max=105.2ms
+  Result: PASS
+
+  --- Smooth trajectory (simulated teleop) ---
+  Steps=100, fails=0, rate=100.0%
+  Max pos error: 0.0000mm
+  Solve time (skip 1st): mean=3.4ms, max=3.5ms
+  Result: PASS (limit <10ms)
+
+  --- Safety filter ---
+  [Clamp] PASS
+  [VelLimit] PASS
+  [Workspace] PASS
+  Overall: PASS
+
+  analytic_dh SUMMARY:
+    fk_ik_roundtrip: PASS
+    large_jumps: FAIL
+    extreme_poses: PASS
+    smooth_trajectory: PASS
+    safety_filter: PASS
+    4/5 passed

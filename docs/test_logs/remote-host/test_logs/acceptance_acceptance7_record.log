@@ -1,0 +1,651 @@
+[INFO] [1790629014.168334972] [nexus_sim_acceptance]: simulation acceptance profile=nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+{
+  "profile_id": "nero_dual_xhand_mujoco",
+  "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+  "lifecycle": {
+    "ready": "ready complete",
+    "enable": "enable complete",
+    "home": "home complete"
+  },
+  "final_command_publishers": {
+    "left_arm": 1,
+    "right_arm": 1,
+    "left_ee": 1,
+    "right_ee": 1
+  },
+  "counts": {
+    "state:left_arm": 1909,
+    "state:right_arm": 1909,
+    "state:left_ee": 1909,
+    "state:right_ee": 1909,
+    "bridge_wrist:left": 1127,
+    "bridge_hand:left": 1202,
+    "bridge_wrist:right": 1127,
+    "bridge_hand:right": 1202,
+    "camera:base": 724,
+    "camera:left_wrist": 724,
+    "native_xhand_candidate:left": 1202,
+    "camera:right_wrist": 724,
+    "native_xhand_candidate:right": 1202,
+    "command:left_arm": 2299,
+    "command:right_arm": 2299,
+    "command:left_ee": 2297,
+    "command:right_ee": 2297,
+    "motion_state:left": 1165,
+    "motion_state:right": 1165
+  },
+  "teleop_candidates": {
+    "teleop:left_ee": 1196,
+    "teleop:right_ee": 1196,
+    "teleop:right_arm": 823,
+    "teleop:left_arm": 820
+  },
+  "command_rate_hz": {
+    "left_arm": 98.90112019873762,
+    "right_arm": 98.87471350731157,
+    "left_ee": 98.78858013712289,
+    "right_ee": 98.78853167199426
+  },
+  "max_joint_command_step_rad": {
+    "left_arm": 0.05815419380015041,
+    "right_arm": 0.08533773575366188,
+    "left_ee": 0.3924870699798051,
+    "right_ee": 0.3938047686195323
+  },
+  "last_command_to_measured_error_rad": {
+    "left_arm": {
+      "count": 1,
+      "p50": 0.03221291913048452,
+      "p95": 0.03221291913048452,
+      "max": 0.03221291913048452
+    },
+    "right_arm": {
+      "count": 1,
+      "p50": 0.04021569280150006,
+      "p95": 0.04021569280150006,
+      "max": 0.04021569280150006
+    },
+    "left_ee": {
+      "count": 1,
+      "p50": 0.39252299435321514,
+      "p95": 0.39252299435321514,
+      "max": 0.39252299435321514
+    },
+    "right_ee": {
+      "count": 1,
+      "p50": 0.3939250435787691,
+      "p95": 0.3939250435787691,
+      "max": 0.3939250435787691
+    }
+  },
+  "tracking": {
+    "left": {
+      "tcp_x_peak_to_peak_m": 0.01012342125961603,
+      "wrist_expected_peak_to_peak_m": 0.010400000000000001,
+      "tcp_x_expected_correlation": 0.9670180078773607,
+      "tcp_orientation_max_drift_deg": 0.5106870686713326,
+      "arm_joint_target_tracking_error": {
+        "p95_abs_rad": 0.04535828477887403,
+        "max_abs_rad": 0.05442764651808851,
+        "max_by_joint_rad": {
+          "left_joint1": 0.05442764651808851,
+          "left_joint2": 0.02577424429464814,
+          "left_joint3": 0.018556928101666037,
+          "left_joint4": 0.030530985081333784,
+          "left_joint5": 0.009706725609023636,
+          "left_joint6": 0.0074932561760991945,
+          "left_joint7": 0.004163248251476959
+        },
+        "matched_state_samples": 796
+      },
+      "ik_candidate_motion": {
+        "samples": 509,
+        "tcp_orientation_max_drift_deg": 1.2074182697257333e-06,
+        "tcp_position_peak_to_peak_xyz_m": [
+          0.010227323662716212,
+          5.118572440378222e-05,
+          0.0005106405116577228
+        ],
+        "joint_peak_to_peak_rad": {
+          "left_joint1": 0.1295112667220515,
+          "left_joint2": 0.0017232648960070485,
+          "left_joint3": 0.008073938920218016,
+          "left_joint4": 0.000427097586628733,
+          "left_joint5": 0.10569204919853226,
+          "left_joint6": 0.07821780442074511,
+          "left_joint7": 0.02842437474111792
+        },
+        "joint_max_step_rad": {
+          "left_joint1": 0.0021255790724747925,
+          "left_joint2": 2.7944876193508605e-05,
+          "left_joint3": 0.00013074663711032386,
+          "left_joint4": 7.126208569907533e-06,
+          "left_joint5": 0.0017323053318487602,
+          "left_joint6": 0.001286572915641937,
+          "left_joint7": 0.0004638786353519109
+        },
+        "max_gap_ms": 50.55055790580809
+      },
+      "motion_state_samples": 817,
+      "wrist_input_y_peak_to_peak_m": 0.01599990143101202,
+      "teleop_candidate_joint_peak_to_peak_rad": 0.1295112667220515,
+      "teleop_candidate_max_gap_ms": 91.05851291678846,
+      "end_effector_candidate_max_gap_ms": 68.1363120675087,
+      "tcp_position_peak_to_peak_xyz_m": [
+        0.01012342125961603,
+        0.001452708618101102,
+        0.0012996625100023529
+      ],
+      "input_to_candidate_latency_ms": {
+        "count": 669,
+        "p50": 11.516212951391935,
+        "p95": 15.371348150074482,
+        "max": 41.905853897333145
+      }
+    },
+    "right": {
+      "tcp_x_peak_to_peak_m": 0.012326002541995021,
+      "wrist_expected_peak_to_peak_m": 0.010400000000000001,
+      "tcp_x_expected_correlation": 0.956259105069478,
+      "tcp_orientation_max_drift_deg": 0.9904144989534991,
+      "arm_joint_target_tracking_error": {
+        "p95_abs_rad": 0.0803908659228504,
+        "max_abs_rad": 0.09337124821927856,
+        "max_by_joint_rad": {
+          "right_joint1": 0.09337124821927856,
+          "right_joint2": 0.01987904457202061,
+          "right_joint3": 0.036116609245696873,
+          "right_joint4": 0.029707654935231753,
+          "right_joint5": 0.025507514215946547,
+          "right_joint6": 0.010371573259483124,
+          "right_joint7": 0.01635992804683073
+        },
+        "matched_state_samples": 822
+      },
+      "ik_candidate_motion": {
+        "samples": 526,
+        "tcp_orientation_max_drift_deg": 1.7075472925031877e-06,
+        "tcp_position_peak_to_peak_xyz_m": [
+          0.010166701164279764,
+          4.758133101339518e-06,
+          0.0005669592506936105
+        ],
+        "joint_peak_to_peak_rad": {
+          "right_joint1": 0.24338768034927227,
+          "right_joint2": 0.003626784008176287,
+          "right_joint3": 0.03067249677097994,
+          "right_joint4": 0.00024032237419646663,
+          "right_joint5": 0.2559746044176743,
+          "right_joint6": 0.1067937636806775,
+          "right_joint7": 0.1313568432104697
+        },
+        "joint_max_step_rad": {
+          "right_joint1": 0.004652268753563948,
+          "right_joint2": 7.400793188683252e-05,
+          "right_joint3": 0.0006283566033000731,
+          "right_joint4": 4.775734328887893e-06,
+          "right_joint5": 0.004966343467050827,
+          "right_joint6": 0.002017708319779654,
+          "right_joint7": 0.0025924596736199845
+        },
+        "max_gap_ms": 52.302511874586344
+      },
+      "motion_state_samples": 846,
+      "wrist_input_y_peak_to_peak_m": 0.01599990143101202,
+      "teleop_candidate_joint_peak_to_peak_rad": 0.2559746044176743,
+      "teleop_candidate_max_gap_ms": 52.302511874586344,
+      "end_effector_candidate_max_gap_ms": 86.87163004651666,
+      "tcp_position_peak_to_peak_xyz_m": [
+        0.012326002541995021,
+        0.0022009131807855624,
+        0.0020658127351170785
+      ],
+      "input_to_candidate_latency_ms": {
+        "count": 689,
+        "p50": 7.3055000975728035,
+        "p95": 9.64950043708086,
+        "max": 41.28067987039685
+      }
+    }
+  },
+  "wrist_dropout": {
+    "mode_after_timeout": "PAUSED",
+    "fault": "stale command=['left_arm', 'right_arm'] feedback=[]",
+    "pause_latency_ms": 861.7537480313331,
+    "post_stop_wrist_messages": {
+      "left": 2,
+      "right": 2
+    }
+  },
+  "recorder": {
+    "state": "IDLE",
+    "session": "20260929_acceptance5",
+    "episode_index": -1,
+    "elapsed_s": 0.0,
+    "task_next": "NEXUS synthetic Quest3 teleoperation acceptance",
+    "samples_per_s": {},
+    "dropped": {},
+    "schema": {
+      "nexus_profile": {
+        "schema_version": 2,
+        "profile_id": "nero_dual_xhand_mujoco",
+        "instance": "nero_sim",
+        "inputs": {
+          "left": {
+            "wrist": {
+              "source": "quest3",
+              "topic": "/quest3/left_wrist_pose",
+              "frame_policy": "stable"
+            },
+            "hand": {
+              "source": "quest3",
+              "topic": "/hand_landmarks/left",
+              "frame_policy": "stable"
+            }
+          },
+          "right": {
+            "wrist": {
+              "source": "quest3",
+              "topic": "/quest3/right_wrist_pose",
+              "frame_policy": "stable"
+            },
+            "hand": {
+              "source": "quest3",
+              "topic": "/hand_landmarks/right",
+              "frame_policy": "stable"
+            }
+          },
+          "body": {
+            "body_joints": {
+              "source": "quest3",
+              "topic": "/quest3/body_joints",
+              "frame_policy": "stable"
+            },
+            "body_joint_names": {
+              "source": "quest3",
+              "topic": "/quest3/body_joint_names"
+            }
+          }
+        },
+        "input_settings": {
+          "landmark_preprocess": "mano"
+        },
+        "components": [
+          {
+            "name": "left_arm",
+            "kind": "arm",
+            "joints": [
+              "left_joint1",
+              "left_joint2",
+              "left_joint3",
+              "left_joint4",
+              "left_joint5",
+              "left_joint6",
+              "left_joint7"
+            ],
+            "lower": [
+              -2.705261,
+              -1.74533,
+              -2.757621,
+              -1.012291,
+              -2.757621,
+              -0.733039,
+              -1.570797
+            ],
+            "upper": [
+              2.705261,
+              1.74533,
+              2.757621,
+              2.146755,
+              2.757621,
+              0.959932,
+              1.570797
+            ],
+            "driver": "nero_mujoco",
+            "feedback": "measured",
+            "ik": "nero_analytic",
+            "side": "left",
+            "unit": "rad",
+            "input_channel": "left",
+            "teleop": {
+              "arm_base_frame": "left_arm_base",
+              "vr_to_arm_rot": [
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "motion_scale": 0.65,
+              "tcp_offset": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          {
+            "name": "right_arm",
+            "kind": "arm",
+            "joints": [
+              "right_joint1",
+              "right_joint2",
+              "right_joint3",
+              "right_joint4",
+              "right_joint5",
+              "right_joint6",
+              "right_joint7"
+            ],
+            "lower": [
+              -2.705261,
+              -1.74533,
+              -2.757621,
+              -1.012291,
+              -2.757621,
+              -0.733039,
+              -1.570797
+            ],
+            "upper": [
+              2.705261,
+              1.74533,
+              2.757621,
+              2.146755,
+              2.757621,
+              0.959932,
+              1.570797
+            ],
+            "driver": "nero_mujoco",
+            "feedback": "measured",
+            "ik": "nero_analytic",
+            "side": "right",
+            "unit": "rad",
+            "input_channel": "right",
+            "teleop": {
+              "arm_base_frame": "right_arm_base",
+              "vr_to_arm_rot": [
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                -1.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              "motion_scale": 0.65,
+              "tcp_offset": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          {
+            "name": "left_ee",
+            "kind": "hand",
+            "joints": [
+              "left_hand_thumb_bend_joint",
+              "left_hand_thumb_rota_joint1",
+              "left_hand_thumb_rota_joint2",
+              "left_hand_index_bend_joint",
+              "left_hand_index_joint1",
+              "left_hand_index_joint2",
+              "left_hand_mid_joint1",
+              "left_hand_mid_joint2",
+              "left_hand_ring_joint1",
+              "left_hand_ring_joint2",
+              "left_hand_pinky_joint1",
+              "left_hand_pinky_joint2"
+            ],
+            "lower": [
+              0.0,
+              -0.698,
+              0.0,
+              -0.174,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "upper": [
+              1.832,
+              1.57,
+              1.57,
+              0.174,
+              1.919,
+              1.919,
+              1.919,
+              1.919,
+              1.919,
+              1.919,
+              1.919,
+              1.919
+            ],
+            "driver": "nero_mujoco",
+            "feedback": "measured",
+            "side": "left",
+            "unit": "rad",
+            "input_channel": "left",
+            "retargeter": "xhand_dexpilot"
+          },
+          {
+            "name": "right_ee",
+            "kind": "hand",
+            "joints": [
+              "right_hand_thumb_bend_joint",
+              "right_hand_thumb_rota_joint1",
+              "right_hand_thumb_rota_joint2",
+              "right_hand_index_bend_joint",
+              "right_hand_index_joint1",
+              "right_hand_index_joint2",
+              "right_hand_mid_joint1",
+              "right_hand_mid_joint2",
+              "right_hand_ring_joint1",
+              "right_hand_ring_joint2",
+              "right_hand_pinky_joint1",
+              "right_hand_pinky_joint2"
+            ],
+            "lower": [
+              0.0,
+              -0.698,
+              0.0,
+              -0.174,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "upper": [
+              1.832,
+              1.57,
+              1.57,
+              0.174,
+              1.919,
+              1.919,
+              1.919,
+              1.919,
+              1.919,
+              1.919,
+              1.919,
+              1.919
+            ],
+            "driver": "nero_mujoco",
+            "feedback": "measured",
+            "side": "right",
+            "unit": "rad",
+            "input_channel": "right",
+            "retargeter": "xhand_dexpilot"
+          }
+        ],
+        "cameras": [
+          {
+            "role": "base",
+            "source": "orbbec",
+            "device": "SIM_BASE",
+            "capture_topic": "/nexus/nero_sim/sim_camera/base/image/compressed"
+          },
+          {
+            "role": "left_wrist",
+            "source": "orbbec",
+            "device": "SIM_LEFT_WRIST",
+            "capture_topic": "/nexus/nero_sim/sim_camera/left_wrist/image/compressed"
+          },
+          {
+            "role": "right_wrist",
+            "source": "orbbec",
+            "device": "SIM_RIGHT_WRIST",
+            "capture_topic": "/nexus/nero_sim/sim_camera/right_wrist/image/compressed"
+          }
+        ],
+        "dataset": {
+          "fps": 30,
+          "action_source": "next_state"
+        },
+        "policy": {
+          "camera_map": {
+            "base_0_rgb": "base",
+            "left_wrist_0_rgb": "left_wrist",
+            "right_wrist_0_rgb": "right_wrist"
+          }
+        },
+        "adapter_config": {
+          "nero_mujoco": {
+            "enable_viewer": false,
+            "realtime": true,
+            "timestep": 0.002,
+            "state_rate": 100.0,
+            "command_timeout": 0.5,
+            "home_pose": {
+              "left": [
+                -0.405,
+                1.281,
+                -0.957,
+                1.311,
+                2.682,
+                -0.314,
+                -0.163
+              ],
+              "right": [
+                0.405,
+                1.281,
+                0.957,
+                1.311,
+                -2.682,
+                0.314,
+                -0.163
+              ]
+            }
+          }
+        }
+      },
+      "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+      "schema_version": 2,
+      "dataset_fps": 30,
+      "action_source": "next_state",
+      "cameras": [
+        "base",
+        "left_wrist",
+        "right_wrist"
+      ],
+      "hold_frames": 10,
+      "max_gap_ms": 100.0,
+      "state_dim": 38,
+      "state_blocks": [
+        {
+          "name": "left_arm",
+          "dim": 7
+        },
+        {
+          "name": "right_arm",
+          "dim": 7
+        },
+        {
+          "name": "left_ee",
+          "dim": 12
+        },
+        {
+          "name": "right_ee",
+          "dim": 12
+        }
+      ]
+    },
+    "low_fps_warning": null,
+    "empty_warning": null,
+    "ignored": {},
+    "folder": "/home/loopkok/NEXUS/data/acceptance/20260929_acceptance5",
+    "episode_counts": {},
+    "camera_counts": {},
+    "episode_bytes": 0,
+    "session_bytes": 4263200
+  },
+  "policy_initial": {
+    "state": "IDLE",
+    "fault": "",
+    "model": "act",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+    "ready": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ],
+    "cameras": [
+      "base",
+      "left_wrist",
+      "right_wrist"
+    ]
+  },
+  "control_history": [
+    [
+      1069758.800369596,
+      "PAUSED",
+      "stale command=['left_ee'] feedback=[]"
+    ],
+    [
+      1069760.829703492,
+      "IDLE",
+      ""
+    ],
+    [
+      1069763.959536676,
+      "TELEOP",
+      ""
+    ],
+    [
+      1069778.893448573,
+      "PAUSED",
+      "stale command=['left_arm', 'right_arm'] feedback=[]"
+    ],
+    [
+      1069779.539654124,
+      "IDLE",
+      ""
+    ],
+    [
+      1069779.695462077,
+      "TELEOP",
+      ""
+    ]
+  ],
+  "result": "PASS"
+}

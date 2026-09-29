@@ -1,0 +1,93 @@
+NEXUS DEPLOYMENT AND SIMULATION ACCEPTANCE LOG
+Run ID: NEXUS-QA-20260929-01
+Date: 2026-09-29 (Asia/Shanghai)
+Source: C:/Users/njk/Desktop/NEXUS/nexus_ws
+Source revision: b27606539fa06b83b62db546db3cf347e05e7c73
+Source state: working tree contains uncommitted MuJoCo simulator/profile/test changes
+Target requested: loopkok@192.168.0.231:/home/loopkok/NEXUS
+
+SAFETY SCOPE
+- No real robot profile, CAN adapter, USB hand adapter, physical camera, or robot command service was started.
+- The pre-existing /home/loopkok/xnero_ws and all other home-directory entries are being preserved.
+- The NEXUS target did not exist at preflight; deployment uses a new /home/loopkok/NEXUS directory.
+- No password or other credential is recorded in this log.
+
+REMOTE CONNECTIVITY
+- Initial address 192.168.10.103:22 (previous attempt) was unreachable; no data was sent there.
+- Current address 192.168.0.231:22: SSH login succeeded on 2026-09-29.
+- Host: Ubuntu 22.04.5 LTS, Linux 6.8, Python 3.10.12; /opt/ros/humble is installed,
+  ros2 and colcon are available after sourcing ROS setup. RTX 3090, 24 GB VRAM is present.
+- /home/loopkok/NEXUS and /home/loopkok/nexus_ws did not exist. Existing xnero_ws was preserved.
+- Read-only process check found no running ROS/Nero/XHand/camera process; can0 and can1 are DOWN.
+- ROS 2 test commands will use ROS_DOMAIN_ID=89 and ROS_LOCALHOST_ONLY=1.
+
+LOCAL OFFLINE ENVIRONMENT
+- Windows workstation; ROS 2 and colcon are not installed on this workstation.
+- Python 3.12.14; MuJoCo 3.14.0; NumPy 2.5.3; SciPy 1.18.1.
+- SciPy was installed into the workspace-local .venv solely to run the existing Nero IK suite.
+
+LOCAL TEST RESULTS
+1. NEXUS core contract suite
+   Command: .venv/Scripts/python.exe -m unittest discover -s src/nexus_core/test -p test_*.py -v
+   Result: PASS, 12/12.
+   Covered profile/schema validation, external adapter plugins, manifest gate, command arbitration,
+   stale command/feedback handling, estop, takeover hold, legacy HDF5 and LeRobot import preservation.
+
+2. Nero MuJoCo simulator package tests
+   Command: PowerShell `$env:PYTHONPATH='src/nexus_core;src/nero_mujoco_sim'`, then
+            .venv/Scripts/python.exe -m unittest discover -s src/nero_mujoco_sim/test -p test_*.py -v
+   Result: PASS, 3/3.
+   - Simulation profile loaded through the NEXUS driver plugin; 38 configured joints.
+   - Full dual-arm/dual-XHand MJCF generated from xhand_nero_description URDF and meshes.
+   - MuJoCo compiled and stepped 1,000 physics steps; the model has 38 position actuators,
+     the tested arm and finger joints responded to target commands, the initial scene had no
+     penetrating contacts, and the pick cube contacted the table.
+
+3. Nero analytic DH IK and safety suite
+   Command: PowerShell `$env:PYTHONPATH='src/nero_quest_teleop;src/nexus_core;src/nero_mujoco_sim'`, then
+            `.venv/Scripts/python.exe -c "from nero_quest_teleop.test_ik_solver import run_all_tests; import sys; sys.exit(not run_all_tests('analytic_dh'))"`
+   Result: PASS, 5/5 subtests: FK/IK round-trip, large-jump stress, extreme poses,
+           smooth trajectory, and safety filter.
+   - FK/IK position error: 0.0000 mm in reported cases.
+   - Large-jump stress: 27/30 solves (90.0%); 3 targets did not converge.
+   - Extreme-pose set: 29/32 solves (90.6%); 3 targets did not converge.
+   - Smooth 100-step path: 100/100 solves; steady-state mean 4.2 ms, maximum 5.1 ms.
+   - Cold first round-trip solve: 136.6 ms. Large-jump mean 15.7 ms / maximum 143.6 ms;
+     extreme-pose mean 31.4 ms / maximum 141.7 ms. These spikes exceed a 100 Hz cycle and
+     need profiling before claiming bounded teleoperation latency.
+   - Joint-limit clamp, velocity clamp, and workspace clamp checks passed.
+
+4. VR-to-arm mapping and TCP/IK chain
+   Command: PowerShell `$env:PYTHONPATH='src/nero_quest_teleop;src/nexus_core;src/nero_mujoco_sim'`, then
+            `.venv/Scripts/python.exe src/nero_quest_teleop/nero_quest_teleop/test_vr_mapping.py`
+   Result: PASS, 6/6 groups for left/right axis mapping, TCP round-trip, TCP-compensated IK,
+           and end-to-end VR delta -> arm target -> IK -> FK position/orientation.
+   - Reported position and orientation errors were zero at the printed precision.
+   - This is an offline coordinate/IK test; it does not publish Quest3 ROS messages or measure
+     tracking latency in the ROS graph.
+
+5. Python syntax check
+   Command: .venv/Scripts/python.exe -m compileall -q src/nero_mujoco_sim src/nexus_core
+   Result: PASS.
+
+6. Patch whitespace check
+   Command: git diff --check
+   Result: PASS; Git reported only working-tree LF-to-CRLF normalization warnings.
+
+NOT RUN / NOT CLAIMED
+- ROS 2 colcon build or integrated launch on the deployment host.
+- Simulated Quest3 PoseStamped/PoseArray publishers through ROS nodes, input remapping,
+  IK-to-command mux-to-MuJoCo state feedback, or measured end-to-end teleoperation delay.
+- Live command arbitration transitions, stale-input watchdog, service lifecycle, jitter,
+  overshoot, tracking lag, or motion amplitude in a running ROS graph.
+- ROS data recording, camera/image stream alignment, episode validation/quarantine,
+  ACT/pi0.5 export/training/inference, HITL takeover/return, or remote GPU synchronization.
+- Comparison of the imported URDF inertias, contacts, or arm trajectory against manufacturer
+  dynamics/real hardware measurements. Current physics evidence only confirms the MuJoCo
+  model compiles, steps, responds to commands, and resolves the test prop/table contact.
+
+OVERALL
+- Local static, profile, MuJoCo model, and analytic IK tests passed as listed.
+- Deployment to 192.168.0.231 is in progress. Remote build, ROS graph, simulated Quest3,
+  recording/data processing, policy, HITL and tracking performance results will be appended
+  after those tests run.

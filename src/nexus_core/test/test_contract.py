@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src" / "nexus_core"))
 sys.path.insert(0, str(ROOT / "src" / "astral_data_collect"))
 
-from nexus_core.arbiter import CommandArbiter
+from nexus_core.arbiter import CommandArbiter, policy_idle_should_release
 from nexus_core.adapter_registry import (Adapter, CameraAdapter, IKAdapter,
                                          InputAdapter, RetargeterAdapter,
                                          CAMERA_ADAPTERS, DRIVERS, IK_ADAPTERS,
@@ -38,6 +38,29 @@ class ProfileTests(unittest.TestCase):
             self.assertEqual(restored.state_names(), schema.state_names())
             self.assertEqual(restored.profile.digest, p.digest)
             self.assertEqual(len(restored.required_streams()), len(p.components) * 2)
+
+    def test_nero_quest_maps_each_side_once_and_ik_rotation_is_identity(self):
+        for name in ("nero_dual_xhand", "nero_dual_xhand_mujoco"):
+            p = Profile.load(
+                ROOT / "src" / "nexus_core" / "profiles" / f"{name}.json",
+                validate_plugins=name != "nero_dual_xhand_mujoco",
+            )
+            settings = p.raw["input_settings"]["quest3_wrist_pose_mapping"]
+            self.assertEqual(settings["mode"], "per_side")
+            for side in ("left", "right"):
+                component = p.component(f"{side}_arm")
+                self.assertEqual(
+                    component.teleop["vr_to_arm_rot"],
+                    [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                )
+                self.assertNotEqual(settings[f"{side}_rotation"],
+                                    [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
+
+    def test_bad_quest_wrist_side_map_is_rejected(self):
+        raw = copy.deepcopy(profile("nero_dual_xhand").raw)
+        raw["input_settings"]["quest3_wrist_pose_mapping"]["left_rotation"][0] = 0.5
+        with self.assertRaisesRegex(ProfileError, "must be orthogonal"):
+            Profile(raw)
 
     def test_bad_profile_fields(self):
         raw = copy.deepcopy(profile("nero_dual_xhand").raw)
@@ -156,11 +179,11 @@ class ProfileTests(unittest.TestCase):
         raw["adapter_config"]["example_tool_map"] = {"mapping": "vendor_default"}
         raw["adapter_config"]["example_tracker"] = {"device": "tracker0"}
         raw["adapter_config"]["example_camera"] = {"serial": "camera0"}
-        with (patch.dict(DRIVERS, plugins["driver"]),
-              patch.dict(IK_ADAPTERS, plugins["ik"]),
-              patch.dict(RETARGETERS, plugins["retargeter"]),
-              patch.dict(INPUT_ADAPTERS, plugins["input"]),
-              patch.dict(CAMERA_ADAPTERS, plugins["camera"])):
+        with patch.dict(DRIVERS, plugins["driver"]), \
+                patch.dict(IK_ADAPTERS, plugins["ik"]), \
+                patch.dict(RETARGETERS, plugins["retargeter"]), \
+                patch.dict(INPUT_ADAPTERS, plugins["input"]), \
+                patch.dict(CAMERA_ADAPTERS, plugins["camera"]):
             configured = Profile(raw)
         self.assertEqual(configured.dimension, 16)
         self.assertEqual(configured.component(gripper["name"]).kind, "finger_tool")
@@ -210,6 +233,25 @@ class ArbiterTests(unittest.TestCase):
         self.m.select("POLICY", 1.05)
         self.assertFalse(any(k[0] == "policy" for k in self.m.candidates))
         self.assertEqual(self.m.tick(1.06), hold)
+
+    def test_homing_suppresses_final_output_and_idle_reseeds_measured_hold(self):
+        for spec in self.p.components:
+            target = [min(hi, max(lo, 0.4)) for lo, hi in zip(spec.lower, spec.upper)]
+            self.m.update_state(spec.name, list(spec.joints), target, 1.1)
+        self.m.select("HOMING", 1.1)
+        self.assertEqual(self.m.tick(1.2), {})
+        self.assertEqual(self.m.mode, "HOMING")
+        self.m.select("IDLE", 1.3)
+        hold = self.m.tick(1.4)
+        for spec in self.p.components:
+            expected = tuple(min(hi, max(lo, 0.4)) for lo, hi in zip(spec.lower, spec.upper))
+            self.assertEqual(hold[spec.name], expected)
+
+    def test_idle_policy_heartbeat_does_not_clear_teleop_safety_pause(self):
+        self.assertFalse(policy_idle_should_release("PAUSED", "TELEOP"))
+        self.assertFalse(policy_idle_should_release("PAUSED", "IDLE"))
+        self.assertTrue(policy_idle_should_release("PAUSED", "POLICY"))
+        self.assertTrue(policy_idle_should_release("POLICY", "POLICY"))
 
     def test_legacy_lerobot_mapping_and_original_preservation(self):
         try:

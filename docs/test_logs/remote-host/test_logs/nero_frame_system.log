@@ -1,0 +1,702 @@
+[INFO] [launch]: All log files can be found below /home/loopkok/.ros/log/2026-09-29-11-45-23-097737-haining14-1225782
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: NEXUS profile=nero_dual_xhand_mujoco instance=nero_sim sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc dry_run=False
+[INFO] [nexus_command_mux-1]: process started with pid [1225784]
+[INFO] [nexus_driver_manager-2]: process started with pid [1225786]
+[INFO] [nexus_input_bridge-3]: process started with pid [1225788]
+[INFO] [nero_mujoco_sim_node-4]: process started with pid [1225790]
+[INFO] [nexus_joint_bridge-5]: process started with pid [1225792]
+[INFO] [nexus_joint_bridge-6]: process started with pid [1225794]
+[INFO] [nexus_nero_teleop-7]: process started with pid [1225796]
+[INFO] [nexus_nero_teleop-8]: process started with pid [1225798]
+[INFO] [xhand_dex_retargeting_node-9]: process started with pid [1225800]
+[INFO] [data_collect_node-10]: process started with pid [1225802]
+[data_collect_node-10] [INFO] [1790653523.766515021] [nexus_data_collect]: NEXUS frozen profile sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc
+[nexus_command_mux-1] [INFO] [1790653523.767546802] [nexus_command_mux]: NEXUS mux: nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[nexus_joint_bridge-6] [INFO] [1790653523.787829249] [mujoco_hand_bridge_right_ee]: joint bridge xhand component=right_ee
+[nexus_driver_manager-2] [INFO] [1790653523.803991067] [nexus_driver_manager]: driver manager profile=nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[data_collect_node-10] [INFO] [1790653523.826249220] [nexus_data_collect]: data_collect ready: save_root=/home/loopkok/nexus_data session=default_task schema={
+[data_collect_node-10]   "nexus_profile": {
+[data_collect_node-10]     "schema_version": 2,
+[data_collect_node-10]     "profile_id": "nero_dual_xhand_mujoco",
+[data_collect_node-10]     "instance": "nero_sim",
+[data_collect_node-10]     "inputs": {
+[data_collect_node-10]       "left": {
+[data_collect_node-10]         "wrist": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/quest3/left_wrist_pose",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         },
+[data_collect_node-10]         "hand": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/hand_landmarks/left",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         }
+[data_collect_node-10]       },
+[data_collect_node-10]       "right": {
+[data_collect_node-10]         "wrist": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/quest3/right_wrist_pose",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         },
+[data_collect_node-10]         "hand": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/hand_landmarks/right",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         }
+[data_collect_node-10]       },
+[data_collect_node-10]       "body": {
+[data_collect_node-10]         "body_joints": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/quest3/body_joints",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         },
+[data_collect_node-10]         "body_joint_names": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/quest3/body_joint_names"
+[data_collect_node-10]         }
+[data_collect_node-10]       }
+[data_collect_node-10]     },
+[data_collect_node-10]     "input_settings": {
+[data_collect_node-10]       "landmark_preprocess": "mano",
+[data_collect_node-10]       "quest3_wrist_pose_mapping": {
+[data_collect_node-10]         "mode": "per_side",
+[data_collect_node-10]         "left_rotation": [
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           1.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           1.0,
+[data_collect_node-10]           -1.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0
+[data_collect_node-10]         ],
+[data_collect_node-10]         "right_rotation": [
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           1.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -1.0,
+[data_collect_node-10]           1.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0
+[data_collect_node-10]         ],
+[data_collect_node-10]         "left_frame_id": "nero_left_wrist_mapped",
+[data_collect_node-10]         "right_frame_id": "nero_right_wrist_mapped"
+[data_collect_node-10]       }
+[data_collect_node-10]     },
+[data_collect_node-10]     "components": [
+[data_collect_node-10]       {
+[data_collect_node-10]         "name": "left_arm",
+[data_collect_node-10]         "kind": "arm",
+[data_collect_node-10]         "joints": [
+[data_collect_node-10]           "left_joint1",
+[data_collect_node-10]           "left_joint2",
+[data_collect_node-10]           "left_joint3",
+[data_collect_node-10]           "left_joint4",
+[data_collect_node-10]           "left_joint5",
+[data_collect_node-10]           "left_joint6",
+[data_collect_node-10]           "left_joint7"
+[data_collect_node-10]         ],
+[data_collect_node-10]         "lower": [
+[data_collect_node-10]           -2.705261,
+[data_collect_node-10]           -1.74533,
+[data_collect_node-10]           -2.757621,
+[data_collect_node-10]           -1.012291,
+[data_collect_node-10]           -2.757621,
+[data_collect_node-10]           -0.733039,
+[data_collect_node-10]           -1.570797
+[data_collect_node-10]         ],
+[data_collect_node-10]         "upper": [
+[data_collect_node-10]           2.705261,
+[data_collect_node-10]           1.74533,
+[data_collect_node-10]           2.757621,
+[data_collect_node-10]           2.146755,
+[data_collect_node-10]           2.757621,
+[data_collect_node-10]           0.959932,
+[data_collect_node-10]           1.570797
+[data_collect_node-10]         ],
+[data_collect_node-10]         "driver": "nero_mujoco",
+[data_collect_node-10]         "feedback": "measured",
+[data_collect_node-10]         "ik": "nero_analytic",
+[data_collect_node-10]         "side": "left",
+[data_collect_node-10]         "unit": "rad",
+[data_collect_node-10]         "input_channel": "left",
+[data_collect_node-10]         "teleop": {
+[data_collect_node-10]           "arm_base_frame": "left_arm_base",
+[data_collect_node-10]           "vr_to_arm_rot": [
+[data_collect_node-10]             1.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.0
+[data_collect_node-10]           ],
+[data_collect_node-10]           "motion_scale": 0.65
+[data_collect_node-10]         },
+[data_collect_node-10]         "frame_transforms": {
+[data_collect_node-10]           "link7_to_xhand_palm": [
+[data_collect_node-10]             0.125,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             -0.0235,
+[data_collect_node-10]             1.5708,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.5708
+[data_collect_node-10]           ]
+[data_collect_node-10]         }
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "name": "right_arm",
+[data_collect_node-10]         "kind": "arm",
+[data_collect_node-10]         "joints": [
+[data_collect_node-10]           "right_joint1",
+[data_collect_node-10]           "right_joint2",
+[data_collect_node-10]           "right_joint3",
+[data_collect_node-10]           "right_joint4",
+[data_collect_node-10]           "right_joint5",
+[data_collect_node-10]           "right_joint6",
+[data_collect_node-10]           "right_joint7"
+[data_collect_node-10]         ],
+[data_collect_node-10]         "lower": [
+[data_collect_node-10]           -2.705261,
+[data_collect_node-10]           -1.74533,
+[data_collect_node-10]           -2.757621,
+[data_collect_node-10]           -1.012291,
+[data_collect_node-10]           -2.757621,
+[data_collect_node-10]           -0.733039,
+[data_collect_node-10]           -1.570797
+[data_collect_node-10]         ],
+[data_collect_node-10]         "upper": [
+[data_collect_node-10]           2.705261,
+[data_collect_node-10]           1.74533,
+[data_collect_node-10]           2.757621,
+[data_collect_node-10]           2.146755,
+[data_collect_node-10]           2.757621,
+[data_collect_node-10]           0.959932,
+[data_collect_node-10]           1.570797
+[data_collect_node-10]         ],
+[data_collect_node-10]         "driver": "nero_mujoco",
+[data_collect_node-10]         "feedback": "measured",
+[data_collect_node-10]         "ik": "nero_analytic",
+[data_collect_node-10]         "side": "right",
+[data_collect_node-10]         "unit": "rad",
+[data_collect_node-10]         "input_channel": "right",
+[data_collect_node-10]         "teleop": {
+[data_collect_node-10]           "arm_base_frame": "right_arm_base",
+[data_collect_node-10]           "vr_to_arm_rot": [
+[data_collect_node-10]             1.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.0
+[data_collect_node-10]           ],
+[data_collect_node-10]           "motion_scale": 0.65
+[data_collect_node-10]         },
+[data_collect_node-10]         "frame_transforms": {
+[data_collect_node-10]           "link7_to_xhand_palm": [
+[data_collect_node-10]             0.125,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             -0.0235,
+[data_collect_node-10]             1.5708,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.5708
+[data_collect_node-10]           ]
+[data_collect_node-10]         }
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "name": "left_ee",
+[data_collect_node-10]         "kind": "hand",
+[data_collect_node-10]         "joints": [
+[data_collect_node-10]           "left_hand_thumb_bend_joint",
+[data_collect_node-10]           "left_hand_thumb_rota_joint1",
+[data_collect_node-10]           "left_hand_thumb_rota_joint2",
+[data_collect_node-10]           "left_hand_index_bend_joint",
+[data_collect_node-10]           "left_hand_index_joint1",
+[data_collect_node-10]           "left_hand_index_joint2",
+[data_collect_node-10]           "left_hand_mid_joint1",
+[data_collect_node-10]           "left_hand_mid_joint2",
+[data_collect_node-10]           "left_hand_ring_joint1",
+[data_collect_node-10]           "left_hand_ring_joint2",
+[data_collect_node-10]           "left_hand_pinky_joint1",
+[data_collect_node-10]           "left_hand_pinky_joint2"
+[data_collect_node-10]         ],
+[data_collect_node-10]         "lower": [
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -0.698,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -0.174,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0
+[data_collect_node-10]         ],
+[data_collect_node-10]         "upper": [
+[data_collect_node-10]           1.832,
+[data_collect_node-10]           1.57,
+[data_collect_node-10]           1.57,
+[data_collect_node-10]           0.174,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919
+[data_collect_node-10]         ],
+[data_collect_node-10]         "driver": "nero_mujoco",
+[data_collect_node-10]         "feedback": "measured",
+[data_collect_node-10]         "side": "left",
+[data_collect_node-10]         "unit": "rad",
+[data_collect_node-10]         "input_channel": "left",
+[data_collect_node-10]         "retargeter": "xhand_dexpilot"
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "name": "right_ee",
+[data_collect_node-10]         "kind": "hand",
+[data_collect_node-10]         "joints": [
+[data_collect_node-10]           "right_hand_thumb_bend_joint",
+[data_collect_node-10]           "right_hand_thumb_rota_joint1",
+[data_collect_node-10]           "right_hand_thumb_rota_joint2",
+[data_collect_node-10]           "right_hand_index_bend_joint",
+[data_collect_node-10]           "right_hand_index_joint1",
+[data_collect_node-10]           "right_hand_index_joint2",
+[data_collect_node-10]           "right_hand_mid_joint1",
+[data_collect_node-10]           "right_hand_mid_joint2",
+[data_collect_node-10]           "right_hand_ring_joint1",
+[data_collect_node-10]           "right_hand_ring_joint2",
+[data_collect_node-10]           "right_hand_pinky_joint1",
+[data_collect_node-10]           "right_hand_pinky_joint2"
+[data_collect_node-10]         ],
+[data_collect_node-10]         "lower": [
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -0.698,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -0.174,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0
+[data_collect_node-10]         ],
+[data_collect_node-10]         "upper": [
+[data_collect_node-10]           1.832,
+[data_collect_node-10]           1.57,
+[data_collect_node-10]           1.57,
+[data_collect_node-10]           0.174,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919
+[data_collect_node-10]         ],
+[data_collect_node-10]         "driver": "nero_mujoco",
+[data_collect_node-10]         "feedback": "measured",
+[data_collect_node-10]         "side": "right",
+[data_collect_node-10]         "unit": "rad",
+[data_collect_node-10]         "input_channel": "right",
+[data_collect_node-10]         "retargeter": "xhand_dexpilot"
+[data_collect_node-10]       }
+[data_collect_node-10]     ],
+[data_collect_node-10]     "cameras": [
+[data_collect_node-10]       {
+[data_collect_node-10]         "role": "base",
+[data_collect_node-10]         "source": "orbbec",
+[data_collect_node-10]         "device": "SIM_BASE",
+[data_collect_node-10]         "capture_topic": "/nexus/nero_sim/sim_camera/base/image/compressed"
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "role": "left_wrist",
+[data_collect_node-10]         "source": "orbbec",
+[data_collect_node-10]         "device": "SIM_LEFT_WRIST",
+[data_collect_node-10]         "capture_topic": "/nexus/nero_sim/sim_camera/left_wrist/image/compressed"
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "role": "right_wrist",
+[data_collect_node-10]         "source": "orbbec",
+[data_collect_node-10]         "device": "SIM_RIGHT_WRIST",
+[data_collect_node-10]         "capture_topic": "/nexus/nero_sim/sim_camera/right_wrist/image/compressed"
+[data_collect_node-10]       }
+[data_collect_node-10]     ],
+[data_collect_node-10]     "dataset": {
+[data_collect_node-10]       "fps": 30,
+[data_collect_node-10]       "action_source": "next_state"
+[data_collect_node-10]     },
+[data_collect_node-10]     "policy": {
+[data_collect_node-10]       "camera_map": {
+[data_collect_node-10]         "base_0_rgb": "base",
+[data_collect_node-10]         "left_wrist_0_rgb": "left_wrist",
+[data_collect_node-10]         "right_wrist_0_rgb": "right_wrist"
+[data_collect_node-10]       }
+[data_collect_node-10]     },
+[data_collect_node-10]     "adapter_config": {
+[data_collect_node-10]       "nero_mujoco": {
+[data_collect_node-10]         "enable_viewer": false,
+[data_collect_node-10]         "realtime": true,
+[data_collect_node-10]         "timestep": 0.002,
+[data_collect_node-10]         "state_rate": 100.0,
+[data_collect_node-10]         "command_timeout": 0.5,
+[data_collect_node-10]         "homing_timeout": 45.0,
+[data_collect_node-10]         "joint_zero_offsets": {
+[data_collect_node-10]           "left_joint2": -1.5708,
+[data_collect_node-10]           "right_joint2": -1.5708
+[data_collect_node-10]         },
+[data_collect_node-10]         "home_pose": {
+[data_collect_node-10]           "left": [
+[data_collect_node-10]             -0.405,
+[data_collect_node-10]             1.281,
+[data_collect_node-10]             -0.957,
+[data_collect_node-10]             1.311,
+[data_collect_node-10]             2.682,
+[data_collect_node-10]             -0.314,
+[data_collect_node-10]             -0.163
+[data_collect_node-10]           ],
+[data_collect_node-10]           "right": [
+[data_collect_node-10]             0.405,
+[data_collect_node-10]             1.281,
+[data_collect_node-10]             0.957,
+[data_collect_node-10]             1.311,
+[data_collect_node-10]             -2.682,
+[data_collect_node-10]             0.314,
+[data_collect_node-10]             -0.163
+[data_collect_node-10]           ]
+[data_collect_node-10]         }
+[data_collect_node-10]       }
+[data_collect_node-10]     }
+[data_collect_node-10]   },
+[data_collect_node-10]   "profile_sha256": "bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+[data_collect_node-10]   "schema_version": 2,
+[data_collect_node-10]   "dataset_fps": 30,
+[data_collect_node-10]   "action_source": "next_state",
+[data_collect_node-10]   "cameras": [
+[data_collect_node-10]     "base",
+[data_collect_node-10]     "left_wrist",
+[data_collect_node-10]     "right_wrist"
+[data_collect_node-10]   ],
+[data_collect_node-10]   "hold_frames": 10,
+[data_collect_node-10]   "max_gap_ms": 100.0,
+[data_collect_node-10]   "state_dim": 38,
+[data_collect_node-10]   "state_blocks": [
+[data_collect_node-10]     {
+[data_collect_node-10]       "name": "left_arm",
+[data_collect_node-10]       "dim": 7
+[data_collect_node-10]     },
+[data_collect_node-10]     {
+[data_collect_node-10]       "name": "right_arm",
+[data_collect_node-10]       "dim": 7
+[data_collect_node-10]     },
+[data_collect_node-10]     {
+[data_collect_node-10]       "name": "left_ee",
+[data_collect_node-10]       "dim": 12
+[data_collect_node-10]     },
+[data_collect_node-10]     {
+[data_collect_node-10]       "name": "right_ee",
+[data_collect_node-10]       "dim": 12
+[data_collect_node-10]     }
+[data_collect_node-10]   ]
+[data_collect_node-10] }
+[nexus_joint_bridge-5] [INFO] [1790653523.836876268] [mujoco_hand_bridge_left_ee]: joint bridge xhand component=left_ee
+[nexus_input_bridge-3] [INFO] [1790653523.866340963] [nexus_input_bridge]: input bridge profile=nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc
+[nexus_nero_teleop-8] [INFO] [1790653523.994427809] [teleop_right_arm]: Nero teleop right: IK core=nero_quest_teleop.ik_solver; profile_sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc
+[nexus_nero_teleop-7] [INFO] [1790653524.058803910] [teleop_left_arm]: Nero teleop left: IK core=nero_quest_teleop.ik_solver; profile_sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc
+[nero_mujoco_sim_node-4] [INFO] [1790653524.143819331] [nero_mujoco_sim]: MuJoCo physics ready profile=nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc nq=45 nv=44 components=['left_arm', 'right_arm', 'left_ee', 'right_ee'] urdf=/home/loopkok/NEXUS/install/xhand_nero_description/share/xhand_nero_description/urdf/xhand_nero_description.urdf
+[xhand_dex_retargeting_node-9] [INFO] [1790653525.181259535] [nexus_xhand_retargeter]: Teleop mode: DIRECT START
+[xhand_dex_retargeting_node-9] [INFO] [1790653525.185009186] [nexus_xhand_retargeter]: XHand Dex Retargeting Node started, topic: /hand_landmarks
+[nero_mujoco_sim_node-4] [INFO] [1790653529.146079996] [nero_mujoco_sim]: MuJoCo physics_hz=477.3 real_time_factor=0.95 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790653534.146808448] [nero_mujoco_sim]: MuJoCo physics_hz=477.1 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653539.147234150] [nero_mujoco_sim]: MuJoCo physics_hz=477.2 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653544.149464427] [nero_mujoco_sim]: MuJoCo physics_hz=477.0 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653549.150224209] [nero_mujoco_sim]: MuJoCo physics_hz=477.1 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653554.152114717] [nero_mujoco_sim]: MuJoCo physics_hz=477.2 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653559.153470222] [nero_mujoco_sim]: MuJoCo physics_hz=477.3 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653564.154527515] [nero_mujoco_sim]: MuJoCo physics_hz=477.1 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653569.156056044] [nero_mujoco_sim]: MuJoCo physics_hz=477.5 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653574.157665808] [nero_mujoco_sim]: MuJoCo physics_hz=474.2 real_time_factor=0.95 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653579.159283937] [nero_mujoco_sim]: MuJoCo physics_hz=478.6 real_time_factor=0.96 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653584.160462466] [nero_mujoco_sim]: MuJoCo physics_hz=478.1 real_time_factor=0.96 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653589.160979770] [nero_mujoco_sim]: MuJoCo physics_hz=477.9 real_time_factor=0.96 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653594.161941710] [nero_mujoco_sim]: MuJoCo physics_hz=477.9 real_time_factor=0.96 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653599.163677338] [nero_mujoco_sim]: MuJoCo physics_hz=477.8 real_time_factor=0.96 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653604.165211200] [nero_mujoco_sim]: MuJoCo physics_hz=478.5 real_time_factor=0.96 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653609.167254713] [nero_mujoco_sim]: MuJoCo physics_hz=477.8 real_time_factor=0.96 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653614.169016515] [nero_mujoco_sim]: MuJoCo physics_hz=477.9 real_time_factor=0.96 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790653619.172314542] [nero_mujoco_sim]: MuJoCo physics_hz=478.1 real_time_factor=0.96 contacts=6
+[nexus_joint_bridge-5] [INFO] [1790653622.611688434] [mujoco_hand_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=0.0 received=1 invalid=0 max_callback_gap_ms=0.0 max_publish_ms=0.2 in 98.8s
+[nexus_joint_bridge-6] [INFO] [1790653622.625611618] [mujoco_hand_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=0.0 received=1 invalid=0 max_callback_gap_ms=0.0 max_publish_ms=0.3 in 98.9s
+[nero_mujoco_sim_node-4] [INFO] [1790653624.173253329] [nero_mujoco_sim]: MuJoCo physics_hz=474.5 real_time_factor=0.95 contacts=6
+[xhand_dex_retargeting_node-9] [INFO] [1790653627.598112863] [nexus_xhand_retargeter]: [Retarget FPS] 100 Hz (armed=True)
+[nexus_joint_bridge-5] [INFO] [1790653627.621055752] [mujoco_hand_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=50.3 received=252 invalid=0 max_callback_gap_ms=25.5 max_publish_ms=0.3 in 5.0s
+[nexus_joint_bridge-6] [INFO] [1790653627.626618380] [mujoco_hand_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=50.4 received=252 invalid=0 max_callback_gap_ms=26.3 max_publish_ms=0.4 in 5.0s
+[nero_mujoco_sim_node-4] [INFO] [1790653629.173911237] [nero_mujoco_sim]: MuJoCo physics_hz=478.3 real_time_factor=0.96 contacts=4
+[nexus_nero_teleop-8] [INFO] [1790653629.831572155] [teleop_right_arm]: Nero teleop reanchored to measured joints
+[nexus_nero_teleop-7] [INFO] [1790653629.831578301] [teleop_left_arm]: Nero teleop reanchored to measured joints
+[data_collect_node-10] [INFO] [1790653631.845933236] [nexus_data_collect]: control <- start
+[data_collect_node-10] [INFO] [1790653631.857276253] [nexus_data_collect]: REC start episode000000 task='' -> /home/loopkok/nexus_data/default_task/episode000000
+[data_collect_node-10] [WARN] [1790653631.858283462] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[data_collect_node-10] [INFO] [1790653631.859264203] [nexus_data_collect]: task for next episode <- 'NEXUS synthetic Quest3 teleoperation acceptance'
+[xhand_dex_retargeting_node-9] [INFO] [1790653632.603237490] [nexus_xhand_retargeter]: [Retarget FPS] 100 Hz (armed=True)
+[nexus_joint_bridge-5] [INFO] [1790653632.621171229] [mujoco_hand_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=50.0 received=250 invalid=0 max_callback_gap_ms=24.1 max_publish_ms=0.3 in 5.0s
+[nexus_joint_bridge-6] [INFO] [1790653632.648118524] [mujoco_hand_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=50.0 received=251 invalid=0 max_callback_gap_ms=25.6 max_publish_ms=0.3 in 5.0s
+[nero_mujoco_sim_node-4] [INFO] [1790653634.173974110] [nero_mujoco_sim]: MuJoCo physics_hz=475.4 real_time_factor=0.95 contacts=16
+[xhand_dex_retargeting_node-9] [INFO] [1790653637.618409891] [nexus_xhand_retargeter]: [Retarget FPS] 99 Hz (armed=True)
+[nexus_joint_bridge-5] [INFO] [1790653637.624226177] [mujoco_hand_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=50.0 received=250 invalid=0 max_callback_gap_ms=50.1 max_publish_ms=0.3 in 5.0s
+[nexus_joint_bridge-6] [INFO] [1790653637.649656664] [mujoco_hand_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=50.0 received=250 invalid=0 max_callback_gap_ms=50.2 max_publish_ms=0.4 in 5.0s
+[nero_mujoco_sim_node-4] [INFO] [1790653639.175214493] [nero_mujoco_sim]: MuJoCo physics_hz=478.1 real_time_factor=0.96 contacts=14
+[xhand_dex_retargeting_node-9] [INFO] [1790653642.621167276] [nexus_xhand_retargeter]: [Retarget FPS] 100 Hz (armed=True)
+[nexus_joint_bridge-5] [INFO] [1790653642.640465886] [mujoco_hand_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=50.0 received=251 invalid=0 max_callback_gap_ms=23.2 max_publish_ms=0.3 in 5.0s
+[nexus_joint_bridge-6] [INFO] [1790653642.666202068] [mujoco_hand_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=50.0 received=251 invalid=0 max_callback_gap_ms=24.5 max_publish_ms=0.3 in 5.0s
+[nero_mujoco_sim_node-4] [INFO] [1790653644.175367224] [nero_mujoco_sim]: MuJoCo physics_hz=478.0 real_time_factor=0.96 contacts=16
+[nexus_nero_teleop-7] [ERROR] [1790653644.424961239] [teleop_left_arm]: Nero input/feedback timeout; teleop disarmed
+[nexus_nero_teleop-8] [ERROR] [1790653644.437111881] [teleop_right_arm]: Nero input/feedback timeout; teleop disarmed
+[nexus_nero_teleop-7] [INFO] [1790653645.589607050] [teleop_left_arm]: Nero teleop reanchored to measured joints
+[nexus_nero_teleop-8] [INFO] [1790653645.589609843] [teleop_right_arm]: Nero teleop reanchored to measured joints
+[data_collect_node-10] [INFO] [1790653646.611722768] [nexus_data_collect]: control <- stop
+[data_collect_node-10] [INFO] [1790653646.642814876] [nexus_data_collect]: REC saved episode000000 (14.8s, streams=10608 samples, images=1323) -> /home/loopkok/nexus_data/default_task/episode000000
+[xhand_dex_retargeting_node-9] [INFO] [1790653647.623392837] [nexus_xhand_retargeter]: [Retarget FPS] 101 Hz (armed=True)
+[nexus_joint_bridge-5] [INFO] [1790653647.641800246] [mujoco_hand_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=48.8 received=244 invalid=0 max_callback_gap_ms=42.6 max_publish_ms=0.3 in 5.0s
+[nexus_joint_bridge-6] [INFO] [1790653647.667229780] [mujoco_hand_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=48.8 received=244 invalid=0 max_callback_gap_ms=42.7 max_publish_ms=0.3 in 5.0s
+[nero_mujoco_sim_node-4] [INFO] [1790653649.175415392] [nero_mujoco_sim]: MuJoCo physics_hz=478.4 real_time_factor=0.96 contacts=15
+[nexus_nero_teleop-7] [ERROR] [1790653649.384776242] [teleop_left_arm]: Nero input/feedback timeout; teleop disarmed
+[nexus_nero_teleop-8] [ERROR] [1790653649.397553202] [teleop_right_arm]: Nero input/feedback timeout; teleop disarmed
+[nero_mujoco_sim_node-4] [INFO] [1790653654.176849750] [nero_mujoco_sim]: MuJoCo physics_hz=478.1 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653659.177115512] [nero_mujoco_sim]: MuJoCo physics_hz=477.8 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653664.178286162] [nero_mujoco_sim]: MuJoCo physics_hz=477.7 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653669.179971559] [nero_mujoco_sim]: MuJoCo physics_hz=477.2 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653674.180367540] [nero_mujoco_sim]: MuJoCo physics_hz=477.2 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653679.180985880] [nero_mujoco_sim]: MuJoCo physics_hz=477.1 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653684.181019641] [nero_mujoco_sim]: MuJoCo physics_hz=477.4 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653689.182759372] [nero_mujoco_sim]: MuJoCo physics_hz=477.4 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653694.183418627] [nero_mujoco_sim]: MuJoCo physics_hz=477.3 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653699.184918927] [nero_mujoco_sim]: MuJoCo physics_hz=477.3 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653704.186519823] [nero_mujoco_sim]: MuJoCo physics_hz=477.4 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653709.187821395] [nero_mujoco_sim]: MuJoCo physics_hz=477.5 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653714.190319572] [nero_mujoco_sim]: MuJoCo physics_hz=478.2 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653719.190937861] [nero_mujoco_sim]: MuJoCo physics_hz=478.3 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653724.192369509] [nero_mujoco_sim]: MuJoCo physics_hz=478.3 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653729.193449374] [nero_mujoco_sim]: MuJoCo physics_hz=474.5 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653734.194396798] [nero_mujoco_sim]: MuJoCo physics_hz=478.5 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653739.195280974] [nero_mujoco_sim]: MuJoCo physics_hz=477.5 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653744.195396927] [nero_mujoco_sim]: MuJoCo physics_hz=477.6 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653749.196961120] [nero_mujoco_sim]: MuJoCo physics_hz=479.1 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653754.197890374] [nero_mujoco_sim]: MuJoCo physics_hz=479.1 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653759.198964843] [nero_mujoco_sim]: MuJoCo physics_hz=477.9 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653764.199839712] [nero_mujoco_sim]: MuJoCo physics_hz=478.0 real_time_factor=0.96 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653769.201572330] [nero_mujoco_sim]: MuJoCo physics_hz=477.2 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653774.201663621] [nero_mujoco_sim]: MuJoCo physics_hz=477.4 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653779.202137157] [nero_mujoco_sim]: MuJoCo physics_hz=477.2 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653784.203461823] [nero_mujoco_sim]: MuJoCo physics_hz=477.5 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653789.205851241] [nero_mujoco_sim]: MuJoCo physics_hz=477.0 real_time_factor=0.95 contacts=8
+[nero_mujoco_sim_node-4] [INFO] [1790653794.207536991] [nero_mujoco_sim]: MuJoCo physics_hz=476.8 real_time_factor=0.95 contacts=8
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [data_collect_node-10]: sending signal 'SIGINT' to process[data_collect_node-10]
+[INFO] [xhand_dex_retargeting_node-9]: sending signal 'SIGINT' to process[xhand_dex_retargeting_node-9]
+[INFO] [nexus_nero_teleop-8]: sending signal 'SIGINT' to process[nexus_nero_teleop-8]
+[INFO] [nexus_nero_teleop-7]: sending signal 'SIGINT' to process[nexus_nero_teleop-7]
+[INFO] [nexus_joint_bridge-6]: sending signal 'SIGINT' to process[nexus_joint_bridge-6]
+[INFO] [nexus_joint_bridge-5]: sending signal 'SIGINT' to process[nexus_joint_bridge-5]
+[INFO] [nero_mujoco_sim_node-4]: sending signal 'SIGINT' to process[nero_mujoco_sim_node-4]
+[INFO] [nexus_input_bridge-3]: sending signal 'SIGINT' to process[nexus_input_bridge-3]
+[INFO] [nexus_driver_manager-2]: sending signal 'SIGINT' to process[nexus_driver_manager-2]
+[INFO] [nexus_command_mux-1]: sending signal 'SIGINT' to process[nexus_command_mux-1]
+[xhand_dex_retargeting_node-9] Traceback (most recent call last):
+[xhand_dex_retargeting_node-9]   File "/home/loopkok/NEXUS/install/xhand_retargeting/lib/xhand_retargeting/xhand_dex_retargeting_node", line 33, in <module>
+[xhand_dex_retargeting_node-9]     sys.exit(load_entry_point('xhand-retargeting', 'console_scripts', 'xhand_dex_retargeting_node')())
+[xhand_dex_retargeting_node-9]   File "/home/loopkok/NEXUS/build/xhand_retargeting/xhand_retargeting/xhand_dex_retargeting_node.py", line 503, in main
+[xhand_dex_retargeting_node-9]     rclpy.spin(node)
+[xhand_dex_retargeting_node-9]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[xhand_dex_retargeting_node-9]     executor.spin_once()
+[xhand_dex_retargeting_node-9]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+[xhand_dex_retargeting_node-9]     self._spin_once_impl(timeout_sec)
+[xhand_dex_retargeting_node-9]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+[xhand_dex_retargeting_node-9]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[xhand_dex_retargeting_node-9]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+[xhand_dex_retargeting_node-9]     return next(self._cb_iter)
+[xhand_dex_retargeting_node-9]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+[xhand_dex_retargeting_node-9]     wait_set.wait(timeout_nsec)
+[xhand_dex_retargeting_node-9] KeyboardInterrupt
+[nexus_nero_teleop-8] Traceback (most recent call last):
+[nexus_nero_teleop-8]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/nero_teleop_node.py", line 156, in main
+[nexus_nero_teleop-8]     rclpy.spin(node)
+[nexus_nero_teleop-8]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[nexus_nero_teleop-8]     executor.spin_once()
+[nexus_nero_teleop-8]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+[nexus_nero_teleop-8]     self._spin_once_impl(timeout_sec)
+[nexus_nero_teleop-8]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+[nexus_nero_teleop-8]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[nexus_nero_teleop-8]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+[nexus_nero_teleop-8]     return next(self._cb_iter)
+[nexus_nero_teleop-8]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+[nexus_nero_teleop-8]     wait_set.wait(timeout_nsec)
+[nexus_nero_teleop-8] KeyboardInterrupt
+[nexus_nero_teleop-8] 
+[nexus_nero_teleop-8] During handling of the above exception, another exception occurred:
+[nexus_nero_teleop-8] 
+[nexus_nero_teleop-8] Traceback (most recent call last):
+[nexus_nero_teleop-8]   File "/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_nero_teleop", line 33, in <module>
+[nexus_nero_teleop-8]     sys.exit(load_entry_point('nexus-core', 'console_scripts', 'nexus_nero_teleop')())
+[nexus_nero_teleop-8]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/nero_teleop_node.py", line 159, in main
+[nexus_nero_teleop-8]     rclpy.shutdown()
+[nexus_nero_teleop-8]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[nexus_nero_teleop-8]     _shutdown(context=context)
+[nexus_nero_teleop-8]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[nexus_nero_teleop-8]     return context.shutdown()
+[nexus_nero_teleop-8]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[nexus_nero_teleop-8]     self.__context.shutdown()
+[nexus_nero_teleop-8] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[data_collect_node-10] Traceback (most recent call last):
+[data_collect_node-10]   File "/home/loopkok/NEXUS/install/astral_data_collect/lib/astral_data_collect/data_collect_node", line 33, in <module>
+[data_collect_node-10]     sys.exit(load_entry_point('astral-data-collect', 'console_scripts', 'data_collect_node')())
+[data_collect_node-10]   File "/home/loopkok/NEXUS/build/astral_data_collect/astral_data_collect/data_collect_node.py", line 772, in main
+[data_collect_node-10]     rclpy.shutdown()
+[data_collect_node-10]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[data_collect_node-10]     _shutdown(context=context)
+[data_collect_node-10]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[data_collect_node-10]     return context.shutdown()
+[data_collect_node-10]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[data_collect_node-10]     self.__context.shutdown()
+[data_collect_node-10] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[nexus_input_bridge-3] Traceback (most recent call last):
+[nexus_input_bridge-3]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/input_bridge_node.py", line 72, in main
+[nexus_input_bridge-3]     rclpy.spin(node)
+[nexus_input_bridge-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[nexus_input_bridge-3]     executor.spin_once()
+[nexus_input_bridge-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+[nexus_input_bridge-3]     self._spin_once_impl(timeout_sec)
+[nexus_input_bridge-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+[nexus_input_bridge-3]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[nexus_input_bridge-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+[nexus_input_bridge-3]     return next(self._cb_iter)
+[nexus_input_bridge-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+[nexus_input_bridge-3]     wait_set.wait(timeout_nsec)
+[nexus_input_bridge-3] KeyboardInterrupt
+[nexus_input_bridge-3] 
+[nexus_input_bridge-3] During handling of the above exception, another exception occurred:
+[nexus_input_bridge-3] 
+[nexus_input_bridge-3] Traceback (most recent call last):
+[nexus_input_bridge-3]   File "/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_input_bridge", line 33, in <module>
+[nexus_input_bridge-3]     sys.exit(load_entry_point('nexus-core', 'console_scripts', 'nexus_input_bridge')())
+[nexus_input_bridge-3]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/input_bridge_node.py", line 75, in main
+[nexus_input_bridge-3]     rclpy.shutdown()
+[nexus_input_bridge-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[nexus_input_bridge-3]     _shutdown(context=context)
+[nexus_input_bridge-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[nexus_input_bridge-3]     return context.shutdown()
+[nexus_input_bridge-3]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[nexus_input_bridge-3]     self.__context.shutdown()
+[nexus_input_bridge-3] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[nexus_nero_teleop-7] Traceback (most recent call last):
+[nexus_nero_teleop-7]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/nero_teleop_node.py", line 156, in main
+[nexus_nero_teleop-7]     rclpy.spin(node)
+[nexus_nero_teleop-7]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[nexus_nero_teleop-7]     executor.spin_once()
+[nexus_nero_teleop-7]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+[nexus_nero_teleop-7]     self._spin_once_impl(timeout_sec)
+[nexus_nero_teleop-7]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+[nexus_nero_teleop-7]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[nexus_nero_teleop-7]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+[nexus_nero_teleop-7]     return next(self._cb_iter)
+[nexus_nero_teleop-7]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+[nexus_nero_teleop-7]     wait_set.wait(timeout_nsec)
+[nexus_nero_teleop-7] KeyboardInterrupt
+[nexus_nero_teleop-7] 
+[nexus_nero_teleop-7] During handling of the above exception, another exception occurred:
+[nexus_nero_teleop-7] 
+[nexus_nero_teleop-7] Traceback (most recent call last):
+[nexus_nero_teleop-7]   File "/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_nero_teleop", line 33, in <module>
+[nexus_nero_teleop-7]     sys.exit(load_entry_point('nexus-core', 'console_scripts', 'nexus_nero_teleop')())
+[nexus_nero_teleop-7]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/nero_teleop_node.py", line 159, in main
+[nexus_nero_teleop-7]     rclpy.shutdown()
+[nexus_nero_teleop-7]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[nexus_nero_teleop-7]     _shutdown(context=context)
+[nexus_nero_teleop-7]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[nexus_nero_teleop-7]     return context.shutdown()
+[nexus_nero_teleop-7]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[nexus_nero_teleop-7]     self.__context.shutdown()
+[nexus_nero_teleop-7] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[nexus_command_mux-1] Traceback (most recent call last):
+[nexus_command_mux-1]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/command_mux_node.py", line 152, in main
+[nexus_command_mux-1]     rclpy.spin(node)
+[nexus_command_mux-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+[nexus_command_mux-1]     executor.spin_once()
+[nexus_command_mux-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+[nexus_command_mux-1]     self._spin_once_impl(timeout_sec)
+[nexus_command_mux-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+[nexus_command_mux-1]     handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+[nexus_command_mux-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+[nexus_command_mux-1]     return next(self._cb_iter)
+[nexus_command_mux-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+[nexus_command_mux-1]     wait_set.wait(timeout_nsec)
+[nexus_command_mux-1] KeyboardInterrupt
+[nexus_command_mux-1] 
+[nexus_command_mux-1] During handling of the above exception, another exception occurred:
+[nexus_command_mux-1] 
+[nexus_command_mux-1] Traceback (most recent call last):
+[nexus_command_mux-1]   File "/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_command_mux", line 33, in <module>
+[nexus_command_mux-1]     sys.exit(load_entry_point('nexus-core', 'console_scripts', 'nexus_command_mux')())
+[nexus_command_mux-1]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/command_mux_node.py", line 155, in main
+[nexus_command_mux-1]     rclpy.shutdown()
+[nexus_command_mux-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[nexus_command_mux-1]     _shutdown(context=context)
+[nexus_command_mux-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[nexus_command_mux-1]     return context.shutdown()
+[nexus_command_mux-1]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[nexus_command_mux-1]     self.__context.shutdown()
+[nexus_command_mux-1] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[nexus_driver_manager-2] Traceback (most recent call last):
+[nexus_driver_manager-2]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 248, in main
+[nexus_driver_manager-2]     executor.spin()
+[nexus_driver_manager-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+[nexus_driver_manager-2]     self.spin_once()
+[nexus_driver_manager-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+[nexus_driver_manager-2]     self._spin_once_impl(timeout_sec)
+[nexus_driver_manager-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+[nexus_driver_manager-2]     handler, entity, node = self.wait_for_ready_callbacks(
+[nexus_driver_manager-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+[nexus_driver_manager-2]     return next(self._cb_iter)
+[nexus_driver_manager-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+[nexus_driver_manager-2]     wait_set.wait(timeout_nsec)
+[nexus_driver_manager-2] KeyboardInterrupt
+[nexus_driver_manager-2] 
+[nexus_driver_manager-2] During handling of the above exception, another exception occurred:
+[nexus_driver_manager-2] 
+[nexus_driver_manager-2] Traceback (most recent call last):
+[nexus_driver_manager-2]   File "/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_driver_manager", line 33, in <module>
+[nexus_driver_manager-2]     sys.exit(load_entry_point('nexus-core', 'console_scripts', 'nexus_driver_manager')())
+[nexus_driver_manager-2]   File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 252, in main
+[nexus_driver_manager-2]     rclpy.shutdown()
+[nexus_driver_manager-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+[nexus_driver_manager-2]     _shutdown(context=context)
+[nexus_driver_manager-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+[nexus_driver_manager-2]     return context.shutdown()
+[nexus_driver_manager-2]   File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+[nexus_driver_manager-2]     self.__context.shutdown()
+[nexus_driver_manager-2] rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+[INFO] [nexus_joint_bridge-5]: process has finished cleanly [pid 1225792]
+[INFO] [nexus_joint_bridge-6]: process has finished cleanly [pid 1225794]
+[ERROR] [nexus_nero_teleop-8]: process has died [pid 1225798, exit code 1, cmd '/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_nero_teleop --ros-args -r __node:=teleop_right_arm --params-file /tmp/launch_params_9ng5emkj -r /teleop/start:=/nexus/nero_sim/control/teleop_start -r /teleop/disarm:=/nexus/nero_sim/control/teleop_disarm -r /teleop/armed:=/nexus/nero_sim/control/teleop_armed'].
+[ERROR] [data_collect_node-10]: process has died [pid 1225802, exit code 1, cmd '/home/loopkok/NEXUS/install/astral_data_collect/lib/astral_data_collect/data_collect_node --ros-args -r __node:=nexus_data_collect --params-file /tmp/launch_params_5q9ji8rx -r /teleop/start:=/nexus/nero_sim/control/teleop_start -r /teleop/disarm:=/nexus/nero_sim/control/teleop_disarm -r /data_collect/control:=/nexus/nero_sim/data/collect/control -r /data_collect/task:=/nexus/nero_sim/data/collect/task -r /data_collect/session:=/nexus/nero_sim/data/collect/session -r /data_collect/state:=/nexus/nero_sim/data/collect/state'].
+[ERROR] [nexus_input_bridge-3]: process has died [pid 1225788, exit code 1, cmd '/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_input_bridge --ros-args -r __node:=nexus_input_bridge --params-file /tmp/launch_params_noavwsat'].
+[ERROR] [nexus_command_mux-1]: process has died [pid 1225784, exit code 1, cmd '/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_command_mux --ros-args -r __node:=nexus_command_mux --params-file /tmp/launch_params_ei6z_d6z'].
+[ERROR] [nexus_driver_manager-2]: process has died [pid 1225786, exit code 1, cmd '/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_driver_manager --ros-args -r __node:=nexus_driver_manager --params-file /tmp/launch_params_qwa49ky5'].
+[ERROR] [nexus_nero_teleop-7]: process has died [pid 1225796, exit code 1, cmd '/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_nero_teleop --ros-args -r __node:=teleop_left_arm --params-file /tmp/launch_params_f99qx8ff -r /teleop/start:=/nexus/nero_sim/control/teleop_start -r /teleop/disarm:=/nexus/nero_sim/control/teleop_disarm -r /teleop/armed:=/nexus/nero_sim/control/teleop_armed'].
+[ERROR] [xhand_dex_retargeting_node-9]: process has died [pid 1225800, exit code -2, cmd '/home/loopkok/NEXUS/install/xhand_retargeting/lib/xhand_retargeting/xhand_dex_retargeting_node --ros-args -r __node:=nexus_xhand_retargeter --params-file /home/loopkok/NEXUS/install/xhand_retargeting/share/xhand_retargeting/config/retargeting_params.yaml --params-file /tmp/launch_params__bpg2ui2 -r /hand_landmarks/left:=/nexus/nero_sim/input/left/hand_landmarks -r /left_hand/xhand_command:=/nexus/nero_sim/legacy/left_xhand_candidate -r /hand_landmarks/right:=/nexus/nero_sim/input/right/hand_landmarks -r /right_hand/xhand_command:=/nexus/nero_sim/legacy/right_xhand_candidate -r /teleop/disarm:=/nexus/nero_sim/control/teleop_disarm -r /teleop/armed:=/nexus/nero_sim/control/teleop_armed'].
+[INFO] [nero_mujoco_sim_node-4]: process has finished cleanly [pid 1225790]

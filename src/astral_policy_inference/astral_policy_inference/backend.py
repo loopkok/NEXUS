@@ -261,8 +261,8 @@ class InprocBackend(PolicyBackend):
     chunk pacing, so ``queue_async`` reaches the policy rate and the observation
     payload is uploaded once per chunk instead of once per action row.
     Checkpoints with a ``temporal_ensemble_coeff`` fall back to ``select_action``
-    (single row, exponential weighting preserved). Requires lerobot+torch in
-    this interpreter (py3.12).
+    (single row, exponential weighting preserved). Requires a supported
+    lerobot+torch runtime in this interpreter.
     """
 
     name = "inproc"
@@ -284,6 +284,7 @@ class InprocBackend(PolicyBackend):
         self._policy = None
         self._pre = None
         self._post = None
+        self._legacy_pipeline = False
         self.last_infer_s = 0.0
         self.last_timing: dict[str, float] = {}  # prep/pre/infer/post/total ms
 
@@ -295,19 +296,22 @@ class InprocBackend(PolicyBackend):
                 get_policy_class,
                 make_pre_post_processors,
             )
-        except ImportError as exc:  # pragma: no cover
-            raise PolicyError(
-                "lerobot (this fork, v0.6.x) not importable in this interpreter "
-                f"(python {sys.version_info.major}.{sys.version_info.minor}); "
-                "use backend_type=remote — start serve.py --model act in a py3.12 "
-                "lerobot env and set host/port on this node"
-            ) from exc
+            legacy_pipeline = False
+        except ImportError:
+            # LeRobot 0.4.x keeps processor files in checkpoints but does not
+            # re-export these factories from lerobot.policies.
+            try:
+                from lerobot.policies.factory import get_policy_class
+                from lerobot.processor import PolicyProcessorPipeline
+            except ImportError as exc:  # pragma: no cover
+                raise PolicyError(
+                    "lerobot policy factories are unavailable in this interpreter "
+                    f"(python {sys.version_info.major}.{sys.version_info.minor}); "
+                    "install a supported LeRobot runtime or use backend_type=remote"
+                ) from exc
+            legacy_pipeline = True
         try:
-            # PreTrainedPolicy is the *abstract* base in lerobot 0.6.x; the
-            # concrete policy class (ACTPolicy etc.) is resolved via the factory
-            # from the checkpoint's own config.json "type". Directly calling
-            # PreTrainedPolicy.from_pretrained cannot instantiate a real
-            # checkpoint ("Can't instantiate abstract class").
+            # Resolve the concrete policy class from the checkpoint's config.
             with open(
                 os.path.join(self.checkpoint_dir, "config.json"), "r", encoding="utf-8"
             ) as f:
@@ -316,10 +320,20 @@ class InprocBackend(PolicyBackend):
             policy = policy_cls.from_pretrained(self.checkpoint_dir)
             if self.device is not None:
                 policy.to(self.device)
-            pre, post = make_pre_post_processors(
-                policy.config,
-                pretrained_path=self.checkpoint_dir,
-            )
+            if legacy_pipeline:
+                pre = PolicyProcessorPipeline.from_pretrained(
+                    self.checkpoint_dir,
+                    config_filename="policy_preprocessor.json",
+                )
+                post = PolicyProcessorPipeline.from_pretrained(
+                    self.checkpoint_dir,
+                    config_filename="policy_postprocessor.json",
+                )
+            else:
+                pre, post = make_pre_post_processors(
+                    policy.config,
+                    pretrained_path=self.checkpoint_dir,
+                )
         except Exception as exc:  # noqa: BLE001
             raise PolicyError(
                 f"checkpoint load failed from {self.checkpoint_dir}: {exc}"
@@ -327,11 +341,13 @@ class InprocBackend(PolicyBackend):
         self._policy = policy
         self._pre = pre
         self._post = post
+        self._legacy_pipeline = legacy_pipeline
 
     def close(self) -> None:
         self._policy = None
         self._pre = None
         self._post = None
+        self._legacy_pipeline = False
 
     def reset(self) -> None:
         if self._policy is not None:
@@ -379,28 +395,40 @@ class InprocBackend(PolicyBackend):
                     action = self._policy.predict_action_chunk(obs_in)
                 timing["infer_ms"] = (time.perf_counter() - t2) * 1000.0
                 t3 = time.perf_counter()
-                action = self._post(action)
+                if self._legacy_pipeline:
+                    action = self._post({"action": action})
+                    if isinstance(action, dict):
+                        action = action.get("action")
+                    if action is None:
+                        raise PolicyError("LeRobot postprocessor returned no action")
+                else:
+                    action = self._post(action)
                 timing["post_ms"] = (time.perf_counter() - t3) * 1000.0
             timing["total_ms"] = (time.perf_counter() - t0) * 1000.0
             self.last_timing = timing
             self.last_infer_s = time.perf_counter() - t0
-            arr = np.asarray(action.detach().cpu().squeeze(0), dtype=np.float64)
+            if hasattr(action, "detach"):
+                action = action.detach().cpu().numpy()
+            arr = np.asarray(action, dtype=np.float64)
         except Exception as exc:  # noqa: BLE001
             raise PolicyError(f"inproc infer failed: {exc}") from exc
+        if arr.ndim == 3 and arr.shape[0] == 1:
+            arr = arr[0]
         if arr.ndim == 1:
             arr = arr.reshape(1, -1)
-        if arr.shape[1] != self.action_dim:
+        if arr.ndim != 2 or arr.shape[1] != self.action_dim:
             raise PolicyError(
-                f"inproc action_dim {arr.shape[1]} != robot action_dim {self.action_dim}"
+                f"inproc action shape {arr.shape} != (rows, {self.action_dim})"
             )
         return arr
 
 
 class StubBackend(PolicyBackend):
-    """Deterministic no-op backend for tests / MuJoCo smoke runs (no network).
+    """Deterministic hold-position backend for tests / MuJoCo smoke runs.
 
-    Inferences a short constant-ish chunk so engines/nodes can be exercised
-    without openpi/lerobot installed. Not for real deployment.
+    Returns a short absolute-action chunk at the observed state so control,
+    arbitration and HITL can be exercised without openpi/lerobot or network
+    access. It is not a learned policy and is not for deployment.
     """
 
     name = "stub"
@@ -431,11 +459,12 @@ class StubBackend(PolicyBackend):
     def infer(self, obs: ObsBatch) -> np.ndarray:
         self._n += 1
         self.last_infer_s = 1e-3
-        # a gentle absolute drift so ticks visibly differ (sim smoke checks).
-        phase = float(self._n % 4)
-        out = np.zeros((4, self.action_dim), dtype=np.float64)
-        out[:] = 0.05 * np.cos(phase + np.arange(self.action_dim))
-        return out
+        state = np.asarray(obs.state, dtype=np.float64).reshape(-1)
+        if state.shape != (self.action_dim,) or not np.isfinite(state).all():
+            raise PolicyError(
+                f"stub observation state must be finite with dimension {self.action_dim}"
+            )
+        return np.repeat(state[np.newaxis, :], 4, axis=0)
 
 
 def make_backend(

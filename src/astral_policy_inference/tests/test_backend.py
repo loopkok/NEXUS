@@ -154,6 +154,13 @@ class TestFactory(unittest.TestCase):
         with self.assertRaises(PolicyError):
             make_backend(backend_type="nope", action_dim=ACT_DIM, camera_map={})
 
+    def test_stub_returns_absolute_hold_for_nonzero_robot_state(self):
+        backend = StubBackend(action_dim=ACT_DIM, camera_map={})
+        state = np.linspace(-1.8, 1.6, ACT_DIM)
+        actions = backend.infer(ObsBatch(state=state, images={}, prompt=""))
+        self.assertEqual(actions.shape, (4, ACT_DIM))
+        np.testing.assert_array_equal(actions, np.repeat(state[None, :], 4, axis=0))
+
 
 class TestInprocBackendLoad(unittest.TestCase):
     """Regression: ``InprocBackend.open()`` must resolve the concrete policy
@@ -223,6 +230,46 @@ class TestInprocBackendLoad(unittest.TestCase):
                 bk = InprocBackend(checkpoint_dir=d, action_dim=8, image_keys={})
                 with self.assertRaises(PolicyError):
                     bk.open()
+
+    def test_open_supports_legacy_lerobot_processor_pipeline(self):
+        seen = []
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "config.json"), "w") as f:
+                json.dump({"type": "act"}, f)
+            root = types.ModuleType("lerobot")
+            root.__path__ = []
+            policies = types.ModuleType("lerobot.policies")
+            policies.__path__ = []
+            factory = types.ModuleType("lerobot.policies.factory")
+
+            class FakePolicy:
+                @classmethod
+                def from_pretrained(cls, path):
+                    seen.append(("from_pretrained", path))
+                    return SimpleNamespace(config=SimpleNamespace(type="act"), to=lambda *a: None)
+
+            factory.get_policy_class = lambda name: FakePolicy
+
+            class Pipeline:
+                @classmethod
+                def from_pretrained(cls, path, *, config_filename):
+                    seen.append(("pipeline", config_filename))
+                    return lambda data: data
+
+            processor = types.ModuleType("lerobot.processor")
+            processor.PolicyProcessorPipeline = Pipeline
+            with mock.patch.dict(sys.modules, {
+                "lerobot": root,
+                "lerobot.policies": policies,
+                "lerobot.policies.factory": factory,
+                "lerobot.processor": processor,
+            }):
+                bk = InprocBackend(checkpoint_dir=d, action_dim=8, image_keys={})
+                bk.open()
+
+        self.assertTrue(bk._legacy_pipeline)
+        self.assertIn(("pipeline", "policy_preprocessor.json"), seen)
+        self.assertIn(("pipeline", "policy_postprocessor.json"), seen)
 
 
 class TestProtocol(unittest.TestCase):

@@ -1,0 +1,60 @@
+# Nero Quest pose frame correction and simulation retest
+
+- Date: 2026-09-29 (Asia/Shanghai)
+- Deployment: `/home/loopkok/NEXUS` on `192.168.0.231`
+- Profile: `nero_dual_xhand_mujoco`
+- Profile SHA256: `bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc`
+- ROS isolation: `ROS_DOMAIN_ID=89`, `ROS_LOCALHOST_ONLY=1`
+- Hardware boundary: simulation only. No CAN, real robot driver, Quest receiver, physical
+  camera, or hand hardware was started.
+
+## Corrected frame path
+
+1. Quest wrist/controller poses use the XNero left/right rotation selected by the Nero
+   assembly profile. The Quest ROS adapter applies that mapping once and bypasses the
+   generic `convert_to_robot` conversion for these wrist poses.
+2. Hand landmarks and body/head data retain their existing generic conversion setting.
+3. NEXUS Nero profiles use identity `vr_to_arm_rot`. Nero teleop anchors to measured
+   `link7` FK and passes the Quest flange target directly to the unchanged Nero IK solver.
+4. `frame_transforms.link7_to_xhand_palm` contains physical palm geometry for FK/model
+   parity only; it is not part of the teleop target path.
+
+## Verification
+
+- Remote build: `quest3_hand_mocap`, `nexus_core`, and `nero_mujoco_sim` passed.
+- Remote tests on the deployed build: NEXUS contract 16/16, Quest basis mapping 3/3,
+  Nero MuJoCo 6/6. The final local revision adds explicit `per_side` override tests;
+  the local Quest pose-mapping suite passes 6/6.
+- ROS synthetic-input acceptance: PASS. Each of the four final command topics had one
+  publisher. Joint state, commands, Quest wrist/hand/Joy bridge, and three synthetic
+  compressed camera streams flowed through the isolated simulation graph.
+- For a synthetic Quest input of 8 mm amplitude and `motion_scale=0.65`, desired link7
+  X peak-to-peak was 10.4 mm. MuJoCo measured 9.835 mm left and 9.856 mm right
+  (94.6% and 94.8%); input/tracking correlation was 0.964 and 0.962. Maximum link7
+  orientation drift was 0.0354 degrees on each side. IK candidate FK moved 10.36 mm in X;
+  off-axis Y/Z excursion remained below 1.1 mm in measured physics state.
+- Input-to-candidate latency: left p50/p95/max 1.84/21.12/34.77 ms; right
+  8.53/11.82/57.11 ms. Wrist loss paused arbitration after 845 ms, with zero wrist
+  messages received after publisher shutdown.
+- MuJoCo FK parity tests still pass for link7 and the independent physical XHand palm frame.
+
+## Data/model scope
+
+The recorder returned to IDLE and accumulated a 2.38 MB session, but no complete episode was
+reported (`episode_counts={}`, `episode_index=-1`). This run therefore does not establish
+quality/export for the corrected profile hash. The earlier 442-frame quality/export run and
+ACT model used the previous profile SHA256 `046547d23b5effc16707016208fe5a11f44641f80064df2f744c01b9f9a84167`;
+they remain historical results and must be regenerated/retrained before claiming current
+profile data or checkpoint compatibility. The profile manifest gate should reject that old
+checkpoint under the new hash.
+
+Raw remote evidence is mirrored in:
+
+- `remote-host/test_logs/nero_frame_acceptance_record.json`
+- `remote-host/test_logs/nero_frame_system.log`
+
+The deployment host stopped responding to ICMP and SSH after the simulation finished.
+The final local-only test/helper refinement and this correction summary could not be
+copied back to the host during this session. The remote tested implementation already
+uses the same per-side override directly; the final local helper makes that mode
+selection explicit and adds a regression test for bypassing the generic conversion.

@@ -1,0 +1,106 @@
+[INFO] [1790629299.240465055] [nexus_sim_acceptance]: simulation acceptance profile=nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+{
+  "result": "FAIL",
+  "error": "left arm rotated during translation-only input: {'tcp_x_peak_to_peak_m': 0.03160598376609844, 'wrist_expected_peak_to_peak_m': 0.010400000000000001, 'tcp_x_expected_correlation': 0.8924068443804698, 'tcp_orientation_max_drift_deg': 19.425503410821474, 'arm_joint_target_tracking_error': {'p95_abs_rad': 0.24327350351278645, 'max_abs_rad': 0.4117880956183727, 'max_by_joint_rad': {'left_joint1': 0.4117880956183727, 'left_joint2': 0.0461133288842176, 'left_joint3': 0.24496378001023295, 'left_joint4': 0.05730933438791852, 'left_joint5': 0.08854044054979587, 'left_joint6': 0.0853090923651148, 'left_joint7': 0.06798663194635446}, 'matched_state_samples': 792}, 'ik_candidate_motion': {'samples': 508, 'tcp_orientation_max_drift_deg': 1.7075472925031877e-06, 'tcp_position_peak_to_peak_xyz_m': [0.0083864490168209, 5.039295370712349e-07, 1.6038217224512152e-05], 'joint_peak_to_peak_rad': {'left_joint1': 0.9847708643536301, 'left_joint2': 0.00153113117161352, 'left_joint3': 0.01985064238966583, 'left_joint4': 0.0004699460108188447, 'left_joint5': 0.7510753280786813, 'left_joint6': 0.6304125624146777, 'left_joint7': 0.16009151400038713}, 'joint_max_step_rad': {'left_joint1': 0.0156748924263872, 'left_joint2': 2.7575331605689257e-05, 'left_joint3': 0.0003539277542463637, 'left_joint4': 7.657872461486193e-06, 'left_joint5': 0.012089257272126286, 'left_joint6': 0.009875009951946012, 'left_joint7': 0.0036274274512311244}, 'max_gap_ms': 47.357660019770265}, 'motion_state_samples': 815, 'wrist_input_y_peak_to_peak_m': 0.015999923558478433, 'teleop_candidate_joint_peak_to_peak_rad': 1.2991072311335004, 'teleop_candidate_max_gap_ms': 64.26220503635705, 'end_effector_candidate_max_gap_ms': 49.305180087685585, 'tcp_position_peak_to_peak_xyz_m': [0.03160598376609844, 0.07351911833533552, 0.014086224252300661], 'input_to_candidate_latency_ms': {'count': 670, 'p50': 9.533833945170045, 'p95': 12.267156725283712, 'max': 36.8668008595705}}",
+  "control": {
+    "mode": "TELEOP",
+    "fault": "",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+    "ready_components": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ]
+  },
+  "policy": {
+    "state": "IDLE",
+    "fault": "",
+    "model": "act",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+    "ready": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ],
+    "cameras": [
+      "base",
+      "left_wrist",
+      "right_wrist"
+    ]
+  },
+  "collect": {
+    "state": "IDLE",
+    "session": "20260929_acceptance8",
+    "episode_index": -1,
+    "elapsed_s": 0.0,
+    "samples_per_s": {},
+    "camera_counts": {},
+    "folder": "/home/loopkok/NEXUS/data/acceptance/20260929_acceptance8"
+  },
+  "counts": {
+    "command:left_arm": 2129,
+    "command:right_arm": 2128,
+    "command:left_ee": 2127,
+    "command:right_ee": 2127,
+    "bridge_wrist:left": 1064,
+    "bridge_hand:left": 1064,
+    "bridge_wrist:right": 1064,
+    "bridge_hand:right": 1064,
+    "camera:base": 639,
+    "camera:left_wrist": 639,
+    "camera:right_wrist": 639,
+    "native_xhand_candidate:left": 1064,
+    "native_xhand_candidate:right": 1064,
+    "state:left_arm": 1612,
+    "state:right_arm": 1612,
+    "state:left_ee": 1611,
+    "state:right_ee": 1610,
+    "motion_state:left": 942,
+    "motion_state:right": 942
+  },
+  "candidates": {
+    "teleop:left_ee": 1061,
+    "teleop:right_ee": 1060,
+    "teleop:left_arm": 746,
+    "teleop:right_arm": 748
+  },
+  "control_history": [
+    [
+      1070043.50723076,
+      "IDLE",
+      ""
+    ],
+    [
+      1070049.041330149,
+      "TELEOP",
+      ""
+    ]
+  ],
+  "wrist_dropout": {},
+  "candidate_range_rad": {
+    "teleop:left_ee": 0.7226807754486799,
+    "teleop:right_ee": 0.630102813243866,
+    "teleop:left_arm": 1.2991072311335004,
+    "teleop:right_arm": 1.5326255165333507
+  },
+  "candidate_max_gap_ms": {
+    "teleop:left_ee": 49.305180087685585,
+    "teleop:right_ee": 53.30898496322334,
+    "teleop:left_arm": 64.26220503635705,
+    "teleop:right_arm": 52.22363513894379
+  }
+}
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 705, in <module>
+    main()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 666, in main
+    result = node.run_record()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 471, in run_record
+    tracking = self._motion_metrics()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 442, in _motion_metrics
+    raise RuntimeError(f"{side} arm rotated during translation-only input: {result[side]}")
+RuntimeError: left arm rotated during translation-only input: {'tcp_x_peak_to_peak_m': 0.03160598376609844, 'wrist_expected_peak_to_peak_m': 0.010400000000000001, 'tcp_x_expected_correlation': 0.8924068443804698, 'tcp_orientation_max_drift_deg': 19.425503410821474, 'arm_joint_target_tracking_error': {'p95_abs_rad': 0.24327350351278645, 'max_abs_rad': 0.4117880956183727, 'max_by_joint_rad': {'left_joint1': 0.4117880956183727, 'left_joint2': 0.0461133288842176, 'left_joint3': 0.24496378001023295, 'left_joint4': 0.05730933438791852, 'left_joint5': 0.08854044054979587, 'left_joint6': 0.0853090923651148, 'left_joint7': 0.06798663194635446}, 'matched_state_samples': 792}, 'ik_candidate_motion': {'samples': 508, 'tcp_orientation_max_drift_deg': 1.7075472925031877e-06, 'tcp_position_peak_to_peak_xyz_m': [0.0083864490168209, 5.039295370712349e-07, 1.6038217224512152e-05], 'joint_peak_to_peak_rad': {'left_joint1': 0.9847708643536301, 'left_joint2': 0.00153113117161352, 'left_joint3': 0.01985064238966583, 'left_joint4': 0.0004699460108188447, 'left_joint5': 0.7510753280786813, 'left_joint6': 0.6304125624146777, 'left_joint7': 0.16009151400038713}, 'joint_max_step_rad': {'left_joint1': 0.0156748924263872, 'left_joint2': 2.7575331605689257e-05, 'left_joint3': 0.0003539277542463637, 'left_joint4': 7.657872461486193e-06, 'left_joint5': 0.012089257272126286, 'left_joint6': 0.009875009951946012, 'left_joint7': 0.0036274274512311244}, 'max_gap_ms': 47.357660019770265}, 'motion_state_samples': 815, 'wrist_input_y_peak_to_peak_m': 0.015999923558478433, 'teleop_candidate_joint_peak_to_peak_rad': 1.2991072311335004, 'teleop_candidate_max_gap_ms': 64.26220503635705, 'end_effector_candidate_max_gap_ms': 49.305180087685585, 'tcp_position_peak_to_peak_xyz_m': [0.03160598376609844, 0.07351911833533552, 0.014086224252300661], 'input_to_candidate_latency_ms': {'count': 670, 'p50': 9.533833945170045, 'p95': 12.267156725283712, 'max': 36.8668008595705}}

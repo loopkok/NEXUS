@@ -10,6 +10,7 @@ NEXUS is a ROS 2 Humble workspace for one selected robot assembly per launch. It
 | `astral_gripper_wuji` | 35 | Quest 3 | Astral dual arms, left gripper, right Wuji hand |
 | `astral_gripper_wuji_glove` | 35 | Quest 3 wrists, Wuji glove hand landmarks | Astral dual arms, left gripper, right Wuji hand |
 | `nero_dual_xhand` | 38 | Quest 3 | Nero dual arms and two XHands |
+| `nero_dual_xhand_mujoco` | 38 | Quest 3 | MuJoCo physics simulation of Nero dual arms and two XHands |
 
 The schema v2 profile JSON in `src/nexus_core/profiles` is the single assembly definition: it selects drivers, IK and retargeting plugins, input topics, camera roles, joint order/units/limits, and model/data semantics. The core discovers plugins through Python entry points (`nexus.driver_adapters`, `nexus.ik_adapters`, `nexus.retargeter_adapters`, `nexus.input_adapters`, and `nexus.camera_adapters`), then assembles the selected profile without a robot-family switch. A new robot package registers its driver and, when needed, IK and end-effector adapters; the NEXUS core code does not change. The profile digest and frozen component order are embedded in each recorded episode. The model manifest must match this layout before inference starts. See [docs/NEXUS_ADAPTER_CONTRACT.md](docs/NEXUS_ADAPTER_CONTRACT.md) for the package and ROS contracts.
 
@@ -33,6 +34,29 @@ ros2 launch nexus_core system.launch.py profile:=/absolute/path/to/site_profile.
 ```
 
 The launch prints the active profile ID and SHA256. This release starts one NEXUS assembly per launch; every NEXUS input, camera, control, policy and driver lifecycle interface is already scoped under `/nexus/<instance>`.
+
+## Nero + XHand MuJoCo simulation
+
+`nero_mujoco_sim` is a physics-backed NEXUS driver plugin. It loads the existing `xhand_nero_description` URDF and STL meshes at startup, builds an MJCF model with the assembly's inertias and joint frames, adds position actuators, contact geometry, a work table and a pick cube, then publishes measured simulated joint states. Both arm and hand commands enter through the regular NEXUS mux topics. The simulation profile uses the dedicated `/nexus/nero_sim` namespace so simulated command/state topics stay separate from the physical `/nexus/nero` profile.
+
+Install MuJoCo into the Python environment used by ROS 2, build the workspace so the driver plugin entry point is registered, then launch headless simulation. Disable the physical Quest 3 receiver and camera adapters when feeding test sources:
+
+```bash
+python3 -m pip install 'mujoco>=3.2'
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch nexus_core system.launch.py profile:=nero_dual_xhand_mujoco dry_run:=false with_inputs:=false with_cameras:=false with_recording:=false with_policy:=false
+```
+
+The built-in simulator profile is headless. `with_inputs:=false` suppresses the Quest 3 UDP receiver while retaining the NEXUS input bridge, so synthetic or replayed messages can use the exact configured Quest topics. The acceptance publisher injects stable-framed Quest 3 wrist and 21-point hand poses, controller `Joy`, body input, and JPEG camera frames; its moving wrist path is small and translation-only:
+
+```bash
+python3 scripts/nexus_sim_acceptance.py --profile src/nexus_core/profiles/nero_dual_xhand_mujoco.json
+```
+
+Set `with_recording:=true` and pass a fresh `data_root` and `session` to capture the ROS flow. The script checks measured feedback, the single final-command publisher, wrist dropout hold, TCP tracking and orientation drift, and writes JSON metrics to stdout. A second run with `--phase policy` exercises the stub policy and human takeover; `--final-estop` latches only the MuJoCo simulation. Synthetic camera inputs are test sources, not rendered views from MuJoCo. The simulator itself publishes no camera or tactile data.
+
+The robot mesh, joint transforms, and inertias come from the existing description package; NEXUS profile limits are applied to the simulated joints so the physical command convention stays intact. MuJoCo simulates rigid-body dynamics and mesh contact, but the current scene has no rendered RGB camera or XHand tactile streams. The synthetic camera publisher can test the collection and policy interfaces without opening physical cameras. Actual ACT/pi0.5 training still requires the matching LeRobot/OpenPI training environment on the GPU host.
 
 ## ROS control contract
 

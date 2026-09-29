@@ -1,4 +1,4 @@
-"""Quest wrist to Nero arm candidate commands; original IK remains untouched."""
+"""Quest link7 flange poses to Nero arm candidate commands; IK stays untouched."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
@@ -18,6 +18,10 @@ from nero_quest_teleop.ik_solver import IKSolver
 from nero_quest_teleop.pose_processor import PoseProcessor
 from nero_quest_teleop.safety_filter import SafetyFilter
 from .profile import Profile
+
+# Candidate commands are latest-value control data: avoid reliable DDS
+# backpressure and let the mux stale-command watchdog reject a stalled stream.
+_CANDIDATE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
 
 
 class NeroTeleopNode(Node):
@@ -56,7 +60,7 @@ class NeroTeleopNode(Node):
         ns = self.profile.namespace
         self._pub = self.create_publisher(
             JointState, self.profile.candidate_topic("teleop", self.spec.name),
-            qos_profile_sensor_data)
+            _CANDIDATE_QOS)
         channel = self.spec.input_channel
         self.create_subscription(PoseStamped, f"{ns}/input/{channel}/wrist_pose",
                                  self._on_vr, qos_profile_sensor_data)
@@ -96,6 +100,8 @@ class NeroTeleopNode(Node):
         if self._vr is None or now - self._vr_time > float(self.get_parameter("input_timeout").value):
             return False, "fresh wrist pose required"
         self._solver.sync_state(self._state)
+        # Quest3 already reports the Nero link7 flange pose. Anchor and solve
+        # directly in the unchanged IK solver's link7 frame.
         self._anchor = self._solver.fk(self._state)
         self._processor.set_vr_zero_point(*self._vr)
         self._processor.update_vr_pose(*self._vr)

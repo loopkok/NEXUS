@@ -24,12 +24,12 @@ from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 
 
-def _sensor_data_qos() -> QoSProfile:
-    """Match wujihand_driver joint_commands subscription (SensorDataQoS)."""
+def _command_qos() -> QoSProfile:
+    """Reliable, latest-only delivery for retargeted command candidates."""
     return QoSProfile(
-        reliability=ReliabilityPolicy.BEST_EFFORT,
+        reliability=ReliabilityPolicy.RELIABLE,
         history=HistoryPolicy.KEEP_LAST,
-        depth=10,
+        depth=1,
     )
 
 from wujihand_retargeting.constants import (
@@ -120,7 +120,7 @@ class WujiHandRetargetNode(Node):
             self._cmd_pub[side] = self.create_publisher(
                 JointState,
                 f"/{hand_name}/joint_commands",
-                _sensor_data_qos(),
+                _command_qos(),
             )
             if self.viz:
                 self._viz_pub[side] = self.create_publisher(

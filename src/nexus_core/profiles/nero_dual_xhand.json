@@ -40,7 +40,14 @@
     }
   },
   "input_settings": {
-    "landmark_preprocess": "mano"
+    "landmark_preprocess": "mano",
+    "quest3_wrist_pose_mapping": {
+      "mode": "per_side",
+      "left_rotation": [0.0, 1.0, 0.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0],
+      "right_rotation": [0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 1.0, 0.0, 0.0],
+      "left_frame_id": "nero_left_wrist_mapped",
+      "right_frame_id": "nero_right_wrist_mapped"
+    }
   },
   "components": [
     {
@@ -82,25 +89,20 @@
       "teleop": {
         "arm_base_frame": "left_arm_base",
         "vr_to_arm_rot": [
-          0.0,
           1.0,
           0.0,
           0.0,
           0.0,
           1.0,
-          -1.0,
           0.0,
-          0.0
+          0.0,
+          0.0,
+          1.0
         ],
-        "motion_scale": 0.65,
-        "tcp_offset": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
+        "motion_scale": 0.65
+      },
+      "frame_transforms": {
+        "link7_to_xhand_palm": [0.125, 0.0, -0.0235, 1.5708, 0.0, 1.5708]
       }
     },
     {
@@ -142,25 +144,20 @@
       "teleop": {
         "arm_base_frame": "right_arm_base",
         "vr_to_arm_rot": [
+          1.0,
+          0.0,
+          0.0,
           0.0,
           1.0,
           0.0,
           0.0,
           0.0,
-          -1.0,
-          1.0,
-          0.0,
-          0.0
+          1.0
         ],
-        "motion_scale": 0.65,
-        "tcp_offset": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
+        "motion_scale": 0.65
+      },
+      "frame_transforms": {
+        "link7_to_xhand_palm": [0.125, 0.0, -0.0235, 1.5708, 0.0, 1.5708]
       }
     },
     {

@@ -227,7 +227,7 @@ def launch_wuji_retargeter(profile, components, path: str, dry_run: bool):
                   ])]
 
 
-def launch_xhand_retargeter(profile, components, path: str):
+def launch_xhand_retargeter(profile, components, path: str, _dry_run: bool):
     if not components:
         return []
     ns = profile.namespace
@@ -267,9 +267,19 @@ def launch_quest3_input(profile, channels, path: str, dry_run: bool):
             elif semantic == "hand":
                 remaps.append((default_topic, f"{profile.namespace}/unused/input/{channel}/hand_landmarks"))
     quest_cfg = _share("quest3_hand_mocap", "config", "quest3_mocap.yaml")
+    input_settings = profile.raw.get("input_settings", {})
+    mapping = input_settings.get("quest3_wrist_pose_mapping", {})
+    quest_params = {
+        "arm_side": "both",
+        "landmark_preprocess": input_settings.get("landmark_preprocess", "raw"),
+        "wrist_pose_mapping_mode": mapping.get("mode", "global"),
+    }
+    if mapping.get("mode") == "per_side":
+        for side in ("left", "right"):
+            quest_params[f"{side}_wrist_to_arm_rot"] = mapping[f"{side}_rotation"]
+            quest_params[f"{side}_wrist_frame_id"] = mapping[f"{side}_frame_id"]
     return [_node("quest3_hand_mocap", "quest3_udp_mocap", "nexus_quest3_input", [
-        quest_cfg, {"arm_side": "both", "landmark_preprocess": profile.raw.get(
-            "input_settings", {}).get("landmark_preprocess", "raw")}
+        quest_cfg, quest_params
     ], remaps)]
 
 

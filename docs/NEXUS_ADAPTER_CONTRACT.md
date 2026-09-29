@@ -40,8 +40,10 @@ or retargeter, and input channel. Hardware IDs and settings live under
       "teleop": {
         "arm_base_frame": "left_arm_base",
         "vr_to_arm_rot": [1,0,0,0,1,0,0,0,1],
-        "motion_scale": 0.65,
-        "tcp_offset": [0,0,0,0,0,0]
+        "motion_scale": 0.65
+      },
+      "frame_transforms": {
+        "link7_to_xhand_palm": [0.125,0,-0.0235,1.5708,0,1.5708]
       }
     }
   ],
@@ -66,6 +68,18 @@ bind a semantic role to one source, device ID, and (where applicable) source
 topic. This lets recording and inference consume `base`, `left_wrist`, and
 `right_wrist` without knowing the camera driver.
 
+Quest wrist mapping is selected by `input_settings.quest3_wrist_pose_mapping`.
+The default `global` mode preserves the Quest node's generic conversion. A
+profile may select `per_side` and provide left/right rotation matrices plus
+stable frame IDs; the Quest adapter then applies that side mapping to the full
+pose, bypassing the generic conversion for wrist/controller poses. Hand/body
+conversion remains controlled by `convert_to_robot`. Nero Quest wrist poses
+are already the link7 flange target: its profile puts the legacy XNero
+left/right rotations at the Quest adapter and keeps NEXUS `vr_to_arm_rot` at
+identity. NEXUS anchors and solves directly in link7, without applying the
+physical flange-to-palm frame transform. Physical tool geometry belongs under
+`frame_transforms`, not in the teleoperation mapping.
+
 Schema v1 profiles remain readable so recorded episode metadata keeps its
 original SHA256 identity. New site profiles should use schema v2 and store
 hardware settings in `adapter_config`.
@@ -88,15 +102,28 @@ All runtime APIs are scoped to `/nexus/<instance>`.
 | `control/{teleop_start,teleop_disarm,teleop_armed}` | `std_msgs/Bool` | Namespaced teleoperation gates |
 | `policy/{cmd,state}` | `std_msgs/String` | Policy/HITL requests and state |
 
+Source candidates are commands and use `RELIABLE`, `KEEP_LAST` depth 1 QoS from
+the source adapter through the mux subscription. Input poses, measured states,
+camera frames, and final driver commands use sensor-data QoS; the driver-local
+watchdog protects final command loss. New teleop, retargeter, policy, and replay
+plugins must use the candidate QoS contract so one delayed message cannot build
+an old command queue.
+
 `nexus_driver_manager` exposes one lifecycle API and fans calls out to the
 driver services declared by the adapter registry. `ready` only checks current
 feedback and adapter readiness; it never homes a robot. `enable`, `home`, and
 `estop` report partial failures. A failed partial enable triggers estop on all
 selected adapters. Homing is allowed only while the arbiter is `IDLE` or
-`PAUSED`. Astral's legacy `ready` service performs motion and is deliberately
-not used as NEXUS readiness.
+`PAUSED`; the manager first moves the arbiter to `HOMING`, which suppresses all
+final command output while the driver performs its lifecycle action. Adapters
+with an asynchronous home target register a target resolver so the manager can
+wait for fresh measured feedback to reach it before returning to `IDLE`. Other
+adapters must keep their home service active until homing is complete. Astral's
+legacy `ready` service performs motion and is deliberately not used as NEXUS
+readiness.
 
-The arbiter owns `IDLE`, `TELEOP`, `POLICY`, `PLAYBACK`, `PAUSED`, and `ESTOP`.
+The arbiter owns `IDLE`, `TELEOP`, `POLICY`, `PLAYBACK`, `PAUSED`, `HOMING`, and
+`ESTOP`.
 It seeds every source transition from measured state, checks command and state
 timeouts, and is the only final command publisher. Each hardware adapter checks
 joint names/order, vector dimensions, limits, finite values, enable state, and
@@ -153,7 +180,7 @@ tool can use a driver-defined kind such as `parallel_gripper`:
 ```json
 {
   "components": [
-    {"name":"left_arm", "kind":"arm", "driver":"acme_arm", "feedback":"measured", "unit":"rad", "ik":"acme_cartesian", "input_channel":"left", "teleop":{"arm_base_frame":"left_base", "vr_to_arm_rot":[1,0,0,0,1,0,0,0,1], "motion_scale":0.5, "tcp_offset":[0,0,0,0,0,0]}, "joints":["left_axis_1", "left_axis_2"], "lower":[-2.0, -2.0], "upper":[2.0, 2.0]},
+    {"name":"left_arm", "kind":"arm", "driver":"acme_arm", "feedback":"measured", "unit":"rad", "ik":"acme_cartesian", "input_channel":"left", "teleop":{"arm_base_frame":"left_base", "vr_to_arm_rot":[1,0,0,0,1,0,0,0,1], "motion_scale":0.5}, "joints":["left_axis_1", "left_axis_2"], "lower":[-2.0, -2.0], "upper":[2.0, 2.0]},
     {"name":"left_tool", "kind":"parallel_gripper", "driver":"acme_tool_driver", "feedback":"measured", "unit":"m", "retargeter":"acme_parallel_gripper", "joints":["left_finger"], "lower":[0.0], "upper":[0.08]}
   ],
   "adapter_config": {

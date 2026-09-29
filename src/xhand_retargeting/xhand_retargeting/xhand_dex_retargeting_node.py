@@ -11,6 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 from dex_retargeting.retargeting_config import RetargetingConfig
 from geometry_msgs.msg import PoseArray
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float64MultiArray
 
@@ -85,8 +86,10 @@ class XHandDexRetargetingNode(Node):
         self.enable_thumb_fix = self.get_parameter("enable_thumb_fix").value
 
         # 订阅左右手 topic（both 模式各发各的，单手模式共用 hand_landmarks）
-        self.create_subscription(PoseArray, f"{input_topic}/right", self.pose_callback_right, 10)
-        self.create_subscription(PoseArray, f"{input_topic}/left", self.pose_callback_left, 10)
+        self.create_subscription(PoseArray, f"{input_topic}/right", self.pose_callback_right,
+                                 qos_profile_sensor_data)
+        self.create_subscription(PoseArray, f"{input_topic}/left", self.pose_callback_left,
+                                 qos_profile_sensor_data)
 
         self.right_retargeter = self.make_config("right").build()
         self.left_retargeter = self.make_config("left").build()

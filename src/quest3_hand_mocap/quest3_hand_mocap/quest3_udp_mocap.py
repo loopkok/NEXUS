@@ -19,6 +19,7 @@ import re
 from typing import Optional, Tuple
 
 from quest3_hand_mocap.latency_meter import LatencyMeter
+from quest3_hand_mocap.pose_mapping import map_wrist_pose, rotate_pose
 
 # Quest opens one TCP socket per streamer (hands / head / controller / body).
 _TCP_LISTEN_BACKLOG = 8
@@ -293,6 +294,14 @@ class Quest3UDPMocap(Node):
         # Unity LH → robot (X left, Y back, Z up). If false: keep Unity axes
         # (landmarks only apply legacy X flip).
         self.declare_parameter("convert_to_robot", True)
+        # Side-specific wrist mapping replaces the generic conversion for
+        # wrist/controller poses. convert_to_robot still controls body/head
+        # and hand landmarks.
+        self.declare_parameter("wrist_pose_mapping_mode", "global")
+        self.declare_parameter("left_wrist_to_arm_rot", np.eye(3).reshape(-1).tolist())
+        self.declare_parameter("right_wrist_to_arm_rot", np.eye(3).reshape(-1).tolist())
+        self.declare_parameter("left_wrist_frame_id", "quest3_left_wrist")
+        self.declare_parameter("right_wrist_frame_id", "quest3_right_wrist")
         # Mixed/IOBT: Touch 6DoF also published on quest3/{side}_wrist_pose so
         # existing arm IK keeps tracking the held controller.
         self.declare_parameter("controller_as_wrist", True)
@@ -319,6 +328,27 @@ class Quest3UDPMocap(Node):
                 f"got {self.landmark_preprocess}"
             )
         self.convert_to_robot = bool(self.get_parameter("convert_to_robot").value)
+        self.wrist_pose_mapping_mode = str(
+            self.get_parameter("wrist_pose_mapping_mode").value
+        ).strip().lower()
+        if self.wrist_pose_mapping_mode not in ("global", "per_side"):
+            raise ValueError("wrist_pose_mapping_mode must be 'global' or 'per_side'")
+        self.wrist_to_arm_rot = {
+            side: np.asarray(
+                self.get_parameter(f"{side}_wrist_to_arm_rot").value, dtype=float
+            ).reshape(3, 3)
+            for side in ("left", "right")
+        }
+        self.wrist_frame_ids = {
+            side: str(self.get_parameter(f"{side}_wrist_frame_id").value)
+            for side in ("left", "right")
+        }
+        if self.wrist_pose_mapping_mode == "per_side":
+            for side in ("left", "right"):
+                rotate_pose(np.zeros(3), np.array([0.0, 0.0, 0.0, 1.0]),
+                            self.wrist_to_arm_rot[side])
+                if not self.wrist_frame_ids[side]:
+                    raise ValueError(f"{side}_wrist_frame_id cannot be empty")
         self.controller_as_wrist = bool(self.get_parameter("controller_as_wrist").value)
         self.publish_landmarks_left = bool(
             self.get_parameter("publish_landmarks_left").value
@@ -343,6 +373,7 @@ class Quest3UDPMocap(Node):
             f"preprocess={self.landmark_preprocess}, "
             f"xhand_pinky_adapt={self.enable_xhand_pinky_adapt}, "
             f"convert_to_robot={self.convert_to_robot}, "
+            f"wrist_pose_mapping={self.wrist_pose_mapping_mode}, "
             f"controller_as_wrist={self.controller_as_wrist}, "
             f"landmarks_L={self.publish_landmarks_left}, "
             f"landmarks_R={self.publish_landmarks_right}"
@@ -633,6 +664,23 @@ class Quest3UDPMocap(Node):
             return unity_pose_to_robot(pos_u, quat_u)
         return pos_u, quat_u
 
+    def _wrist_pose_to_out(
+        self, side: str, pos_u: np.ndarray, quat_u: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Map a wrist/controller pose once into the configured side basis."""
+        return map_wrist_pose(
+            pos_u,
+            quat_u,
+            mode=self.wrist_pose_mapping_mode,
+            side_rotation=self.wrist_to_arm_rot[side],
+            global_rotation=UNITY_TO_ROBOT if self.convert_to_robot else None,
+        )
+
+    def _wrist_pose_frame_id(self, side: str) -> str:
+        if self.wrist_pose_mapping_mode == "per_side":
+            return self.wrist_frame_ids[side]
+        return self._pose_frame_id()
+
     @staticmethod
     def _parse_pose7(line: str) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         parts = line.split(",")
@@ -698,7 +746,7 @@ class Quest3UDPMocap(Node):
         if not self._pose_frame_settled():
             return  # hold until head/wrist/controller frame is known
         pose_msg = self._make_pose_stamped(
-            pos, quat, arrival_time, self._pose_frame_id()
+            pos, quat, arrival_time, self._wrist_pose_frame_id(side)
         )
         if src == "controller":
             (
@@ -890,7 +938,7 @@ class Quest3UDPMocap(Node):
             parsed = self._parse_pose7(line)
             if parsed is not None:
                 try:
-                    pos, quat = self._unity_to_out(*parsed)
+                    pos, quat = self._wrist_pose_to_out(side, *parsed)
                     src = "controller" if "controller" in line_lower else "hand"
                     self._publish_side_pose(side, pos, quat, arrival_time, src)
                 except Exception as e:

@@ -37,6 +37,14 @@ def _sensor_qos() -> QoSProfile:
     )
 
 
+def _command_qos() -> QoSProfile:
+    return QoSProfile(
+        reliability=ReliabilityPolicy.RELIABLE,
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+    )
+
+
 class PinchGripperNode(Node):
     def __init__(self) -> None:
         super().__init__("pinch_gripper_node")
@@ -116,7 +124,7 @@ class PinchGripperNode(Node):
             raise ValueError("open_dist_m 必须大于 close_dist_m")
 
         qos = _sensor_qos()
-        self._pub_cmd = self.create_publisher(Float64, self.command_topic, qos)
+        self._pub_cmd = self.create_publisher(Float64, self.command_topic, _command_qos())
         self.create_subscription(
             PoseArray, self.landmark_topic, self._on_landmarks, qos
         )

@@ -9,6 +9,12 @@ from .profile import Profile, ProfileError
 SOURCES = {"TELEOP": "teleop", "POLICY": "policy", "PLAYBACK": "playback"}
 
 
+def policy_idle_should_release(current_mode: str, resume_mode: str) -> bool:
+    """Allow an IDLE policy heartbeat to release only policy-owned control."""
+    return (current_mode in ("POLICY", "PLAYBACK")
+            or current_mode == "PAUSED" and resume_mode in ("POLICY", "PLAYBACK"))
+
+
 @dataclass(frozen=True)
 class Sample:
     values: tuple[float, ...]
@@ -80,6 +86,23 @@ class CommandArbiter:
             return
         if self.estopped:
             raise ProfileError("emergency stop is latched; reset at the hardware adapter")
+        if mode == "HOMING":
+            if self.mode not in ("IDLE", "PAUSED"):
+                raise ProfileError(f"homing requires IDLE or PAUSED; current mode is {self.mode}")
+            self.mode = "HOMING"
+            self.fault = ""
+            return
+        if mode == "IDLE":
+            # An explicit IDLE request establishes a fresh measured hold point.
+            # Driver lifecycle operations such as home may have moved the robot
+            # while command output was suspended.
+            self.last_out = {
+                name: sample.values for name, sample in self.states.items()
+                if now - sample.received_at <= self.state_timeout
+            }
+            self.mode = "IDLE"
+            self.fault = ""
+            return
         if mode == "PAUSED":
             if self.mode in SOURCES:
                 self.resume_mode = self.mode
@@ -92,7 +115,7 @@ class CommandArbiter:
             return
         if mode == "RESUME":
             mode = self.resume_mode
-        if mode not in (*SOURCES, "IDLE"):
+        if mode not in SOURCES:
             raise ProfileError(f"invalid mode {mode}")
         if mode in SOURCES:
             missing = [c.name for c in self.profile.components
@@ -114,6 +137,10 @@ class CommandArbiter:
 
     def tick(self, now: float) -> dict[str, tuple[float, ...]]:
         if self.estopped:
+            return {}
+        if self.mode == "HOMING":
+            # Lifecycle adapters temporarily own their local homing action.
+            # No stale measured hold command may compete with it.
             return {}
         dt = 0.01 if self.last_tick is None else max(0.001, min(0.1, now - self.last_tick))
         self.last_tick = now

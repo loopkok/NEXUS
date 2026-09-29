@@ -1,0 +1,31 @@
+Starting >>> nexus_core
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+OK
+--- stderr: nexus_core
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+OK
+---
+Finished <<< nexus_core [0.37s]
+Starting >>> nero_mujoco_sim
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+OK
+--- stderr: nero_mujoco_sim
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+OK
+---
+Finished <<< nero_mujoco_sim [0.37s]
+
+Summary: 2 packages finished [1.39s]
+  2 packages had stderr output: nero_mujoco_sim nexus_core

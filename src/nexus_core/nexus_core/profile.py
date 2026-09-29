@@ -47,6 +47,7 @@ class Component:
     retargeter: str | None = None
     unit: str = "rad"
     teleop: dict[str, Any] | None = None
+    frame_transforms: dict[str, tuple[float, ...]] | None = None
 
     @property
     def dim(self) -> int:
@@ -74,7 +75,9 @@ class Profile:
         if not row.get("arm_base_frame"):
             raise ProfileError(f"{name}: teleop arm_base_frame is required")
         rot = row.get("vr_to_arm_rot")
-        offset = row.get("tcp_offset")
+        # Optional legacy field: only adapters that truly command a tool TCP
+        # should set this. Physical model-frame geometry belongs in frames.
+        offset = row.get("tcp_offset", [0.0] * 6)
         if not isinstance(rot, list) or len(rot) != 9 or not all(
                 isinstance(v, (int, float)) and math.isfinite(v) for v in rot):
             raise ProfileError(f"{name}: teleop vr_to_arm_rot must have 9 finite values")
@@ -134,6 +137,33 @@ class Profile:
             raise ProfileError("input_settings must be an object")
         if settings.get("landmark_preprocess", "raw") not in ("raw", "mano"):
             raise ProfileError("input_settings.landmark_preprocess must be raw or mano")
+        wrist_mapping = settings.get("quest3_wrist_pose_mapping")
+        if wrist_mapping is not None:
+            if not isinstance(wrist_mapping, dict) or wrist_mapping.get("mode") != "per_side":
+                raise ProfileError(
+                    "input_settings.quest3_wrist_pose_mapping.mode must be per_side"
+                )
+            for side in ("left", "right"):
+                rotation = wrist_mapping.get(f"{side}_rotation")
+                frame_id = wrist_mapping.get(f"{side}_frame_id")
+                if (not isinstance(rotation, list) or len(rotation) != 9
+                        or not all(isinstance(v, (int, float)) and math.isfinite(v)
+                                   for v in rotation)):
+                    raise ProfileError(
+                        f"quest3 wrist {side} rotation must have 9 finite values"
+                    )
+                matrix = [rotation[i:i + 3] for i in (0, 3, 6)]
+                row_dot = lambda a, b: sum(x * y for x, y in zip(a, b))
+                cross = (matrix[0][1] * matrix[1][2] - matrix[0][2] * matrix[1][1],
+                         matrix[0][2] * matrix[1][0] - matrix[0][0] * matrix[1][2],
+                         matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0])
+                if (any(abs(row_dot(row, row) - 1.0) > 1e-3 for row in matrix)
+                        or any(abs(row_dot(matrix[i], matrix[j])) > 1e-3
+                               for i in range(3) for j in range(i + 1, 3))
+                        or abs(abs(row_dot(cross, matrix[2])) - 1.0) > 1e-3):
+                    raise ProfileError(f"quest3 wrist {side} rotation must be orthogonal")
+                if not isinstance(frame_id, str) or not frame_id.strip():
+                    raise ProfileError(f"quest3 wrist {side} frame_id must be nonempty")
 
         rows = d.get("components")
         if not isinstance(rows, list) or not rows:
@@ -169,6 +199,21 @@ class Profile:
             if any(not math.isfinite(a) or not math.isfinite(b) or a >= b
                    for a, b in zip(lo, hi)):
                 raise ProfileError(f"{name}: invalid joint limits")
+            frame_transforms_raw = row.get("frame_transforms", {})
+            if not isinstance(frame_transforms_raw, dict):
+                raise ProfileError(f"{name}: frame_transforms must be an object")
+            frame_transforms: dict[str, tuple[float, ...]] = {}
+            for transform_name, pose in frame_transforms_raw.items():
+                if (not isinstance(transform_name, str) or not transform_name
+                        or not isinstance(pose, list) or len(pose) != 6):
+                    raise ProfileError(f"{name}: frame transform must be a named six-value pose")
+                try:
+                    values = tuple(float(v) for v in pose)
+                except (ValueError, TypeError) as exc:
+                    raise ProfileError(f"{name}: invalid frame transform {transform_name}") from exc
+                if not all(math.isfinite(v) for v in values):
+                    raise ProfileError(f"{name}: non-finite frame transform {transform_name}")
+                frame_transforms[transform_name] = values
 
             driver = str(row.get("driver", ""))
             driver_adapter = DRIVERS.get(driver)
@@ -227,7 +272,7 @@ class Profile:
 
             components.append(Component(
                 name, kind, tuple(joints), lo, hi, driver, feedback, ik,
-                side, input_channel, retargeter, unit, teleop))
+                side, input_channel, retargeter, unit, teleop, frame_transforms))
             seen_names.add(name)
             seen_joints.update(joints)
 

@@ -149,7 +149,12 @@ buttons（6 位 mask，0/1）：`[primary(X/A), secondary(Y/B), stickPress, menu
 | `landmark_preprocess` | `mano` | `mano`（XHand）或 `raw`（Wuji） |
 | `enable_xhand_pinky_adapt` | `false` | XHand 小指顺序拉伸；Wuji 必须 `false` |
 | `convert_to_robot` | `true` | `true`：Unity→机器人轴（X左 Y后 Z上）；`false`：保留 Unity 轴（landmarks 仅旧版翻 X） |
+| `wrist_pose_mapping_mode` | `global` | `global` 使用 `convert_to_robot`；`per_side` 用左右矩阵映射 wrist/controller，并跳过这些位姿上的通用转换 |
+| `left/right_wrist_to_arm_rot` | 单位阵 | `per_side` 模式的腕位姿基变换，profile 负责提供 |
+| `left/right_wrist_frame_id` | Quest wrist frame | `per_side` 模式发布的稳定腕输入帧名 |
 | `controller_as_wrist` | `true` | 手柄 6DoF 同时写到 `quest3/{side}_wrist_pose`，臂 IK 跟柄 |
+
+NEXUS 的 Nero profile 使用 `per_side`，将原 XNero 左右臂映射配置在 Quest 输入端应用一次；NEXUS `vr_to_arm_rot` 保持单位阵。此映射只负责 wrist/controller 坐标，手部 landmarks 和身体流仍按 `convert_to_robot` 处理。Nero wrist pose 表示 `link7` 法兰目标，不在 Quest 节点或 NEXUS teleop 内转换成 XHand 掌心 TCP。
 
 Wuji 相关 launch（`wujihand_tuning` / `sim_pipeline` / `real_pipeline`）已写死：
 `landmark_preprocess:=raw`，`enable_xhand_pinky_adapt:=False`。

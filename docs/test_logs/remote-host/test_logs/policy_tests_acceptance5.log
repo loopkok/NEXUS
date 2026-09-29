@@ -1,0 +1,290 @@
+test_1d_and_2d (test_backend.TestActionsFromResponse) ... ok
+test_dim_mismatch (test_backend.TestActionsFromResponse) ... ok
+test_empty_and_nonfinite_actions_fail (test_backend.TestActionsFromResponse) ... ok
+test_inproc_requires_checkpoint (test_backend.TestFactory) ... ok
+test_remote_selected (test_backend.TestFactory) ... ok
+test_stub_and_unknown (test_backend.TestFactory) ... ok
+test_stub_returns_absolute_hold_for_nonzero_robot_state (test_backend.TestFactory) ... ok
+test_open_resolves_concrete_policy_via_factory (test_backend.TestInprocBackendLoad) ... ok
+test_open_unknown_type_raises_policy_error (test_backend.TestInprocBackendLoad) ... ok
+test_jpeg_off_keeps_rgb_arrays_no_flag (test_backend.TestJpegTransport) ... ok
+test_jpeg_on_sends_encoded_bytes_and_flag (test_backend.TestJpegTransport) ... ok
+test_jpeg_roundtrip_shape_and_fidelity (test_backend.TestJpegTransport) ... ok
+test_normalize_request_images_decodes_and_removes_flag (test_backend.TestJpegTransport) ... ok
+test_backend_raises_when_not_open (test_backend.TestPayloadMapping) ... ok
+test_close_resets_client (test_backend.TestPayloadMapping) ... ok
+test_dim_mismatch_surfaces_policy_error (test_backend.TestPayloadMapping) ... ok
+test_handshake_rejects_wrong_action_dim_and_closes (test_backend.TestPayloadMapping) ... ok
+test_missing_actions_key_raises (test_backend.TestPayloadMapping) ... ok
+test_remote_payload_keys (test_backend.TestPayloadMapping) ... ok
+test_standalone_server_timing_is_visible (test_backend.TestPayloadMapping) ... ok
+test_ndarray_round_trip (test_backend.TestProtocol) ... ok
+test_wire_key_is_ndarray (test_backend.TestProtocol) ... ok
+test_legacy_metadata_and_response_timeout (test_client.ClientTimeoutTests) ... ok
+test_unavailable_server_times_out (test_client.ClientTimeoutTests) ... ok
+test_idle_to_policy_and_pause_cycle (test_controller.TestBasicFlows) ... ok
+test_playback_pause_resume (test_controller.TestBasicFlows) ... ok
+test_release_from_takeover_of_playback (test_controller.TestBasicFlows) ... ok
+test_release_keeps_pause_flag_of_interrupted_activity (test_controller.TestBasicFlows) ... ok
+test_start_activity_from_human (test_controller.TestBasicFlows) ... ok
+test_stop_from_anywhere_to_idle (test_controller.TestBasicFlows) ... ok
+test_switch_activity_from_another (test_controller.TestBasicFlows) ... ok
+test_takeover_and_release_restores_activity (test_controller.TestBasicFlows) ... ok
+test_pause_only_while_active (test_controller.TestInvalidTransitions) ... ok
+test_release_only_from_human (test_controller.TestInvalidTransitions) ... ok
+test_resume_only_while_paused (test_controller.TestInvalidTransitions) ... ok
+test_state_unchanged_on_rejection (test_controller.TestInvalidTransitions) ... ok
+test_takeover_needs_an_activity (test_controller.TestInvalidTransitions) ... ok
+test_unknown_verb (test_controller.TestInvalidTransitions) ... ok
+test_revert_after_failed_policy_from_idle (test_controller.TestRevert) ... ok
+test_revert_restores_pre_request_state (test_controller.TestRevert) ... ok
+test_snapshot_shape (test_controller.TestRevert) ... ok
+test_accepts_absolute_actions (test_engine.TestAbsoluteSemanticsGuard) ... ok
+test_disabled_when_threshold_nonpositive (test_engine.TestAbsoluteSemanticsGuard) ... ok
+test_rejects_delta_like_actions (test_engine.TestAbsoluteSemanticsGuard) ... ok
+test_blends_from_old_command_when_switch_jumps (test_engine.TestChunkAnchor)
+旧 command 漂移 0.5 vs 新 chunk[i0]=0.8（切换差 0.3）：首拍≈旧值平滑过渡， ... ok
+test_disabled_when_tol_nonpositive (test_engine.TestChunkAnchor)
+tol<=0 关闭：即使切换差大也不 blend（硬切换，行为不变）。 ... ok
+test_failed_postprocess_rolls_back_chunk_index_and_ensemble_state (test_engine.TestChunkAnchor)
+Chunk installation is atomic even if a future postprocessor raises. ... ok
+test_noop_within_tol (test_engine.TestChunkAnchor)
+切换差 0.02 < tol 0.05：正常跟随差不触发，新 chunk 原样安装。 ... ok
+test_readonly_chunk_copy_preserves_disabled_anchor_behavior (test_engine.TestChunkAnchor)
+The ownership copy must not numerically change the legacy tol=0 path. ... ok
+test_readonly_chunk_with_temporal_ensemble_and_anchor (test_engine.TestChunkAnchor)
+Defense-in-depth for the combined ACT-style ensemble + anchor path. ... ok
+test_readonly_remote_chunk_is_copied_before_anchor_blend (test_engine.TestChunkAnchor)
+msgpack decodes ndarray data from immutable bytes; anchor may mutate it. ... ok
+test_lockfree_replan_with_ensembling_resumes_at_consumed (test_engine.TestLockFreeInfer)
+时序融合 + 锁外推理：融合用锚点 snap_i 对齐，续播仍从 new[consumed]，不崩、有限。 ... ok
+test_slow_infer_does_not_block_control_tick (test_engine.TestLockFreeInfer)
+慢推理 200ms 期间，tick() 必须立刻返回，不被堵接近推理时长。 ... ok
+test_slow_replan_resumes_at_consumed (test_engine.TestLockFreeInfer)
+慢推理期间控制线程消费 consumed 行，重规划后必须从 new[consumed] 续播 ... ok
+test_queue_async_refill_logic (test_engine.TestQueueAsync) ... ok
+test_reset_then_refill (test_engine.TestQueueAsync) ... ok
+test_disabled_returns_none (test_engine.TestQueueSync) ... ok
+test_failed_infer_raises_engine_state_error (test_engine.TestQueueSync) ... ok
+test_malformed_or_empty_chunks_are_rejected_cleanly (test_engine.TestQueueSync)
+Bad backend shapes become diagnostic rejection, never index errors. ... ok
+test_plan_trace_contains_snapshot_chunk_and_alignment (test_engine.TestQueueSync) ... ok
+test_ticks_consume_and_refill (test_engine.TestQueueSync) ... ok
+test_rolling_replan_swaps_unexecuted_tail (test_engine.TestRtc) ... ok
+test_none_when_backend_has_no_timing (test_engine.TestServerTiming)
+无 server_timing 的 backend（Stub/Inproc）→ None，不崩。 ... ok
+test_propagates_to_stats (test_engine.TestServerTiming)
+服务端分项 server_timing 应透传到 engine.stats（进 state/metrics）， ... ok
+test_ensembling_bounds_boundary_step (test_engine.TestTemporalEnsembling) ... ok
+test_ensembling_first_plan_adopts_and_reset_clears (test_engine.TestTemporalEnsembling) ... ok
+test_ensembling_short_chunk_does_not_crash (test_engine.TestTemporalEnsembling)
+后端返回行数 < chunk_size（StubBackend 4 行、截断响应）时不得越界。 ... ok
+test_engine_stop_joins_thread (test_engine.TestThreadingSafety) ... ok
+test_queue_async_control_thread_not_starved_by_planner (test_engine.TestThreadingSafety)
+回归：queue_async 空闲时 planner 不得持锁饿死控制线程。 ... ok
+test_start_raises_on_no_obs (test_engine.TestThreadingSafety) ... ok
+test_unexpected_planner_failure_is_traced_and_surfaced_after_tail (test_engine.TestThreadingSafety)
+Unexpected planner bugs must not become an infinite last-command hold. ... ok
+test_invalid_dt_clamped_positive (test_executor.TestSafeExecutor) ... ok
+test_joint_limits_clip (test_executor.TestSafeExecutor) ... ok
+test_nan_dropped_holds_last (test_executor.TestSafeExecutor) ... ok
+test_nan_without_last_drops_row (test_executor.TestSafeExecutor) ... ok
+test_ratio_clipped_to_unit_interval (test_executor.TestSafeExecutor) ... ok
+test_reset_clears_state_and_events (test_executor.TestSafeExecutor) ... ok
+test_slew_disabled_when_zero (test_executor.TestSafeExecutor) ... ok
+test_slew_limit_respects_max_joint_vel (test_executor.TestSafeExecutor) ... ok
+test_async_prefetch_ahead_reaches_engine (test_node_flow.PolicyNodeFlowTest)
+async_prefetch_ahead 参数应透传到引擎（控制重规划/融合频率）。 ... [INFO] [1790628564.622204658] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.639106885] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=10 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.639575846] [policy_node]: cmd 'policy'
+[INFO] [1790628564.640224460] [policy_node]: POLICY running
+[INFO] [1790628564.640580773] [policy_node]: cmd 'stop'
+[INFO] [1790628564.640988435] [policy_node]: stopped -> IDLE
+ok
+test_blocked_without_obs (test_node_flow.PolicyNodeFlowTest) ... [INFO] [1790628564.656483779] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.656842945] [policy_node]: cmd 'policy'
+[ERROR] [1790628564.657183324] [policy_node]: policy blocked: incomplete obs, missing=['left_arm_state', 'left_gripper_ratio', 'image_stale:base']
+ok
+test_camera_diagnostics_combines_policy_rx_and_streamer_stats (test_node_flow.PolicyNodeFlowTest)
+log_dir 的第四条流应自动包含逐帧接收和上游 capture/tap 统计。 ... [INFO] [1790628564.672655011] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.687536182] [policy_node]: camera diagnostics log -> /tmp/tmpdjwjtw01/camera_diagnostics.jsonl
+[INFO] [1790628564.689877300] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+ok
+test_command_callback_isolated_and_traced_in_control_log (test_node_flow.PolicyNodeFlowTest)
+高频图像不能再与 cmd/tick 共用默认串行 callback group。 ... [INFO] [1790628564.818219129] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.836445789] [policy_node]: control diagnostics log -> /tmp/tmpwjygp0ew/pi_control.jsonl
+[INFO] [1790628564.838762903] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.839173000] [policy_node]: cmd_rx seq=1 cmd='policy' queued=1
+[INFO] [1790628564.839563338] [policy_node]: cmd 'policy'
+[INFO] [1790628564.840139729] [policy_node]: POLICY running
+[INFO] [1790628564.840487553] [policy_node]: cmd_exec seq=1 state=POLICY queue_delay_ms=0.4
+ok
+test_control_diagnostics_records_stale_state_and_resend_reason (test_node_flow.PolicyNodeFlowTest)
+逐 tick 日志必须能区分 state gate 拒绝和 resend_last hold。 ... [INFO] [1790628564.858265082] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.872417554] [policy_node]: joint stream log -> /tmp/tmprytj2l0z/pi_cmds.jsonl
+[INFO] [1790628564.872820067] [policy_node]: control diagnostics log -> /tmp/tmprytj2l0z/pi_control.jsonl
+[INFO] [1790628564.874737520] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.875148523] [policy_node]: cmd 'policy'
+[INFO] [1790628564.875772575] [policy_node]: POLICY running
+[INFO] [1790628564.877058948] [policy_node]: cmd 'pause'
+[INFO] [1790628564.877489224] [policy_node]: paused (holding last target)
+ok
+test_hold_end_reset_between_playback_runs (test_node_flow.PolicyNodeFlowTest)
+F10: a stale _hold_end from a previous playback must not skip the ... [INFO] [1790628564.893589207] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[WARN] [1790628564.895031019] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[INFO] [1790628564.905461859] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628564.908821055] [policy_node]: cmd 'playback'
+[INFO] [1790628564.910302040] [policy_node]: PLAYBACK /tmp/tmpdwgimikk/aligned_data.h5 ep=0 frames=8 fps=100 dim=8
+[INFO] [1790628565.265676671] [policy_node]: stopped -> IDLE
+[INFO] [1790628565.266136333] [policy_node]: cmd 'playback'
+[INFO] [1790628565.267191851] [policy_node]: PLAYBACK /tmp/tmpdwgimikk/aligned_data.h5 ep=0 frames=8 fps=100 dim=8
+[INFO] [1790628565.270676723] [policy_node]: cmd 'stop'
+[INFO] [1790628565.271047723] [policy_node]: stopped -> IDLE
+ok
+test_invalid_transition_ignored (test_node_flow.PolicyNodeFlowTest) ... [INFO] [1790628565.297489740] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.298082325] [policy_node]: cmd 'takeover'
+[ERROR] [1790628565.298669690] [policy_node]: takeover blocked: no fresh joint state for re-anchor (['left_arm_state', 'left_gripper_ratio', 'image_stale:base']); refusing (stale pose would jump)
+ok
+test_joint_stream_log_writes_commanded_values (test_node_flow.PolicyNodeFlowTest)
+joint_stream_log_file 非空时，每次实际下发（_policy_tick）把带时间戳的 ... [INFO] [1790628565.318988632] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.332395802] [policy_node]: joint stream log -> /tmp/tmpjiiezncu/pi_cmds.jsonl
+[INFO] [1790628565.334367442] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.334803930] [policy_node]: cmd 'policy'
+[INFO] [1790628565.335405910] [policy_node]: POLICY running
+[INFO] [1790628565.336653852] [policy_node]: cmd 'stop'
+[INFO] [1790628565.337085190] [policy_node]: stopped -> IDLE
+ok
+test_metrics_log_writes_file (test_node_flow.PolicyNodeFlowTest)
+metrics_log_file 非空时，每次 _publish_state 追加一行带 t 的 state JSON。 ... [INFO] [1790628565.353329529] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.367671542] [policy_node]: metrics log -> /tmp/tmp1z8xcbm6/pi_metrics.jsonl
+[INFO] [1790628565.369616737] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[MET] 04:49:25 state=IDLE loop_avg=Nonems obs_avg=Nonems pops=None plans=None plan_ms=None srv=Nonems rem=None exec=[]
+[MET] 04:49:25 state=IDLE loop_avg=Nonems obs_avg=Nonems pops=None plans=None plan_ms=None srv=Nonems rem=None exec=[]
+ok
+test_mute_cameras_omits_image_and_skips_missing (test_node_flow.PolicyNodeFlowTest)
+mute_cameras：被静音相机从请求省略（serve 补零且 mask=False）， ... [INFO] [1790628565.384780922] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[WARN] [1790628565.384906399] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[INFO] [1790628565.394775875] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=['left_wrist'] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+ok
+test_obs_loss_midrun_autopauses (test_node_flow.PolicyNodeFlowTest)
+F6: losing joint states mid-POLICY must auto-pause, not keep ... [INFO] [1790628565.412137948] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[WARN] [1790628565.412263355] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[INFO] [1790628565.422609057] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.425166532] [policy_node]: cmd 'policy'
+[INFO] [1790628565.425726129] [policy_node]: POLICY running
+[ERROR] [1790628565.487159529] [policy_node]: joint state lost > 0.1s — auto-pausing POLICY (holding last target)
+[INFO] [1790628565.487743693] [policy_node]: paused (holding last target)
+ok
+test_pause_resume_playback_reanchors_session (test_node_flow.PolicyNodeFlowTest) ... [INFO] [1790628565.524544982] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.540392362] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.540796350] [policy_node]: cmd 'playback'
+[INFO] [1790628565.541890074] [policy_node]: PLAYBACK /tmp/tmpmaemem61/aligned_data.h5 ep=0 frames=20 fps=100 dim=8
+[INFO] [1790628565.543356191] [policy_node]: cmd 'pause'
+[INFO] [1790628565.543771105] [policy_node]: paused (holding last target)
+[INFO] [1790628565.544159573] [policy_node]: cmd 'resume'
+[INFO] [1790628565.544611649] [policy_node]: PLAYBACK resumed
+[INFO] [1790628565.545113763] [policy_node]: cmd 'stop'
+[INFO] [1790628565.545521579] [policy_node]: stopped -> IDLE
+ok
+test_playback_refuses_schema_layout_mismatch (test_node_flow.PolicyNodeFlowTest)
+F11: same action_dim but a different recorded state layout must be ... [INFO] [1790628565.561935516] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.563207468] [policy_node]: cmd 'playback:/tmp/tmpflk173sy/aligned_data.h5'
+[ERROR] [1790628565.564290405] [policy_node]: replay state layout mismatch (same total dim, different blocks/order): recorded ['right_arm_0', 'right_arm_1', 'right_arm_2', 'right_arm_3', 'right_arm_4', 'right_arm_5', 'right_arm_6', 'right_ee_0'] != robot ['left_arm_0', 'left_arm_1', 'left_arm_2', 'left_arm_3', 'left_arm_4', 'left_arm_5', 'left_arm_6', 'left_ee_0']; refusing to replay
+ok
+test_playback_runs_to_idle (test_node_flow.PolicyNodeFlowTest) ... [INFO] [1790628565.580516302] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.597171657] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.597537508] [policy_node]: cmd 'playback'
+[INFO] [1790628565.598604439] [policy_node]: PLAYBACK /tmp/tmpsa09tmct/aligned_data.h5 ep=0 frames=12 fps=100 dim=8
+[INFO] [1790628565.600967680] [policy_node]: stopped -> IDLE
+ok
+test_policy_entry_blocked_without_any_gripper_source (test_node_flow.PolicyNodeFlowTest)
+无 ratio、无 driver 回显 → 仍拒绝进 POLICY（原保护不回退）。 ... [INFO] [1790628565.617477934] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.617904539] [policy_node]: cmd 'policy'
+[ERROR] [1790628565.618256193] [policy_node]: policy blocked: incomplete obs, missing=['left_gripper_ratio', 'image_stale:base']
+ok
+test_policy_entry_seeds_gripper_from_driver_echo (test_node_flow.PolicyNodeFlowTest)
+首次进 POLICY 且 /left_gripper/command 从未出现：用 driver 的 ... [INFO] [1790628565.633683092] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.634129461] [policy_node]: cmd 'policy'
+[INFO] [1790628565.634785724] [policy_node]: POLICY running
+ok
+test_policy_runs_ticks_and_stops (test_node_flow.PolicyNodeFlowTest) ... [INFO] [1790628565.650188056] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.650621273] [policy_node]: cmd 'policy'
+[INFO] [1790628565.651186995] [policy_node]: POLICY running
+[INFO] [1790628565.652211961] [policy_node]: cmd 'pause'
+[INFO] [1790628565.652646152] [policy_node]: paused (holding last target)
+[INFO] [1790628565.653037405] [policy_node]: cmd 'resume'
+[INFO] [1790628565.653677591] [policy_node]: POLICY running
+[INFO] [1790628565.654262660] [policy_node]: cmd 'stop'
+[INFO] [1790628565.654698243] [policy_node]: stopped -> IDLE
+ok
+test_stop_reopens_arbitration_gate (test_node_flow.PolicyNodeFlowTest)
+F2: stop → IDLE must publish disarm=False (level latch) so the ... [INFO] [1790628565.670584316] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.670996794] [policy_node]: cmd 'policy'
+[INFO] [1790628565.671566761] [policy_node]: POLICY running
+[INFO] [1790628565.671905749] [policy_node]: cmd 'stop'
+[INFO] [1790628565.672288511] [policy_node]: stopped -> IDLE
+ok
+test_takeover_and_release_roundtrip (test_node_flow.PolicyNodeFlowTest) ... [INFO] [1790628565.688033589] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628565.688495618] [policy_node]: cmd 'policy'
+[INFO] [1790628565.689057581] [policy_node]: POLICY running
+[INFO] [1790628566.295083270] [policy_node]: cmd 'takeover'
+[INFO] [1790628566.298333888] [policy_node]: takeover: re-anchoring VR teleop @ 04:49:26
+[INFO] [1790628566.299379306] [policy_node]: takeover: all reanchor done @ 04:49:26 → committing
+[WARN] [1790628566.300773174] [policy_node]: HUMAN takeover: VR teleop armed (incremental) @ 04:49:26
+[INFO] [1790628566.319612975] [policy_node]: cmd 'release'
+[INFO] [1790628566.321107285] [policy_node]: POLICY running
+[INFO] [1790628566.321926761] [policy_node]: cmd 'stop'
+[INFO] [1790628566.322924568] [policy_node]: stopped -> IDLE
+ok
+test_takeover_failure_keeps_policy (test_node_flow.PolicyNodeFlowTest) ... [INFO] [1790628566.436227323] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628566.437219840] [policy_node]: cmd 'policy'
+[INFO] [1790628566.438580645] [policy_node]: POLICY running
+[INFO] [1790628566.439342695] [policy_node]: cmd 'takeover'
+[WARN] [1790628566.440306048] [policy_node]: reanchor /pi_test/reanchor not ready yet; probing with 3s timeout
+[INFO] [1790628566.441177867] [policy_node]: takeover: re-anchoring VR teleop @ 04:49:26
+[INFO] [1790628566.441701795] [policy_node]: cmd 'stop'
+[WARN] [1790628566.442151034] [policy_node]: stop during takeover effect; effect aborted
+[INFO] [1790628566.442757027] [policy_node]: stopped -> IDLE
+ok
+test_takeover_success_opens_gate_abort_recloses (test_node_flow.PolicyNodeFlowTest)
+F1/F8: successful takeover opens the gate (False); a failed re-anchor ... [INFO] [1790628566.470657212] [policy_node]: policy_node up: schema=8D arms=['left'] ee=(gripper,none) fps=100 ctrl=100.0Hz mode=queue_sync rtc_guided=False rtc_queue=30 rtc_horizon=10 coeff=0.0 anchor_tol=0.0 anchor_blend=4 prefetch=0 mute=[] jpeg=False backend=stub host=127.0.0.1:8000 ws_timeout=5.0/3.0s cmd_topic=/pi_test/cmd callbacks=image-per-camera+command+control
+[INFO] [1790628566.471369703] [policy_node]: cmd 'policy'
+[INFO] [1790628566.472321779] [policy_node]: POLICY running
+[INFO] [1790628566.979342076] [policy_node]: cmd 'takeover'
+[INFO] [1790628566.981511568] [policy_node]: takeover: re-anchoring VR teleop @ 04:49:26
+[ERROR] [1790628566.991120867] [policy_node]: takeover failed (re-anchor /pi_test/reanchor VR not tracking); staying put
+[INFO] [1790628567.594466963] [policy_node]: cmd 'takeover'
+[INFO] [1790628567.597496637] [policy_node]: takeover: re-anchoring VR teleop @ 04:49:27
+[INFO] [1790628567.601068573] [policy_node]: takeover: all reanchor done @ 04:49:27 → committing
+[WARN] [1790628567.602493810] [policy_node]: HUMAN takeover: VR teleop armed (incremental) @ 04:49:27
+ok
+test_lerobot_directory_with_missing_meta (test_replay.TestLoading) ... ok
+test_load_aligned_h5 (test_replay.TestLoading) ... ok
+test_load_replay_detects_directory_vs_file (test_replay.TestLoading) ... ok
+test_duration (test_replay.TestPlaybackSession) ... ok
+test_reanchor_continues_from_robot_state (test_replay.TestPlaybackSession) ... ok
+test_reanchor_does_not_advance (test_replay.TestPlaybackSession) ... ok
+test_reanchor_wrong_dim_raises (test_replay.TestPlaybackSession) ... ok
+test_reset_offset (test_replay.TestPlaybackSession) ... ok
+test_steps_and_finishes (test_replay.TestPlaybackSession) ... ok
+test_target_sequence (test_replay.TestPlaybackSession) ... ok
+test_decode_garbage_returns_none (test_robot_io.TestImageHelpers) ... ok
+test_decode_roundtrip_rgb (test_robot_io.TestImageHelpers) ... ok
+test_letterbox_identity_when_already_square (test_robot_io.TestImageHelpers) ... ok
+test_letterbox_keeps_channels_and_size (test_robot_io.TestImageHelpers) ... ok
+test_split_camera_map_keeps_slot_to_label (test_robot_io.TestImageHelpers) ... ok
+test_assemble_missing_and_full (test_robot_io.TestSources) ... ok
+test_dual_arm_wuji_and_head_sources (test_robot_io.TestSources) ... ok
+test_head_falls_back_to_head_state (test_robot_io.TestSources) ... ok
+test_invalid_source_key_rejected (test_robot_io.TestSources) ... ok
+test_single_left_gripper_layout (test_robot_io.TestSources) ... ok
+test_waist_head_sliced_from_body_state (test_robot_io.TestSources) ... ok
+test_split_dim_mismatch_raises (test_robot_io.TestSplitAction) ... ok
+test_split_single_left_gripper (test_robot_io.TestSplitAction) ... ok
+test_split_wuji_hand_target_is_joints (test_robot_io.TestSplitAction) ... ok
+test_waist_block_is_not_writable (test_robot_io.TestSplitAction) ... ok
+
+----------------------------------------------------------------------
+Ran 125 tests in 4.830s
+
+OK

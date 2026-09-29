@@ -1,0 +1,19 @@
+test_bad_order_and_stale_command (test_contract.ArbiterTests) ... ok
+test_estop_latched (test_contract.ArbiterTests) ... ok
+test_homing_suppresses_final_output_and_idle_reseeds_measured_hold (test_contract.ArbiterTests) ... ok
+test_idle_policy_heartbeat_does_not_clear_teleop_safety_pause (test_contract.ArbiterTests) ... ok
+test_legacy_lerobot_mapping_and_original_preservation (test_contract.ArbiterTests) ... ok
+test_legacy_raw_hdf5_import (test_contract.ArbiterTests) ... ok
+test_single_source_and_takeover_hold (test_contract.ArbiterTests) ... ok
+test_stale_feedback_suppresses_driver_output (test_contract.ArbiterTests) ... ok
+test_bad_profile_fields (test_contract.ProfileTests) ... ok
+test_builtins_and_schema_roundtrip (test_contract.ProfileTests) ... ok
+test_external_plugins_enable_new_robot_and_effector_without_core_switches (test_contract.ProfileTests) ... ok
+test_manifest_gate (test_contract.ProfileTests) ... ok
+test_profile_is_a_composition_not_a_robot_switch (test_contract.ProfileTests) ... ok
+test_schema_v2_rejects_robot_selector_and_v1_metadata_stays_readable (test_contract.ProfileTests) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.481s
+
+OK

@@ -1,0 +1,10 @@
+test_builds_full_dual_arm_dual_hand_mjcf (test_model_builder.ModelBuilderTests) ... ok
+test_mirrored_wrist_servos_settle_without_a_joint_five_limit_cycle (test_model_builder.ModelBuilderTests) ... ok
+test_muJoCo_compiles_and_steps_when_dependency_is_installed (test_model_builder.ModelBuilderTests) ... ok
+test_mujoco_frames_match_unchanged_nero_ik_fk_and_xhand_tcp (test_model_builder.ModelBuilderTests) ... ok
+test_sim_profile_loads_through_the_driver_plugin (test_model_builder.ModelBuilderTests) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 1.050s
+
+OK

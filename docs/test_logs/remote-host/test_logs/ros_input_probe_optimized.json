@@ -1,0 +1,46 @@
+[INFO] [1790618567.499587560] [nexus_sim_acceptance]: simulation acceptance profile=nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+{
+  "duration_s": 10.0,
+  "canonical_input_counts": {
+    "state:left_arm": 796,
+    "command:left_arm": 1001,
+    "state:right_arm": 796,
+    "command:right_arm": 1001,
+    "state:left_ee": 796,
+    "command:left_ee": 1002,
+    "state:right_ee": 796,
+    "command:right_ee": 1002,
+    "bridge_wrist:left": 501,
+    "bridge_hand:left": 501,
+    "bridge_wrist:right": 501,
+    "bridge_hand:right": 501,
+    "camera:base": 301,
+    "camera:left_wrist": 301,
+    "camera:right_wrist": 301
+  },
+  "candidate_output_rates": {
+    "teleop:left_ee": {
+      "count": 15,
+      "rate_hz": 2.7123531983542275,
+      "max_gap_ms": 3899.193407036364
+    },
+    "teleop:right_ee": {
+      "count": 433,
+      "rate_hz": 43.43547607796667,
+      "max_gap_ms": 306.2744631897658
+    }
+  },
+  "control": {
+    "mode": "IDLE",
+    "fault": "",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+    "ready_components": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ]
+  },
+  "result": "PASS"
+}

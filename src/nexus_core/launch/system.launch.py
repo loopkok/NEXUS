@@ -45,7 +45,8 @@ def _input_channels(profile: Profile) -> dict[str, list[str]]:
     return grouped
 
 
-def _preflight(profile: Profile, dry_run: bool, with_cameras: bool) -> None:
+def _preflight(profile: Profile, dry_run: bool, with_cameras: bool,
+               with_inputs: bool) -> None:
     if dry_run:
         return
     drivers = _group_by(profile.components, lambda c: c.driver)
@@ -53,10 +54,11 @@ def _preflight(profile: Profile, dry_run: bool, with_cameras: bool) -> None:
         hook = DRIVERS[name].preflight
         if hook:
             _plugin_call(hook, profile, components)
-    for source, channels in _input_channels(profile).items():
-        hook = INPUT_ADAPTERS[source].preflight
-        if hook:
-            _plugin_call(hook, profile, channels)
+    if with_inputs:
+        for source, channels in _input_channels(profile).items():
+            hook = INPUT_ADAPTERS[source].preflight
+            if hook:
+                _plugin_call(hook, profile, channels)
     if with_cameras:
         cameras = _group_by(profile.raw["cameras"], lambda c: c["source"])
         for source, rows in cameras.items():
@@ -65,7 +67,8 @@ def _preflight(profile: Profile, dry_run: bool, with_cameras: bool) -> None:
                 _plugin_call(hook, profile, rows)
 
 
-def _launch_adapters(profile: Profile, path: str, dry_run: bool, with_cameras: bool):
+def _launch_adapters(profile: Profile, path: str, dry_run: bool,
+                     with_cameras: bool, with_inputs: bool):
     actions = []
 
     # Drivers can share one assembly process or run one process per component.
@@ -94,9 +97,10 @@ def _launch_adapters(profile: Profile, path: str, dry_run: bool, with_cameras: b
         else:
             raise RuntimeError(f"retargeter adapter {name} has invalid scope {adapter.scope!r}")
 
-    for source, channels in _input_channels(profile).items():
-        adapter = INPUT_ADAPTERS[source]
-        actions.extend(_plugin_call(adapter.launcher, profile, channels, path, dry_run))
+    if with_inputs:
+        for source, channels in _input_channels(profile).items():
+            adapter = INPUT_ADAPTERS[source]
+            actions.extend(_plugin_call(adapter.launcher, profile, channels, path, dry_run))
 
     if with_cameras:
         cameras = _group_by(profile.raw["cameras"], lambda c: c["source"])
@@ -120,7 +124,8 @@ def _setup(context):
     with_cameras = LaunchConfiguration("with_cameras").perform(context).lower() in ("true", "1", "yes")
     with_recording = LaunchConfiguration("with_recording").perform(context).lower() in ("true", "1", "yes")
     with_policy = LaunchConfiguration("with_policy").perform(context).lower() in ("true", "1", "yes")
-    _preflight(profile, dry_run, with_cameras)
+    with_inputs = LaunchConfiguration("with_inputs").perform(context).lower() in ("true", "1", "yes")
+    _preflight(profile, dry_run, with_cameras, with_inputs)
 
     ns = profile.namespace
     actions = [
@@ -133,7 +138,7 @@ def _setup(context):
         Node(package="nexus_core", executable="nexus_input_bridge", name="nexus_input_bridge",
              output="screen", parameters=[{"profile_file": str(path)}]),
     ]
-    actions.extend(_launch_adapters(profile, str(path), dry_run, with_cameras))
+    actions.extend(_launch_adapters(profile, str(path), dry_run, with_cameras, with_inputs))
 
     if with_recording:
         actions.append(Node(
@@ -175,6 +180,7 @@ def generate_launch_description():
         DeclareLaunchArgument("profile", default_value="astral_gripper_wuji"),
         DeclareLaunchArgument("dry_run", default_value="true"),
         DeclareLaunchArgument("with_cameras", default_value="false"),
+        DeclareLaunchArgument("with_inputs", default_value="true"),
         DeclareLaunchArgument("with_recording", default_value="true"),
         DeclareLaunchArgument("with_policy", default_value="true"),
         DeclareLaunchArgument("data_root", default_value="~/nexus_data"),

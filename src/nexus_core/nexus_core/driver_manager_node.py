@@ -34,16 +34,19 @@ class DriverManagerNode(Node):
         self.declare_parameter("profile_file", "")
         self.declare_parameter("state_timeout", 0.5)
         self.declare_parameter("service_timeout", 5.0)
+        self.declare_parameter("home_timeout", 30.0)
         self.profile = Profile.load(str(self.get_parameter("profile_file").value))
         self._state_timeout = float(self.get_parameter("state_timeout").value)
         self._service_timeout = float(self.get_parameter("service_timeout").value)
+        self._home_timeout = float(self.get_parameter("home_timeout").value)
         self._group = ReentrantCallbackGroup()
         self._states: dict[str, tuple[list[float], float, str]] = {}
         self._mode = "UNKNOWN"
-        self._clients: dict[str, list[tuple[str, object]]] = {
+        self._operation_clients: dict[str, list[tuple[str, object]]] = {
             operation: [] for operation in ("ready", "enable", "home", "estop")
         }
         self._home_targets = 0
+        self._home_feedback_targets: dict[str, tuple[tuple[float, ...], float]] = {}
         seen_assembly: set[tuple[str, str]] = set()
         ns = self.profile.namespace
         for component in self.profile.components:
@@ -52,7 +55,20 @@ class DriverManagerNode(Node):
                 lambda msg, name=component.name: self._on_state(name, msg),
                 qos_profile_sensor_data)
             adapter = DRIVERS[component.driver]
-            for operation in self._clients:
+            if adapter.supports_home and adapter.home_target:
+                target = adapter.home_target(
+                    self.profile.raw, component.kind, component.side, component.dim)
+                if target is not None:
+                    values = tuple(float(value) for value in target)
+                    if len(values) != component.dim or any(
+                            not math.isfinite(value) or value < low or value > high
+                            for value, low, high in zip(values, component.lower, component.upper)):
+                        raise ValueError(f"{component.name}: adapter home target does not match profile")
+                    tolerance = float(adapter.home_tolerance)
+                    if not math.isfinite(tolerance) or tolerance <= 0:
+                        raise ValueError(f"{component.name}: adapter home_tolerance must be positive")
+                    self._home_feedback_targets[component.name] = values, tolerance
+            for operation in self._operation_clients:
                 if operation == "home" and not adapter.supports_home:
                     continue
                 if adapter.lifecycle_namespace:
@@ -69,7 +85,7 @@ class DriverManagerNode(Node):
                 else:
                     service = f"{ns}/drivers/{component.name}/{operation}"
                     label = component.name
-                self._clients[operation].append((
+                self._operation_clients[operation].append((
                     label, self.create_client(Trigger, service, callback_group=self._group)))
                 if operation == "home":
                     self._home_targets += 1
@@ -78,12 +94,11 @@ class DriverManagerNode(Node):
         state_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                                 durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, f"{ns}/control/state", self._on_control_state, state_qos)
-        self._services = []
         for operation in ("ready", "enable", "home", "estop"):
-            self._services.append(self.create_service(
+            self.create_service(
                 Trigger, f"{ns}/drivers/{operation}",
                 lambda request, response, op=operation: self._handle(op, request, response),
-                callback_group=self._group))
+                callback_group=self._group)
         self.get_logger().info(f"driver manager profile={self.profile.profile_id} "
                                f"sha256={self.profile.digest} components="
                                f"{[c.name for c in self.profile.components]}")
@@ -121,7 +136,7 @@ class DriverManagerNode(Node):
         return failures
 
     def _call_all(self, operation: str) -> list[str]:
-        clients = self._clients[operation]
+        clients = self._operation_clients[operation]
         for label, client in clients:
             if not client.wait_for_service(timeout_sec=min(0.5, self._service_timeout)):
                 return [f"{label}: {operation} service unavailable"]
@@ -142,6 +157,39 @@ class DriverManagerNode(Node):
                 failures.append(f"{label}: {operation} service error: {exc}")
         return failures
 
+    def _wait_home_feedback(self) -> list[str]:
+        if not self._home_feedback_targets:
+            return []
+        deadline = time.monotonic() + self._home_timeout
+        settled_since = None
+        while time.monotonic() < deadline:
+            now = time.monotonic()
+            reached = True
+            for component, (target, tolerance) in self._home_feedback_targets.items():
+                state = self._states.get(component)
+                if (state is None or state[2] or now - state[1] > self._state_timeout
+                        or len(state[0]) != len(target)
+                        or max(abs(value - goal) for value, goal in zip(state[0], target)) > tolerance):
+                    reached = False
+                    break
+            if reached:
+                if settled_since is None:
+                    settled_since = now
+                elif now - settled_since >= 0.3:
+                    return []
+            else:
+                settled_since = None
+            time.sleep(0.02)
+        details = []
+        for component, (target, _tolerance) in self._home_feedback_targets.items():
+            state = self._states.get(component)
+            if state is None or not state[0]:
+                details.append(f"{component}: no measured feedback")
+            else:
+                error = max(abs(value - goal) for value, goal in zip(state[0], target))
+                details.append(f"{component}: home error {error:.3f} rad")
+        return [f"home target not reached within {self._home_timeout:.1f}s ({'; '.join(details)})"]
+
     def _handle(self, operation: str, _request, response):
         if operation != "estop":
             faults = self._state_faults()
@@ -159,7 +207,28 @@ class DriverManagerNode(Node):
             return response
         if operation == "estop":
             self._control_pub.publish(String(data="ESTOP"))
+        homing_mode_entered = False
+        if operation == "home":
+            self._control_pub.publish(String(data="HOMING"))
+            deadline = time.monotonic() + 1.0
+            while self._mode != "HOMING" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if self._mode != "HOMING":
+                response.success = False
+                response.message = "command mux did not enter HOMING; driver output remains unchanged"
+                return response
+            homing_mode_entered = True
+
         failures = self._call_all(operation)
+        if operation == "home" and not failures:
+            failures.extend(self._wait_home_feedback())
+        if homing_mode_entered:
+            self._control_pub.publish(String(data="IDLE"))
+            deadline = time.monotonic() + 1.0
+            while self._mode != "IDLE" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if self._mode != "IDLE":
+                failures.append("command mux did not return to IDLE after homing")
         if operation == "enable" and failures:
             # A partial enable must not leave only some components powered.
             self._control_pub.publish(String(data="ESTOP"))

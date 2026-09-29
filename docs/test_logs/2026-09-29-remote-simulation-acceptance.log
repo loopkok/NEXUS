@@ -1,0 +1,110 @@
+# NEXUS 部署与仿真验收日志
+
+> 坐标契约更正：下方首次验收中的 Nero 遥操目标被错误地按掌心 TCP 解释，
+> 且当时 Quest 通用轴转换与 XNero 左右臂矩阵分开重复应用。记录中的 TCP
+> 跟踪幅值、姿态漂移和“跟手”结论均已被新坐标链路取代，不可作为当前验收结果。
+> 原始 JSON 保留不改；更正后复测结果单独记录在
+> `docs/test_logs/2026-09-29-nero-frame-correction.log`。
+
+## 坐标契约更正后的复测
+
+- 复测配置：`nero_dual_xhand_mujoco`，profile SHA256：
+  `bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc`。
+- 本次重新构建 `quest3_hand_mocap`、`nexus_core`、`nero_mujoco_sim`，三包成功；
+  远端 profile/adapter 契约 16/16、Quest 基变换 3/3、MuJoCo 6/6 通过；本机最终
+  Quest 映射及模式覆盖测试 6/6 通过。
+- 新 ROS 仿真验收通过，未启动实体 Quest、相机、CAN 或真机驱动。最终命令话题
+  每个恰有一个发布者，仿真 arm/hand 状态、控制命令、手部流和三路合成图像均有数据。
+- 对 8 mm 输入振幅、0.65 motion scale 的平移输入：左/右 link7 实测 X 峰峰值分别为
+  9.835 mm / 9.856 mm（目标 10.4 mm，约 94.6% / 94.8%）；相关系数 0.964 / 0.962；
+  姿态最大漂移 0.0354° / 0.0354°。IK 候选 FK 的 X 峰峰值约 10.36 mm，Y/Z 变化
+  低于数值误差量级。这是按 flange/link7 坐标测得，替代旧 TCP 数据。
+- 输入到 teleop 候选命令延迟：左臂 p50/p95/max = 1.84/21.12/34.77 ms；右臂
+  = 8.53/11.82/57.11 ms。腕流停止后约 845 ms 进入 `PAUSED`，停止后没有收到腕消息。
+- 本轮 recorder 返回 IDLE，但未生成已验证 episode（`episode_counts={}`、
+  `episode_index=-1`）；因此本轮没有重验当前 profile hash 下的质检/ACT/pi0.5 导出。
+  之前的 442 帧 episode、ACT checkpoint 和推理记录均绑定旧 hash，不能当作新 profile
+  的数据或 checkpoint 验收结果。相关原始记录保持不变。
+- 新机器 profile hash 与旧模型 manifest 不一致；推理前布局门禁应拒绝旧 checkpoint。
+
+详细 ROS 输出：`remote-host/test_logs/nero_frame_acceptance_record.json`；
+launch/build 输出：`remote-host/test_logs/nero_frame_system.log`。
+
+- 日期：2026-09-29（Asia/Shanghai）
+- 验收目标：`loopkok@192.168.0.231:/home/loopkok/NEXUS`
+- 源代码基线：`b27606539fa06b83b62db546db3cf347e05e7c73`；其上包含本次工作区修改
+- ROS 隔离：`ROS_DOMAIN_ID=89`、`ROS_LOCALHOST_ONLY=1`
+- 本次只运行 `nero_dual_xhand_mujoco` 仿真装配、合成 Quest3 输入和合成相机画面。
+
+## 安全与范围
+
+- 没有启动 Astral/Nero 真机驱动、CAN 设备、实体手套、Quest 接收器或实体相机；没有发送真机命令。
+- `/home/loopkok/xnero_ws` 保持原样；NEXUS 放在新的 `/home/loopkok/NEXUS` 目录。
+- MuJoCo 图、策略服务和测试客户端均限制在本机 ROS 域/回环网络。ACT 使用 CPU，未停止或改动占用 GPU 的既有进程。
+- MuJoCo 根据 XNero URDF 和网格生成模型；结果证明模型可编译、积分并响应控制，未与真机或厂商动力学测量值对比。
+
+## 修改摘要
+
+1. 更正后的 Nero 遥操将 Quest wrist 视为 link7 法兰位姿；左右 XNero 变换由 Quest 输入适配器应用一次，NEXUS `vr_to_arm_rot` 为单位阵，原 IK 核心不变。
+2. URDF 固定 link7→XHand palm 几何放入独立 `frame_transforms`，只用于物理 FK 对照；MuJoCo 适配器保留 J2 零位补偿。
+3. 实测归位公差改为驱动适配器配置；MuJoCo 的归位流程会丢弃归位请求前排队的保持命令，避免旧命令覆盖仿真归位轨迹。
+4. ACT 服务后端增加 LeRobot 0.4.x checkpoint processor 兼容路径，保留较新版本的 API；动作后处理兼容 Tensor 与 numpy 输出。旧版本接口使用 checkpoint 内的 processor JSON 和统计量。
+5. 新增/更新 MuJoCo、归位、profile、策略服务和端到端 ROS 验收记录。详细变更见 `CHANGELOG_NEXUS.md`。
+
+## 首次验收的历史结果（旧 profile hash）
+
+下列完成的训练、推理和数据导出记录属于旧 profile hash。坐标相关 teleop 结果已
+由上方更正后的复测替代；数据、checkpoint 和推理布局仍需在新 hash 下重验。
+
+### 源码与构建
+
+- 本机 NEXUS 核心契约测试：14/14 通过。
+- 本机 Nero MuJoCo 测试：6/6 通过；模型含双臂、双 XHand 共 38 个关节/执行器，模型步进及关节响应通过。
+- 本机 Quest/VR 映射、TCP 补偿和 IK 链测试：6/6 组通过。
+- 本机 ACT 后端 API 选择测试：3/3 通过，含 LeRobot 新旧 processor API。
+- 本机 `compileall`、`git diff --check` 通过。Windows 环境缺少 `msgpack`、`cv2`、`rclpy` 和部分 ROS 包，完整 ROS/图像测试在部署机执行。
+- 部署机 ROS 2 Humble 工作空间 30 个包全部构建成功。ACT 后端兼容修改后，`astral_policy_inference` 单包重新构建成功。
+- 部署机核心契约 14/14、MuJoCo 测试 6/6、Quest 映射 6/6 通过。
+
+### 模型、运动学和动力学
+
+- 从双臂描述 URDF 生成完整 MuJoCo MJCF，38 个位置执行器覆盖 profile 关节。仿真步进 1,000 步；关节和手指均响应命令；初始场景无穿透，测试方块与桌面接触。
+- 解析 FK、IK、MuJoCo link7 和 XHand 掌心 TCP 在左右臂 home/neutral/probe 姿态的一致性测试通过：TCP 位置差小于 30 μm，姿态差小于 0.001°。
+- 部署机 IK 平滑路径：100/100 步收敛，跳过首步后平均 3.4 ms、最大 3.5 ms；极限姿态 29/32 收敛（90.6%）。
+- 大幅跳变压力测试：30 次中 24 次收敛（80%），有 6 个目标未收敛，测试组判定失败；平均 8.1 ms、最大 112.8 ms。解析 FK 在已收敛点误差为 0。关节限位、速度限幅和工作空间过滤通过。
+
+### Quest3 合成输入、遥操与安全行为
+
+- `acceptance13_record.json` 的腕部/TCP 跟踪数值已由顶部所列的 link7 复测结果取代。尤其是旧 42% 幅值结论无效；原始文件只作为旧实现的历史记录保留。
+- 新复测的命令/状态/合成相机流通过，profile 当前 hash 下的遥操跟手、延迟、旋转和腕部断流数据见本日志开头的“坐标契约更正后的复测”。
+
+### 数采、处理、导出和控制权
+
+- **旧 profile hash 历史结果：**先前录制的 442 帧、14.73 秒 episode 和 ACT v3 / LeRobot v2.1 导出，均属于旧哈希 `046547d2…`。旧 Nero HDF5/LeRobot 导入测试也不构成新 profile 的训练验收。
+- 当前 corrected-hash ROS 验收中 recorder 回到 IDLE，但没有 episode 输出；必须在新 profile 下重新录制、对齐、质检和导出后，才能恢复本节的端到端数据结论。
+- Stub 策略和录制数据回放均验证了暂停/继续、HITL 接管、释放并返回原模式、停止回到 IDLE。
+- 新训练 ACT 检查点接入真实 `serve.py` WebSocket 服务和 NEXUS `RemoteBackend`：profile 哈希匹配；30 次请求均返回有限的 100×38 动作块，三路 JPEG 输入槽正常。
+- ACT 服务往返延迟：p50 47.25 ms、p95 53.39 ms、最大 72.46 ms；服务端模型前向 p50 42.93 ms、p95 47.61 ms、最大 49.51 ms。
+- 真实 ACT ROS 策略节点在 MuJoCo 图中发布双臂和双手四个组件候选命令；`POLICY → HUMAN → POLICY → IDLE` 以及控制权返回通过。
+- ACT 短训练在 CPU 完成 2 个优化步并保存检查点，只用于验证训练/加载/推理链路，不代表策略训练收敛。GPU 训练因既有进程占用约 22.9 GiB 显存、只剩约 3.6 MiB 可用而 OOM；未干预既有进程。
+
+## 尚未通过或未覆盖
+
+- Nero IK 大幅跳变收敛率为 80%，尚不满足可靠的极端运动要求；需优化/分析初值策略后重测。
+- 当前合成遥操输入下末端运动幅值约为预期的 42%；需要核查缩放和标定，再做“全幅跟手”结论。
+- pi0.5 实际训练与模型推理未运行：部署机没有可用的 openpi 虚拟环境，现有权重缓存不完整。只验证了 pi0.5 数据格式导出。
+- 未测试另一台 GPU 服务器上的 SSH/rsync 自动同步；本次只有部署主机可用，处理和训练 smoke test 在同机完成。
+- 2 步 ACT checkpoint 是接口烟测模型，不用于评估任务成功率；真实相机、真机动力学、真机遥操延迟及硬件安全均未测试，符合本次“不要动真机”的边界。
+- Windows 本机策略包全量 unittest 因 ROS/图像/消息依赖缺失未通过收集；关键 policy loader 兼容测试在本机通过，真实服务/客户端和 ROS 策略链在部署机通过。
+
+## 原始证据文件
+
+部署机主要原始结果文件已复制到本机工作区的 `docs/test_logs/remote-host/test_logs/`。部署机目录 `/home/loopkok/NEXUS/docs/test_logs/` 还保留 ACT 服务、策略 ROS 图和兼容构建日志（`acceptance13_act_server.log`、`acceptance13_act_ros_graph.log`、`acceptance13_backend_compat_build.log`）。关键镜像文件：
+
+- `remote-host/test_logs/acceptance13_record.json`：遥操、录制、话题频率、延迟、姿态漂移、跟踪与腕部断流。
+- `remote-host/test_logs/acceptance13_pipeline.log`：质检与 ACT/pi0.5 布局导出。
+- `remote-host/test_logs/acceptance13_act_cpu_train.log`、`remote-host/test_logs/acceptance13_act_train.log`：CPU smoke train 与 GPU OOM。
+- `remote-host/test_logs/acceptance13_act_real_model_remote.json`：真实 ACT 服务/客户端 30 次延迟与输出验证。
+- `remote-host/test_logs/acceptance13_act_ros_policy_hitl.json`：真实 ACT ROS 策略、HITL 和控制权返回。
+- `remote-host/test_logs/acceptance13_policy_hitl.json`、`remote-host/test_logs/acceptance13_playback_hitl.json`：stub 策略和回放控制权测试。
+- `remote-host/test_logs/acceptance12_ik_tests.log`、`remote-host/test_logs/kinematic_fk_parity.log`：IK 压力数据与 URDF/MuJoCo FK 对齐。

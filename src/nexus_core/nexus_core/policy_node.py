@@ -22,6 +22,10 @@ from astral_policy_inference.engine import ActionEngine, EngineStateError
 from astral_policy_inference.robot_io import decode_jpeg_rgb, letterbox
 from .profile import Profile, verify_model_manifest
 
+# Candidate commands are latest-value control data: avoid reliable DDS
+# backpressure and let the mux stale-command watchdog reject a stalled stream.
+_CANDIDATE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
+
 
 class NexusPolicyNode(Node):
     def __init__(self):
@@ -64,10 +68,10 @@ class NexusPolicyNode(Node):
                                      qos_profile_sensor_data)
             self._pubs[spec.name] = self.create_publisher(
                 JointState, self.profile.candidate_topic("policy", spec.name),
-                qos_profile_sensor_data)
+                _CANDIDATE_QOS)
         self._replay_pubs = {spec.name: self.create_publisher(
             JointState, self.profile.candidate_topic("playback", spec.name),
-            qos_profile_sensor_data) for spec in self.profile.components}
+            _CANDIDATE_QOS) for spec in self.profile.components}
         for camera in self.profile.raw["cameras"]:
             role = camera["role"]
             self.create_subscription(CompressedImage,

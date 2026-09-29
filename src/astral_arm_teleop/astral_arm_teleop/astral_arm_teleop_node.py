@@ -85,9 +85,19 @@ _R_BASE_T = np.array(
 
 
 def _sensor_qos() -> QoSProfile:
-    """腕位 / 关节 / 指令：只留最新一帧，避免 IK 跟不上时把旧样本排队。"""
+    """Sensor streams keep only their latest sample."""
     return QoSProfile(
         reliability=ReliabilityPolicy.BEST_EFFORT,
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+        durability=DurabilityPolicy.VOLATILE,
+    )
+
+
+def _command_qos() -> QoSProfile:
+    """Reliable latest-only delivery for commands entering the NEXUS mux."""
+    return QoSProfile(
+        reliability=ReliabilityPolicy.RELIABLE,
         history=HistoryPolicy.KEEP_LAST,
         depth=1,
         durability=DurabilityPolicy.VOLATILE,
@@ -385,9 +395,8 @@ class AstralTeleopArmNode(Node):
         )
         self.safety.set_initial_state(init_q, self.robot_init_pos)
 
-        qos = _sensor_qos()
         self.cmd_pub = self.create_publisher(
-            JointState, f"/{self.side}_arm/joint_commands", qos
+            JointState, f"/{self.side}_arm/joint_commands", _command_qos()
         )
         self._publish_tune = bool(self.get_parameter("publish_tune").value)
         self._tune_pubs = {}

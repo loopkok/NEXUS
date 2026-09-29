@@ -8,14 +8,18 @@ import time
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 from std_srvs.srv import Trigger
 
 from .profile import Profile
+
+# Candidate commands are latest-value control data: avoid reliable DDS
+# backpressure and let the mux stale-command watchdog reject a stalled stream.
+_CANDIDATE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
 
 
 class JointBridgeNode(Node):
@@ -125,17 +129,51 @@ class JointBridgeNode(Node):
         native_candidate_topic = f"{self.profile.namespace}/legacy/{self.side}_xhand_candidate"
         native_state_topic = f"/{self.side}_hand/xhand_state"
         candidate_pub = self.create_publisher(
-            JointState, self.profile.candidate_topic("teleop", self.component), qos_profile_sensor_data)
+            JointState, self.profile.candidate_topic("teleop", self.component), _CANDIDATE_QOS)
         state_pub = self.create_publisher(
             JointState, self.profile.topic(self.component, "joint_states"), qos_profile_sensor_data)
         driver_pub = self.create_publisher(XHandCommand, native_command_topic, qos_profile_sensor_data)
+        rate_window = time.monotonic()
+        received_count = 0
+        forwarded_count = 0
+        invalid_count = 0
+        max_callback_gap = 0.0
+        max_publish_duration = 0.0
+        last_callback_time = 0.0
 
         def native_candidate(msg: XHandCommand) -> None:
+            nonlocal rate_window, received_count, forwarded_count, invalid_count
+            nonlocal max_callback_gap, max_publish_duration, last_callback_time
+            callback_time = time.monotonic()
+            if last_callback_time:
+                max_callback_gap = max(max_callback_gap, callback_time - last_callback_time)
+            last_callback_time = callback_time
+            received_count += 1
             if len(msg.position) != self.spec.dim or set(msg.name) != set(native_names):
+                invalid_count += 1
                 self.get_logger().error("XHand retarget command names/dimension mismatch", throttle_duration_sec=2.0)
                 return
             lut = dict(zip(msg.name, msg.position))
+            publish_start = time.monotonic()
             candidate_pub.publish(self._joint_msg([float(lut[n]) for n in native_names]))
+            max_publish_duration = max(max_publish_duration, time.monotonic() - publish_start)
+            forwarded_count += 1
+            now = time.monotonic()
+            elapsed = now - rate_window
+            if elapsed >= 5.0:
+                self.get_logger().info(
+                    f"XHand candidate bridge component={self.component} "
+                    f"forwarded_hz={forwarded_count / elapsed:.1f} "
+                    f"received={received_count} invalid={invalid_count} "
+                    f"max_callback_gap_ms={max_callback_gap * 1000.0:.1f} "
+                    f"max_publish_ms={max_publish_duration * 1000.0:.1f} "
+                    f"in {elapsed:.1f}s")
+                rate_window = now
+                received_count = 0
+                forwarded_count = 0
+                invalid_count = 0
+                max_callback_gap = 0.0
+                max_publish_duration = 0.0
 
         def native_state(msg: XHandStateArray) -> None:
             if len(msg.hand_states) != 1 or len(msg.hand_id) != 1:
@@ -176,6 +214,9 @@ class JointBridgeNode(Node):
             native.mode = 3
             driver_pub.publish(native)
 
+        # Treat the vendor command stream like any other live sensor stream.
+        # A small best-effort history avoids DDS acknowledgement stalls while
+        # preserving the mux's independent stale-command safety gate.
         self.create_subscription(XHandCommand, native_candidate_topic,
                                  native_candidate, qos_profile_sensor_data)
         if not self.candidate_only:
@@ -191,7 +232,7 @@ class JointBridgeNode(Node):
         for source in ("teleop", "policy", "playback"):
             candidate_pub = self.create_publisher(
                 JointState, self.profile.candidate_topic(source, self.component),
-                qos_profile_sensor_data)
+                _CANDIDATE_QOS)
 
             def on_ratio(msg: Float64, pub=candidate_pub) -> None:
                 ratio = float(msg.data)
@@ -202,7 +243,7 @@ class JointBridgeNode(Node):
 
             self.create_subscription(
                 Float64, f"{self.profile.namespace}/legacy/{source}/{self.side}_gripper_ratio",
-                on_ratio, qos_profile_sensor_data)
+                on_ratio, _CANDIDATE_QOS)
 
     def _setup_wuji(self) -> None:
         if self.spec.driver != "wuji_serial" or self.spec.dim != 20:
@@ -210,7 +251,7 @@ class JointBridgeNode(Node):
         names = list(self.spec.joints)
         native = [n.removeprefix(f"{self.side}_") for n in names]
         candidate_pub = self.create_publisher(
-            JointState, self.profile.candidate_topic("teleop", self.component), qos_profile_sensor_data)
+            JointState, self.profile.candidate_topic("teleop", self.component), _CANDIDATE_QOS)
         state_pub = self.create_publisher(
             JointState, self.profile.topic(self.component, "joint_states"), qos_profile_sensor_data)
         driver_pub = self.create_publisher(
@@ -252,7 +293,7 @@ class JointBridgeNode(Node):
             driver_pub.publish(msg)
 
         self.create_subscription(JointState, f"{self.profile.namespace}/legacy/{self.side}_wuji_candidate",
-                                 retarget, qos_profile_sensor_data)
+                                 retarget, _CANDIDATE_QOS)
         if not self.candidate_only:
             self.create_subscription(JointState, f"/{self.side}_hand/joint_states",
                                      feedback, qos_profile_sensor_data)
@@ -263,6 +304,16 @@ class JointBridgeNode(Node):
 def main() -> None:
     rclpy.init()
     node = JointBridgeNode()
+    if node.candidate_only:
+        try:
+            rclpy.spin(node)
+        except (KeyboardInterrupt, ExternalShutdownException):
+            pass
+        finally:
+            node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()
+        return
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
     try:

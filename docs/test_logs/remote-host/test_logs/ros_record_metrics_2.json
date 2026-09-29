@@ -1,0 +1,118 @@
+[INFO] [1790617582.690906510] [nexus_sim_acceptance]: simulation acceptance profile=nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+{
+  "result": "FAIL",
+  "error": "left arm did not track the synthetic hand path: {'tcp_x_peak_to_peak_m': 0.0030183546145969922, 'wrist_expected_peak_to_peak_m': 0.010400000000000001, 'tcp_x_expected_correlation': 0.09870928963168447, 'tcp_orientation_max_drift_deg': 7.118996887395946, 'motion_state_samples': 1001, 'wrist_input_y_peak_to_peak_m': 0.01599984676375, 'teleop_candidate_joint_peak_to_peak_rad': 1.4635039881876564, 'input_to_candidate_latency_ms': {'count': 656, 'p50': 1.316885114647448, 'p95': 5.745222151745111, 'max': 9.013905189931393}}",
+  "control": {
+    "mode": "IDLE",
+    "fault": "",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+    "ready_components": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ]
+  },
+  "policy": {
+    "state": "IDLE",
+    "fault": "",
+    "model": "act",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+    "ready": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ],
+    "cameras": [
+      "base",
+      "left_wrist",
+      "right_wrist"
+    ]
+  },
+  "collect": {
+    "state": "RECORDING",
+    "session": "sim_acceptance_20260929",
+    "episode_index": 1,
+    "elapsed_s": 11.0,
+    "samples_per_s": {
+      "left_arm_state": 100,
+      "left_arm_cmd": 100,
+      "right_arm_state": 100,
+      "right_arm_cmd": 100,
+      "left_ee_state": 100,
+      "left_ee_cmd": 100,
+      "right_ee_state": 100,
+      "right_ee_cmd": 100,
+      "cam:base": 30,
+      "cam:left_wrist": 30,
+      "cam:right_wrist": 30
+    },
+    "camera_counts": {
+      "base": 330,
+      "left_wrist": 330,
+      "right_wrist": 330
+    },
+    "folder": "/home/loopkok/NEXUS/test_artifacts/raw/sim_acceptance_20260929"
+  },
+  "counts": {
+    "state:left_arm": 1899,
+    "state:right_arm": 1898,
+    "state:left_ee": 1898,
+    "state:right_ee": 1898,
+    "bridge_wrist:left": 948,
+    "bridge_hand:left": 948,
+    "bridge_wrist:right": 948,
+    "bridge_hand:right": 948,
+    "camera:base": 569,
+    "camera:left_wrist": 569,
+    "camera:right_wrist": 569,
+    "command:left_arm": 1834,
+    "command:right_arm": 1834,
+    "command:left_ee": 1834,
+    "command:right_ee": 1834,
+    "motion_state:left": 1001,
+    "motion_state:right": 1000
+  },
+  "candidates": {
+    "teleop:right_ee": 118,
+    "teleop:left_ee": 200,
+    "teleop:left_arm": 656,
+    "teleop:right_arm": 655
+  },
+  "control_history": [
+    [
+      1058327.314304152,
+      "IDLE",
+      ""
+    ],
+    [
+      1058332.373453939,
+      "TELEOP",
+      ""
+    ],
+    [
+      1058333.290676798,
+      "IDLE",
+      ""
+    ]
+  ],
+  "candidate_range_rad": {
+    "teleop:right_ee": 0.07100951671600342,
+    "teleop:left_ee": 0.0712277889251709,
+    "teleop:left_arm": 1.4635039881876564,
+    "teleop:right_arm": 1.524184041034827
+  }
+}
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 523, in <module>
+    main()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 495, in main
+    result = node.run_record()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 367, in run_record
+    tracking = self._motion_metrics()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 344, in _motion_metrics
+    raise RuntimeError(f"{side} arm did not track the synthetic hand path: {result[side]}")
+RuntimeError: left arm did not track the synthetic hand path: {'tcp_x_peak_to_peak_m': 0.0030183546145969922, 'wrist_expected_peak_to_peak_m': 0.010400000000000001, 'tcp_x_expected_correlation': 0.09870928963168447, 'tcp_orientation_max_drift_deg': 7.118996887395946, 'motion_state_samples': 1001, 'wrist_input_y_peak_to_peak_m': 0.01599984676375, 'teleop_candidate_joint_peak_to_peak_rad': 1.4635039881876564, 'input_to_candidate_latency_ms': {'count': 656, 'p50': 1.316885114647448, 'p95': 5.745222151745111, 'max': 9.013905189931393}}

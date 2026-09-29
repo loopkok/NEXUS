@@ -26,6 +26,8 @@ class Adapter:
     launcher: str | None = None
     preflight: str | None = None
     validate_config: str | Callable[[dict[str, Any]], None] | None = None
+    home_target: Callable[[dict[str, Any], str, str | None, int], list[float] | None] | None = None
+    home_tolerance: float = 0.05
 
 
 @dataclass(frozen=True)

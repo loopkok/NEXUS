@@ -1,0 +1,501 @@
+[INFO] [launch]: All log files can be found below /home/loopkok/.ros/log/2026-09-29-01-53-41-911827-haining14-1127612
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: NEXUS profile=nero_dual_xhand_mujoco instance=nero_sim sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b dry_run=False
+[INFO] [nexus_command_mux-1]: process started with pid [1127635]
+[INFO] [nexus_driver_manager-2]: process started with pid [1127637]
+[INFO] [nexus_input_bridge-3]: process started with pid [1127639]
+[INFO] [nero_mujoco_sim_node-4]: process started with pid [1127641]
+[INFO] [nexus_joint_bridge-5]: process started with pid [1127643]
+[INFO] [nexus_joint_bridge-6]: process started with pid [1127645]
+[INFO] [nexus_nero_teleop-7]: process started with pid [1127647]
+[INFO] [nexus_nero_teleop-8]: process started with pid [1127649]
+[INFO] [xhand_dex_retargeting_node-9]: process started with pid [1127651]
+[INFO] [data_collect_node-10]: process started with pid [1127653]
+[nexus_driver_manager-2] [INFO] [1790618022.550816191] [nexus_driver_manager]: driver manager profile=nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[nexus_joint_bridge-5] [INFO] [1790618022.566458223] [mujoco_hand_bridge_left_ee]: joint bridge xhand component=left_ee
+[data_collect_node-10] [INFO] [1790618022.575444455] [nexus_data_collect]: NEXUS frozen profile sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+[nexus_joint_bridge-6] [INFO] [1790618022.660402548] [mujoco_hand_bridge_right_ee]: joint bridge xhand component=right_ee
+[data_collect_node-10] [INFO] [1790618022.684488002] [nexus_data_collect]: data_collect ready: save_root=/home/loopkok/NEXUS/test_artifacts/raw session=sim_acceptance_20260929 schema={
+[data_collect_node-10]   "nexus_profile": {
+[data_collect_node-10]     "schema_version": 2,
+[data_collect_node-10]     "profile_id": "nero_dual_xhand_mujoco",
+[data_collect_node-10]     "instance": "nero_sim",
+[data_collect_node-10]     "inputs": {
+[data_collect_node-10]       "left": {
+[data_collect_node-10]         "wrist": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/quest3/left_wrist_pose",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         },
+[data_collect_node-10]         "hand": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/hand_landmarks/left",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         }
+[data_collect_node-10]       },
+[data_collect_node-10]       "right": {
+[data_collect_node-10]         "wrist": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/quest3/right_wrist_pose",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         },
+[data_collect_node-10]         "hand": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/hand_landmarks/right",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         }
+[data_collect_node-10]       },
+[data_collect_node-10]       "body": {
+[data_collect_node-10]         "body_joints": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/quest3/body_joints",
+[data_collect_node-10]           "frame_policy": "stable"
+[data_collect_node-10]         },
+[data_collect_node-10]         "body_joint_names": {
+[data_collect_node-10]           "source": "quest3",
+[data_collect_node-10]           "topic": "/quest3/body_joint_names"
+[data_collect_node-10]         }
+[data_collect_node-10]       }
+[data_collect_node-10]     },
+[data_collect_node-10]     "input_settings": {
+[data_collect_node-10]       "landmark_preprocess": "mano"
+[data_collect_node-10]     },
+[data_collect_node-10]     "components": [
+[data_collect_node-10]       {
+[data_collect_node-10]         "name": "left_arm",
+[data_collect_node-10]         "kind": "arm",
+[data_collect_node-10]         "joints": [
+[data_collect_node-10]           "left_joint1",
+[data_collect_node-10]           "left_joint2",
+[data_collect_node-10]           "left_joint3",
+[data_collect_node-10]           "left_joint4",
+[data_collect_node-10]           "left_joint5",
+[data_collect_node-10]           "left_joint6",
+[data_collect_node-10]           "left_joint7"
+[data_collect_node-10]         ],
+[data_collect_node-10]         "lower": [
+[data_collect_node-10]           -2.705261,
+[data_collect_node-10]           -1.74533,
+[data_collect_node-10]           -2.757621,
+[data_collect_node-10]           -1.012291,
+[data_collect_node-10]           -2.757621,
+[data_collect_node-10]           -0.733039,
+[data_collect_node-10]           -1.570797
+[data_collect_node-10]         ],
+[data_collect_node-10]         "upper": [
+[data_collect_node-10]           2.705261,
+[data_collect_node-10]           1.74533,
+[data_collect_node-10]           2.757621,
+[data_collect_node-10]           2.146755,
+[data_collect_node-10]           2.757621,
+[data_collect_node-10]           0.959932,
+[data_collect_node-10]           1.570797
+[data_collect_node-10]         ],
+[data_collect_node-10]         "driver": "nero_mujoco",
+[data_collect_node-10]         "feedback": "measured",
+[data_collect_node-10]         "ik": "nero_analytic",
+[data_collect_node-10]         "side": "left",
+[data_collect_node-10]         "unit": "rad",
+[data_collect_node-10]         "input_channel": "left",
+[data_collect_node-10]         "teleop": {
+[data_collect_node-10]           "arm_base_frame": "left_arm_base",
+[data_collect_node-10]           "vr_to_arm_rot": [
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.0,
+[data_collect_node-10]             -1.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0
+[data_collect_node-10]           ],
+[data_collect_node-10]           "motion_scale": 0.65,
+[data_collect_node-10]           "tcp_offset": [
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0
+[data_collect_node-10]           ]
+[data_collect_node-10]         }
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "name": "right_arm",
+[data_collect_node-10]         "kind": "arm",
+[data_collect_node-10]         "joints": [
+[data_collect_node-10]           "right_joint1",
+[data_collect_node-10]           "right_joint2",
+[data_collect_node-10]           "right_joint3",
+[data_collect_node-10]           "right_joint4",
+[data_collect_node-10]           "right_joint5",
+[data_collect_node-10]           "right_joint6",
+[data_collect_node-10]           "right_joint7"
+[data_collect_node-10]         ],
+[data_collect_node-10]         "lower": [
+[data_collect_node-10]           -2.705261,
+[data_collect_node-10]           -1.74533,
+[data_collect_node-10]           -2.757621,
+[data_collect_node-10]           -1.012291,
+[data_collect_node-10]           -2.757621,
+[data_collect_node-10]           -0.733039,
+[data_collect_node-10]           -1.570797
+[data_collect_node-10]         ],
+[data_collect_node-10]         "upper": [
+[data_collect_node-10]           2.705261,
+[data_collect_node-10]           1.74533,
+[data_collect_node-10]           2.757621,
+[data_collect_node-10]           2.146755,
+[data_collect_node-10]           2.757621,
+[data_collect_node-10]           0.959932,
+[data_collect_node-10]           1.570797
+[data_collect_node-10]         ],
+[data_collect_node-10]         "driver": "nero_mujoco",
+[data_collect_node-10]         "feedback": "measured",
+[data_collect_node-10]         "ik": "nero_analytic",
+[data_collect_node-10]         "side": "right",
+[data_collect_node-10]         "unit": "rad",
+[data_collect_node-10]         "input_channel": "right",
+[data_collect_node-10]         "teleop": {
+[data_collect_node-10]           "arm_base_frame": "right_arm_base",
+[data_collect_node-10]           "vr_to_arm_rot": [
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             1.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             -1.0,
+[data_collect_node-10]             1.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0
+[data_collect_node-10]           ],
+[data_collect_node-10]           "motion_scale": 0.65,
+[data_collect_node-10]           "tcp_offset": [
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0,
+[data_collect_node-10]             0.0
+[data_collect_node-10]           ]
+[data_collect_node-10]         }
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "name": "left_ee",
+[data_collect_node-10]         "kind": "hand",
+[data_collect_node-10]         "joints": [
+[data_collect_node-10]           "left_hand_thumb_bend_joint",
+[data_collect_node-10]           "left_hand_thumb_rota_joint1",
+[data_collect_node-10]           "left_hand_thumb_rota_joint2",
+[data_collect_node-10]           "left_hand_index_bend_joint",
+[data_collect_node-10]           "left_hand_index_joint1",
+[data_collect_node-10]           "left_hand_index_joint2",
+[data_collect_node-10]           "left_hand_mid_joint1",
+[data_collect_node-10]           "left_hand_mid_joint2",
+[data_collect_node-10]           "left_hand_ring_joint1",
+[data_collect_node-10]           "left_hand_ring_joint2",
+[data_collect_node-10]           "left_hand_pinky_joint1",
+[data_collect_node-10]           "left_hand_pinky_joint2"
+[data_collect_node-10]         ],
+[data_collect_node-10]         "lower": [
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -0.698,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -0.174,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0
+[data_collect_node-10]         ],
+[data_collect_node-10]         "upper": [
+[data_collect_node-10]           1.832,
+[data_collect_node-10]           1.57,
+[data_collect_node-10]           1.57,
+[data_collect_node-10]           0.174,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919
+[data_collect_node-10]         ],
+[data_collect_node-10]         "driver": "nero_mujoco",
+[data_collect_node-10]         "feedback": "measured",
+[data_collect_node-10]         "side": "left",
+[data_collect_node-10]         "unit": "rad",
+[data_collect_node-10]         "input_channel": "left",
+[data_collect_node-10]         "retargeter": "xhand_dexpilot"
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "name": "right_ee",
+[data_collect_node-10]         "kind": "hand",
+[data_collect_node-10]         "joints": [
+[data_collect_node-10]           "right_hand_thumb_bend_joint",
+[data_collect_node-10]           "right_hand_thumb_rota_joint1",
+[data_collect_node-10]           "right_hand_thumb_rota_joint2",
+[data_collect_node-10]           "right_hand_index_bend_joint",
+[data_collect_node-10]           "right_hand_index_joint1",
+[data_collect_node-10]           "right_hand_index_joint2",
+[data_collect_node-10]           "right_hand_mid_joint1",
+[data_collect_node-10]           "right_hand_mid_joint2",
+[data_collect_node-10]           "right_hand_ring_joint1",
+[data_collect_node-10]           "right_hand_ring_joint2",
+[data_collect_node-10]           "right_hand_pinky_joint1",
+[data_collect_node-10]           "right_hand_pinky_joint2"
+[data_collect_node-10]         ],
+[data_collect_node-10]         "lower": [
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -0.698,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           -0.174,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0,
+[data_collect_node-10]           0.0
+[data_collect_node-10]         ],
+[data_collect_node-10]         "upper": [
+[data_collect_node-10]           1.832,
+[data_collect_node-10]           1.57,
+[data_collect_node-10]           1.57,
+[data_collect_node-10]           0.174,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919,
+[data_collect_node-10]           1.919
+[data_collect_node-10]         ],
+[data_collect_node-10]         "driver": "nero_mujoco",
+[data_collect_node-10]         "feedback": "measured",
+[data_collect_node-10]         "side": "right",
+[data_collect_node-10]         "unit": "rad",
+[data_collect_node-10]         "input_channel": "right",
+[data_collect_node-10]         "retargeter": "xhand_dexpilot"
+[data_collect_node-10]       }
+[data_collect_node-10]     ],
+[data_collect_node-10]     "cameras": [
+[data_collect_node-10]       {
+[data_collect_node-10]         "role": "base",
+[data_collect_node-10]         "source": "orbbec",
+[data_collect_node-10]         "device": "SIM_BASE",
+[data_collect_node-10]         "capture_topic": "/nexus/nero_sim/sim_camera/base/image/compressed"
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "role": "left_wrist",
+[data_collect_node-10]         "source": "orbbec",
+[data_collect_node-10]         "device": "SIM_LEFT_WRIST",
+[data_collect_node-10]         "capture_topic": "/nexus/nero_sim/sim_camera/left_wrist/image/compressed"
+[data_collect_node-10]       },
+[data_collect_node-10]       {
+[data_collect_node-10]         "role": "right_wrist",
+[data_collect_node-10]         "source": "orbbec",
+[data_collect_node-10]         "device": "SIM_RIGHT_WRIST",
+[data_collect_node-10]         "capture_topic": "/nexus/nero_sim/sim_camera/right_wrist/image/compressed"
+[data_collect_node-10]       }
+[data_collect_node-10]     ],
+[data_collect_node-10]     "dataset": {
+[data_collect_node-10]       "fps": 30,
+[data_collect_node-10]       "action_source": "next_state"
+[data_collect_node-10]     },
+[data_collect_node-10]     "policy": {
+[data_collect_node-10]       "camera_map": {
+[data_collect_node-10]         "base_0_rgb": "base",
+[data_collect_node-10]         "left_wrist_0_rgb": "left_wrist",
+[data_collect_node-10]         "right_wrist_0_rgb": "right_wrist"
+[data_collect_node-10]       }
+[data_collect_node-10]     },
+[data_collect_node-10]     "adapter_config": {
+[data_collect_node-10]       "nero_mujoco": {
+[data_collect_node-10]         "enable_viewer": false,
+[data_collect_node-10]         "realtime": true,
+[data_collect_node-10]         "timestep": 0.002,
+[data_collect_node-10]         "state_rate": 100.0,
+[data_collect_node-10]         "command_timeout": 0.5,
+[data_collect_node-10]         "home_pose": {
+[data_collect_node-10]           "left": [
+[data_collect_node-10]             -0.405,
+[data_collect_node-10]             1.281,
+[data_collect_node-10]             -0.957,
+[data_collect_node-10]             1.311,
+[data_collect_node-10]             2.682,
+[data_collect_node-10]             -0.314,
+[data_collect_node-10]             -0.163
+[data_collect_node-10]           ],
+[data_collect_node-10]           "right": [
+[data_collect_node-10]             0.405,
+[data_collect_node-10]             1.281,
+[data_collect_node-10]             0.957,
+[data_collect_node-10]             1.311,
+[data_collect_node-10]             -2.682,
+[data_collect_node-10]             0.314,
+[data_collect_node-10]             -0.163
+[data_collect_node-10]           ]
+[data_collect_node-10]         }
+[data_collect_node-10]       }
+[data_collect_node-10]     }
+[data_collect_node-10]   },
+[data_collect_node-10]   "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+[data_collect_node-10]   "schema_version": 2,
+[data_collect_node-10]   "dataset_fps": 30,
+[data_collect_node-10]   "action_source": "next_state",
+[data_collect_node-10]   "cameras": [
+[data_collect_node-10]     "base",
+[data_collect_node-10]     "left_wrist",
+[data_collect_node-10]     "right_wrist"
+[data_collect_node-10]   ],
+[data_collect_node-10]   "hold_frames": 10,
+[data_collect_node-10]   "max_gap_ms": 100.0,
+[data_collect_node-10]   "state_dim": 38,
+[data_collect_node-10]   "state_blocks": [
+[data_collect_node-10]     {
+[data_collect_node-10]       "name": "left_arm",
+[data_collect_node-10]       "dim": 7
+[data_collect_node-10]     },
+[data_collect_node-10]     {
+[data_collect_node-10]       "name": "right_arm",
+[data_collect_node-10]       "dim": 7
+[data_collect_node-10]     },
+[data_collect_node-10]     {
+[data_collect_node-10]       "name": "left_ee",
+[data_collect_node-10]       "dim": 12
+[data_collect_node-10]     },
+[data_collect_node-10]     {
+[data_collect_node-10]       "name": "right_ee",
+[data_collect_node-10]       "dim": 12
+[data_collect_node-10]     }
+[data_collect_node-10]   ]
+[data_collect_node-10] }
+[nexus_input_bridge-3] [INFO] [1790618022.741046030] [nexus_input_bridge]: input bridge profile=nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+[nexus_command_mux-1] [INFO] [1790618022.744928964] [nexus_command_mux]: NEXUS mux: nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[nexus_nero_teleop-7] [INFO] [1790618022.843543582] [teleop_left_arm]: Nero teleop left: IK core=nero_quest_teleop.ik_solver; profile_sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+[nero_mujoco_sim_node-4] [INFO] [1790618022.876809242] [nero_mujoco_sim]: MuJoCo physics ready profile=nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b nq=45 nv=44 components=['left_arm', 'right_arm', 'left_ee', 'right_ee'] urdf=/home/loopkok/NEXUS/install/xhand_nero_description/share/xhand_nero_description/urdf/xhand_nero_description.urdf
+[nexus_nero_teleop-8] [INFO] [1790618022.877792532] [teleop_right_arm]: Nero teleop right: IK core=nero_quest_teleop.ik_solver; profile_sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+[xhand_dex_retargeting_node-9] [INFO] [1790618023.691827841] [nexus_xhand_retargeter]: Teleop mode: DIRECT START
+[xhand_dex_retargeting_node-9] [INFO] [1790618023.696206296] [nexus_xhand_retargeter]: XHand Dex Retargeting Node started, topic: /hand_landmarks
+[nero_mujoco_sim_node-4] [INFO] [1790618027.879335873] [nero_mujoco_sim]: MuJoCo physics_hz=202.3 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618032.880294758] [nero_mujoco_sim]: MuJoCo physics_hz=203.8 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618037.881868807] [nero_mujoco_sim]: MuJoCo physics_hz=202.9 real_time_factor=0.41 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790618042.882893125] [nero_mujoco_sim]: MuJoCo physics_hz=202.2 real_time_factor=0.40 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790618047.884618877] [nero_mujoco_sim]: MuJoCo physics_hz=202.5 real_time_factor=0.41 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790618052.884634684] [nero_mujoco_sim]: MuJoCo physics_hz=203.0 real_time_factor=0.41 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790618057.887887426] [nero_mujoco_sim]: MuJoCo physics_hz=203.3 real_time_factor=0.41 contacts=6
+[nero_mujoco_sim_node-4] [INFO] [1790618062.892620496] [nero_mujoco_sim]: MuJoCo physics_hz=190.2 real_time_factor=0.38 contacts=7
+[xhand_dex_retargeting_node-9] [INFO] [1790618065.062194666] [nexus_xhand_retargeter]: [Retarget FPS] 100 Hz (armed=True)
+[nexus_nero_teleop-7] [INFO] [1790618066.113962003] [teleop_left_arm]: Nero teleop reanchored to measured joints
+[nexus_nero_teleop-8] [INFO] [1790618066.114151717] [teleop_right_arm]: Nero teleop reanchored to measured joints
+[nero_mujoco_sim_node-4] [INFO] [1790618067.895002320] [nero_mujoco_sim]: MuJoCo physics_hz=194.9 real_time_factor=0.39 contacts=4
+[data_collect_node-10] [INFO] [1790618068.115377606] [nexus_data_collect]: control <- start
+[data_collect_node-10] [INFO] [1790618068.128062701] [nexus_data_collect]: REC start episode000002 task='' -> /home/loopkok/NEXUS/test_artifacts/raw/sim_acceptance_20260929/episode000002
+[data_collect_node-10] [WARN] [1790618068.129545134] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[data_collect_node-10] [INFO] [1790618068.130915457] [nexus_data_collect]: task for next episode <- 'NEXUS synthetic Quest3 teleoperation acceptance'
+[xhand_dex_retargeting_node-9] [INFO] [1790618070.062637892] [nexus_xhand_retargeter]: [Retarget FPS] 99 Hz (armed=True)
+[nero_mujoco_sim_node-4] [INFO] [1790618072.898202354] [nero_mujoco_sim]: MuJoCo physics_hz=197.7 real_time_factor=0.40 contacts=4
+[xhand_dex_retargeting_node-9] [INFO] [1790618075.067389007] [nexus_xhand_retargeter]: [Retarget FPS] 100 Hz (armed=True)
+[nero_mujoco_sim_node-4] [INFO] [1790618077.901779555] [nero_mujoco_sim]: MuJoCo physics_hz=194.5 real_time_factor=0.39 contacts=4
+[nexus_nero_teleop-8] [ERROR] [1790618079.802415582] [teleop_right_arm]: Nero input/feedback timeout; teleop disarmed
+[nexus_nero_teleop-7] [ERROR] [1790618079.809222136] [teleop_left_arm]: Nero input/feedback timeout; teleop disarmed
+[data_collect_node-10] [WARN] [1790618080.684923272] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618082.905071527] [nero_mujoco_sim]: MuJoCo physics_hz=198.3 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618085.701406243] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618087.906553782] [nero_mujoco_sim]: MuJoCo physics_hz=202.1 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618091.684786849] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618092.908597167] [nero_mujoco_sim]: MuJoCo physics_hz=201.9 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618096.696883793] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618097.910453365] [nero_mujoco_sim]: MuJoCo physics_hz=201.3 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618102.695671283] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618102.911910022] [nero_mujoco_sim]: MuJoCo physics_hz=201.1 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618107.915422351] [nero_mujoco_sim]: MuJoCo physics_hz=201.9 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618108.694536496] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618112.916624505] [nero_mujoco_sim]: MuJoCo physics_hz=201.6 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618114.684792363] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618117.917655416] [nero_mujoco_sim]: MuJoCo physics_hz=201.2 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618119.691967562] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618122.921032946] [nero_mujoco_sim]: MuJoCo physics_hz=201.9 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618125.690075770] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618127.924176053] [nero_mujoco_sim]: MuJoCo physics_hz=201.5 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618131.684801281] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618132.925282733] [nero_mujoco_sim]: MuJoCo physics_hz=201.4 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618136.693955800] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618137.929344785] [nero_mujoco_sim]: MuJoCo physics_hz=200.8 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618141.697676627] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618142.931346344] [nero_mujoco_sim]: MuJoCo physics_hz=201.3 real_time_factor=0.40 contacts=4
+[data_collect_node-10] [WARN] [1790618147.684794640] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽
+[nero_mujoco_sim_node-4] [INFO] [1790618147.935330152] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[data_collect_node-10] [INFO] [1790618150.949804720] [nexus_data_collect]: control <- stop
+[data_collect_node-10] [INFO] [1790618150.973949862] [nexus_data_collect]: REC saved episode000002 (82.8s, streams=66264 samples, images=1008) -> /home/loopkok/NEXUS/test_artifacts/raw/sim_acceptance_20260929/episode000002
+[nero_mujoco_sim_node-4] [INFO] [1790618152.940293633] [nero_mujoco_sim]: MuJoCo physics_hz=200.2 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618157.941841893] [nero_mujoco_sim]: MuJoCo physics_hz=203.7 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618162.944016621] [nero_mujoco_sim]: MuJoCo physics_hz=203.9 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618167.948400651] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618172.952165048] [nero_mujoco_sim]: MuJoCo physics_hz=203.6 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618177.956124512] [nero_mujoco_sim]: MuJoCo physics_hz=203.8 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618182.957717776] [nero_mujoco_sim]: MuJoCo physics_hz=202.9 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618187.959756671] [nero_mujoco_sim]: MuJoCo physics_hz=203.5 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618192.964322122] [nero_mujoco_sim]: MuJoCo physics_hz=202.0 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618197.966976776] [nero_mujoco_sim]: MuJoCo physics_hz=201.1 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618202.971518801] [nero_mujoco_sim]: MuJoCo physics_hz=200.8 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618207.971740724] [nero_mujoco_sim]: MuJoCo physics_hz=201.6 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618212.972184121] [nero_mujoco_sim]: MuJoCo physics_hz=202.2 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618217.974300564] [nero_mujoco_sim]: MuJoCo physics_hz=203.1 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618222.977542820] [nero_mujoco_sim]: MuJoCo physics_hz=203.5 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618227.981448590] [nero_mujoco_sim]: MuJoCo physics_hz=204.4 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618232.983402198] [nero_mujoco_sim]: MuJoCo physics_hz=203.7 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618237.987308595] [nero_mujoco_sim]: MuJoCo physics_hz=204.6 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618242.988369179] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618247.992101016] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618252.993249600] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618257.996368285] [nero_mujoco_sim]: MuJoCo physics_hz=203.1 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618263.000227898] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618268.001861908] [nero_mujoco_sim]: MuJoCo physics_hz=204.3 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618273.002882674] [nero_mujoco_sim]: MuJoCo physics_hz=203.6 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618278.003178466] [nero_mujoco_sim]: MuJoCo physics_hz=204.4 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618283.003717001] [nero_mujoco_sim]: MuJoCo physics_hz=204.6 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618288.005396426] [nero_mujoco_sim]: MuJoCo physics_hz=204.1 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618293.008316440] [nero_mujoco_sim]: MuJoCo physics_hz=203.5 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618298.010269845] [nero_mujoco_sim]: MuJoCo physics_hz=203.9 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618303.012579536] [nero_mujoco_sim]: MuJoCo physics_hz=204.5 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618308.013725417] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618313.015117065] [nero_mujoco_sim]: MuJoCo physics_hz=204.7 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618318.016763725] [nero_mujoco_sim]: MuJoCo physics_hz=202.9 real_time_factor=0.41 contacts=4
+[xhand_dex_retargeting_node-9] [INFO] [1790618320.252619047] [nexus_xhand_retargeter]: [Retarget FPS] 0 Hz (armed=True)
+[nero_mujoco_sim_node-4] [INFO] [1790618323.017638015] [nero_mujoco_sim]: MuJoCo physics_hz=194.8 real_time_factor=0.39 contacts=4
+[xhand_dex_retargeting_node-9] [INFO] [1790618325.255158824] [nexus_xhand_retargeter]: [Retarget FPS] 100 Hz (armed=True)
+[nero_mujoco_sim_node-4] [INFO] [1790618328.020997497] [nero_mujoco_sim]: MuJoCo physics_hz=186.5 real_time_factor=0.37 contacts=4
+[xhand_dex_retargeting_node-9] [INFO] [1790618330.255956974] [nexus_xhand_retargeter]: [Retarget FPS] 101 Hz (armed=True)
+[nero_mujoco_sim_node-4] [INFO] [1790618333.021484304] [nero_mujoco_sim]: MuJoCo physics_hz=196.4 real_time_factor=0.39 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618338.026050367] [nero_mujoco_sim]: MuJoCo physics_hz=203.6 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618343.027981706] [nero_mujoco_sim]: MuJoCo physics_hz=204.1 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618348.032632111] [nero_mujoco_sim]: MuJoCo physics_hz=202.6 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618353.032692211] [nero_mujoco_sim]: MuJoCo physics_hz=202.8 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618358.037208068] [nero_mujoco_sim]: MuJoCo physics_hz=203.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618363.041932340] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618368.042373918] [nero_mujoco_sim]: MuJoCo physics_hz=204.2 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618373.044618738] [nero_mujoco_sim]: MuJoCo physics_hz=203.7 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618378.045540044] [nero_mujoco_sim]: MuJoCo physics_hz=203.8 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618383.050401301] [nero_mujoco_sim]: MuJoCo physics_hz=203.6 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618388.055005181] [nero_mujoco_sim]: MuJoCo physics_hz=204.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618393.059143416] [nero_mujoco_sim]: MuJoCo physics_hz=204.2 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618398.063951761] [nero_mujoco_sim]: MuJoCo physics_hz=204.6 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618403.065953800] [nero_mujoco_sim]: MuJoCo physics_hz=204.7 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618408.066110040] [nero_mujoco_sim]: MuJoCo physics_hz=202.8 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618413.070282121] [nero_mujoco_sim]: MuJoCo physics_hz=203.8 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618418.074074348] [nero_mujoco_sim]: MuJoCo physics_hz=204.2 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618423.077610651] [nero_mujoco_sim]: MuJoCo physics_hz=203.5 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618428.079799940] [nero_mujoco_sim]: MuJoCo physics_hz=203.7 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618433.080885585] [nero_mujoco_sim]: MuJoCo physics_hz=202.4 real_time_factor=0.40 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618438.084013999] [nero_mujoco_sim]: MuJoCo physics_hz=202.9 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618443.087894464] [nero_mujoco_sim]: MuJoCo physics_hz=203.0 real_time_factor=0.41 contacts=4
+[nero_mujoco_sim_node-4] [INFO] [1790618448.088499812] [nero_mujoco_sim]: MuJoCo physics_hz=204.2 real_time_factor=0.41 contacts=4

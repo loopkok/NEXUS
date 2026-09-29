@@ -1,0 +1,110 @@
+[INFO] [1790620271.441181591] [nexus_sim_acceptance]: simulation acceptance profile=nero_dual_xhand_mujoco sha256=4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b
+{
+  "result": "FAIL",
+  "error": "left arbiter left TELEOP during tracking: {'tcp_x_peak_to_peak_m': 0.0001399767601447362, 'wrist_expected_peak_to_peak_m': 0.010400000000000001, 'tcp_x_expected_correlation': -0.24258642106823225, 'tcp_orientation_max_drift_deg': 1.1590973097506476, 'motion_state_samples': 799, 'wrist_input_y_peak_to_peak_m': 0.015999649961372844, 'teleop_candidate_joint_peak_to_peak_rad': 0.24678913508001094, 'teleop_candidate_max_gap_ms': 40.28862016275525, 'end_effector_candidate_max_gap_ms': 1771.7666609678417, 'tcp_position_peak_to_peak_xyz_m': [0.00013998423995232288, 6.367435791690759e-05, 9.840506946623417e-05], 'input_to_candidate_latency_ms': {'count': 656, 'p50': 13.318574521690607, 'p95': 18.375807267148048, 'max': 33.31791399978101}, 'arbiter_mode_at_end': 'IDLE', 'control_history': [(1061018.051849426, 'IDLE', ''), (1061021.206595691, 'TELEOP', ''), (1061022.02282401, 'IDLE', '')]}",
+  "control": {
+    "mode": "IDLE",
+    "fault": "",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+    "ready_components": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ]
+  },
+  "policy": {
+    "state": "IDLE",
+    "fault": "",
+    "model": "act",
+    "profile_id": "nero_dual_xhand_mujoco",
+    "profile_sha256": "4b1c53906d999bbbd8ac374d8c5344eb9920b5393b9a6516447b971f13f4ab2b",
+    "ready": [
+      "left_arm",
+      "left_ee",
+      "right_arm",
+      "right_ee"
+    ],
+    "cameras": [
+      "base",
+      "left_wrist",
+      "right_wrist"
+    ]
+  },
+  "collect": {
+    "state": "IDLE",
+    "session": "sim_acceptance_20260929_concurrent",
+    "episode_index": -1,
+    "elapsed_s": 0.0,
+    "samples_per_s": {},
+    "camera_counts": {},
+    "folder": "/home/loopkok/NEXUS/test_artifacts/raw/sim_acceptance_20260929_concurrent"
+  },
+  "counts": {
+    "bridge_wrist:right": 915,
+    "bridge_hand:right": 915,
+    "state:left_arm": 1455,
+    "native_xhand_candidate:left": 915,
+    "bridge_wrist:left": 914,
+    "bridge_hand:left": 914,
+    "state:right_arm": 1454,
+    "state:left_ee": 1454,
+    "state:right_ee": 1454,
+    "native_xhand_candidate:right": 914,
+    "camera:base": 548,
+    "camera:left_wrist": 548,
+    "camera:right_wrist": 548,
+    "command:left_arm": 1822,
+    "command:right_arm": 1822,
+    "command:left_ee": 1822,
+    "command:right_ee": 1822,
+    "motion_state:left": 922,
+    "motion_state:right": 922
+  },
+  "candidates": {
+    "teleop:left_ee": 42,
+    "teleop:right_ee": 141,
+    "teleop:right_arm": 732,
+    "teleop:left_arm": 731
+  },
+  "control_history": [
+    [
+      1061018.051849426,
+      "IDLE",
+      ""
+    ],
+    [
+      1061021.206595691,
+      "TELEOP",
+      ""
+    ],
+    [
+      1061022.02282401,
+      "IDLE",
+      ""
+    ]
+  ],
+  "candidate_range_rad": {
+    "teleop:left_ee": 0.07124960422515869,
+    "teleop:right_ee": 0.07189548015594482,
+    "teleop:right_arm": 0.3890221591157018,
+    "teleop:left_arm": 0.24678913508001094
+  },
+  "candidate_max_gap_ms": {
+    "teleop:left_ee": 1771.7666609678417,
+    "teleop:right_ee": 2122.439206810668,
+    "teleop:right_arm": 44.33841584250331,
+    "teleop:left_arm": 40.28862016275525
+  }
+}
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 592, in <module>
+    main()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 554, in main
+    result = node.run_record()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 405, in run_record
+    tracking = self._motion_metrics()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_acceptance.py", line 380, in _motion_metrics
+    raise RuntimeError(f"{side} arbiter left TELEOP during tracking: {result[side]}")
+RuntimeError: left arbiter left TELEOP during tracking: {'tcp_x_peak_to_peak_m': 0.0001399767601447362, 'wrist_expected_peak_to_peak_m': 0.010400000000000001, 'tcp_x_expected_correlation': -0.24258642106823225, 'tcp_orientation_max_drift_deg': 1.1590973097506476, 'motion_state_samples': 799, 'wrist_input_y_peak_to_peak_m': 0.015999649961372844, 'teleop_candidate_joint_peak_to_peak_rad': 0.24678913508001094, 'teleop_candidate_max_gap_ms': 40.28862016275525, 'end_effector_candidate_max_gap_ms': 1771.7666609678417, 'tcp_position_peak_to_peak_xyz_m': [0.00013998423995232288, 6.367435791690759e-05, 9.840506946623417e-05], 'input_to_candidate_latency_ms': {'count': 656, 'p50': 13.318574521690607, 'p95': 18.375807267148048, 'max': 33.31791399978101}, 'arbiter_mode_at_end': 'IDLE', 'control_history': [(1061018.051849426, 'IDLE', ''), (1061021.206595691, 'TELEOP', ''), (1061022.02282401, 'IDLE', '')]}
