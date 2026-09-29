@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from nexus_core.adapter_registry import Adapter
 
 
@@ -50,9 +52,16 @@ def launch_driver(profile, components, path: str, _dry_run: bool):
     from launch_ros.actions import Node
 
     config = profile.adapter_config("nero_mujoco")
+    # Presentation is a per-launch option, not part of the frozen robot layout.
+    # The Web launcher sets this only for the simulation subprocess.
+    viewer_env = os.environ.get("NEXUS_MUJOCO_VIEWER")
+    if viewer_env not in (None, "0", "1"):
+        raise ValueError("NEXUS_MUJOCO_VIEWER must be 0 or 1")
+    enable_viewer = (bool(config.get("enable_viewer", True)) if viewer_env is None
+                     else viewer_env == "1")
     parameters = {
         "profile_file": path,
-        "enable_viewer": bool(config.get("enable_viewer", True)),
+        "enable_viewer": enable_viewer,
         "realtime": bool(config.get("realtime", True)),
         "state_rate": float(config.get("state_rate", 100.0)),
         "command_timeout": float(config.get("command_timeout", 0.5)),

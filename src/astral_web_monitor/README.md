@@ -100,6 +100,22 @@
 | GET | `/api/v1/logs` | 遥操、数采、推理三条 Launch 环形缓冲全量（默认各 8000 行；WS `log_tail` 只推尾 800） |
 | POST | `/api/v1/start` | `{preset: "...", log?: bool}` 启动指定预设（只把遥操栈拉起来；使能交给 driver auto_ready/一键就绪——曾自动等 `~/enable` 导致启动即 503，已回退）。`log:true` 且预设属 astral_teleop/astral_arm_teleop 时注入 `log_dir=<inference_test_logs>/teleop`（launch 每次自动建 `{stamp}[_tag]/` 运行子目录、按侧拆 `_left/_right`；`ASTRAL_WEB_MONITOR_LOG_ROOT` 可改根目录） |
 | POST | `/api/v1/stop` | SIGINT 停止 launch（30s 超时 SIGKILL） |
+
+### NEXUS 页启动 Nero 双臂双 XHand MuJoCo
+
+在带桌面的机器人主机终端启动 Web 服务，然后打开 NEXUS 页，选择
+`nero_dual_xhand_mujoco`。页面会默认使用 MuJoCo 驱动、真实 Quest3 输入
+和主机桌面的 MuJoCo 窗口；数采、推理和外部相机默认关闭，可按需开启
+数采和推理。点击「启动 Nero 双臂双手 MuJoCo」，依次使用「检查驱动」、
+「使能」、「归位」、「开始遥操 / 重锚」，停止时点击「停止装配」。启动日志
+在装配卡片显示。
+
+Quest3 接收沿用 mocap 配置的有线 TCP 端口 8000，使用前在主机执行
+`adb reverse tcp:8000 tcp:8000`。Web 服务进程需继承图形会话的
+`DISPLAY` 或 `WAYLAND_DISPLAY`；MuJoCo 窗口显示在运行 Web 服务的主机
+桌面，不嵌入浏览器。窗口开关只作用于该次仿真进程，不改变装配 profile
+及其布局哈希。若 Web 服务以无图形会话的方式运行，关闭窗口选项仍可
+启动无头仿真。
 | POST | `/api/v1/pause` | 发 `/teleop/disarm`（软暂停，节点保持运行） |
 | POST | `/api/v1/resume` | 发 `/teleop/armed`（恢复） |
 | POST | `/api/v1/teleop/start` | 发 `/teleop/start`（一次性，记录 `vr_init` 并 arm；配合 `require_start_signal`；无条件发送，臂节点自行判断有效性） |

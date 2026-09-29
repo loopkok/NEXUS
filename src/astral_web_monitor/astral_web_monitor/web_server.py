@@ -86,6 +86,13 @@ def _nexus_profile_file(name: str) -> Path:
     raise HTTPException(status_code=404, detail=f"未找到 profile: {name}")
 
 
+def _nexus_bool(req: dict[str, Any], key: str, default: bool) -> bool:
+    value = req.get(key, default)
+    if not isinstance(value, bool):
+        raise HTTPException(status_code=400, detail=f"{key} 必须是布尔值")
+    return value
+
+
 @_nexus_router.get("/api/v1/nexus/profiles")
 async def nexus_profiles() -> ApiEnvelope:
     roots = []
@@ -123,6 +130,21 @@ async def nexus_start(req: dict[str, Any]) -> ApiEnvelope:
         raise HTTPException(status_code=400, detail="NEXUS 装配启动要求 schema v2 profile")
     if profile.profile_id != name:
         raise HTTPException(status_code=400, detail="profile_id 必须与文件名一致")
+    sim = {c.driver for c in profile.components} == {"nero_mujoco"}
+    dry_run = _nexus_bool(req, "dry_run", not sim)
+    with_inputs = _nexus_bool(req, "with_inputs", True)
+    with_cameras = _nexus_bool(req, "with_cameras", False)
+    with_recording = _nexus_bool(req, "with_recording", not sim)
+    with_policy = _nexus_bool(req, "with_policy", not sim)
+    viewer = _nexus_bool(req, "viewer", False)
+    if sim and dry_run:
+        raise HTTPException(status_code=400, detail="Nero MuJoCo 仿真需关闭假驱动选项")
+    if sim and with_cameras:
+        raise HTTPException(status_code=400, detail="当前 Nero 仿真 profile 的相机设备为占位符，请关闭外部相机")
+    if viewer and not sim:
+        raise HTTPException(status_code=400, detail="MuJoCo 窗口仅适用于 Nero MuJoCo profile")
+    if viewer and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        raise HTTPException(status_code=409, detail="Web 服务需从主机桌面终端启动，才能显示 MuJoCo 窗口")
     session = str(req.get("session", "default_task"))
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", session):
         raise HTTPException(status_code=400, detail="无效 session 名称")
@@ -156,15 +178,18 @@ async def nexus_start(req: dict[str, Any]) -> ApiEnvelope:
     if model not in ("act", "pi05") or backend not in ("remote", "stub") or not re.fullmatch(r"[A-Za-z0-9.:-]+", server_host) or not 1 <= server_port <= 65535:
         raise HTTPException(status_code=400, detail="模型类型、后端或服务地址无效")
     args = {"profile": str(profile_path),
-            "dry_run": str(bool(req.get("dry_run", True))).lower(),
-            "with_cameras": str(bool(req.get("with_cameras", False))).lower(),
-            "with_recording": "true", "with_policy": "true",
+            "dry_run": str(dry_run).lower(),
+            "with_inputs": str(with_inputs).lower(),
+            "with_cameras": str(with_cameras).lower(),
+            "with_recording": str(with_recording).lower(),
+            "with_policy": str(with_policy).lower(),
             "data_root": str(data_root),
             "session": session, "model_manifest": model_manifest,
             "model": model, "backend_type": backend,
             "server_host": server_host, "server_port": str(server_port)}
     preset = Preset(name=f"NEXUS {name}", package="nexus_core",
-                    launch="system.launch.py", args=args)
+                    launch="system.launch.py", args=args,
+                    env={"NEXUS_MUJOCO_VIEWER": "1" if viewer else "0"} if sim else {})
     ok, message = _launch_mgr.start(preset)
     if not ok:
         raise HTTPException(status_code=409, detail=message)
@@ -173,7 +198,7 @@ async def nexus_start(req: dict[str, Any]) -> ApiEnvelope:
     if node is not None:
         node.configure_nexus(profile)
     return ApiEnvelope(ok=True, message=message,
-                       data={"profile_sha256": profile.digest})
+                       data={"profile_sha256": profile.digest, "viewer": viewer})
 
 
 @_nexus_router.get("/api/v1/nexus/state")

@@ -50,6 +50,7 @@ class Preset:
     launch: str
     args: dict[str, str] = field(default_factory=dict)
     description: str = ""
+    env: dict[str, str] = field(default_factory=dict)
 
     def command(self) -> str:
         argv = ["ros2", "launch", self.package, self.launch,
@@ -153,6 +154,7 @@ class LaunchManager:
             try:
                 self._proc = subprocess.Popen(
                     ["bash", "-c", preset.command()],
+                    env={**os.environ, **preset.env},
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,

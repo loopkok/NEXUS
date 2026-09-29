@@ -1,4 +1,5 @@
 import unittest
+import os
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from unittest.mock import patch
@@ -10,7 +11,7 @@ from nero_quest_teleop.ik_solver import IKSolver
 
 from nero_mujoco_sim.model_builder import build_mjcf_from_urdf
 from nero_mujoco_sim.homing import is_pre_home_command
-from nero_mujoco_sim.nexus_adapter import driver_adapter
+from nero_mujoco_sim.nexus_adapter import driver_adapter, launch_driver
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -45,6 +46,18 @@ class ModelBuilderTests(unittest.TestCase):
         self.assertEqual({component.driver for component in profile.components}, {"nero_mujoco"})
         self.assertEqual(profile.instance, "nero_sim")
         self.assertEqual(profile.adapter_config("nero_mujoco")["timestep"], 0.002)
+
+    def test_viewer_override_only_changes_sim_process_parameter(self):
+        adapter = driver_adapter()
+        profile_path = ROOT / "src" / "nexus_core" / "profiles" / "nero_dual_xhand_mujoco.json"
+        with patch.dict(DRIVERS, {adapter.name: adapter}):
+            profile = Profile.load(profile_path)
+        digest = profile.digest
+        with patch.dict(os.environ, {"NEXUS_MUJOCO_VIEWER": "1"}):
+            with patch("launch_ros.actions.Node") as node:
+                launch_driver(profile, profile.components, str(profile_path), False)
+        self.assertTrue(node.call_args_list[0].kwargs["parameters"][0]["enable_viewer"])
+        self.assertEqual(profile.digest, digest)
 
     def test_builds_full_dual_arm_dual_hand_mjcf(self):
         xml = build_mjcf_from_urdf(URDF, {"left_joint2": (-1.74533, 1.74533)})
