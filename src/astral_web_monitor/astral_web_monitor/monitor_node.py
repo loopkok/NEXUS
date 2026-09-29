@@ -193,6 +193,7 @@ class MonitorNode(Node):
         self._nexus_policy_state: dict[str, Any] | None = None
         self._nexus_policy_state_ts = 0.0
         self._nexus_publishers: dict[str, Any] = {}
+        self._nexus_start_subscribers = 1
         self._nexus_preview_roles: set[str] = set()
         self._nexus_profile: dict[str, str] | None = None
 
@@ -387,6 +388,10 @@ class MonitorNode(Node):
             self._nexus_policy_state_ts = 0.0
             self._nexus_profile = {"id": profile.profile_id, "sha256": profile.digest,
                                    "instance": profile.instance}
+        # The mux and every arm IK adapter must receive the one-shot start.
+        # A ready driver can precede slow IK node initialization.
+        self._nexus_start_subscribers = 1 + sum(
+            component.kind == "arm" for component in profile.components)
         for spec in profile.components:
             self._nexus_subs.append(self.create_subscription(
                 JointState, profile.topic(spec.name, "joint_states"),
@@ -475,17 +480,17 @@ class MonitorNode(Node):
         publisher.publish(Bool(data=value))
         return True
 
-    def publish_nexus_teleop_start(self, timeout_s: float = 2.0) -> bool:
-        if not self.publish_nexus_bool("teleop_armed", True):
-            return False
+    def publish_nexus_teleop_start(self, timeout_s: float = 5.0) -> bool:
         publisher = self._nexus_publishers.get("teleop_start")
         if publisher is None:
             return False
         deadline = time.monotonic() + max(0.0, timeout_s)
-        while publisher.get_subscription_count() < 1:
+        while publisher.get_subscription_count() < self._nexus_start_subscribers:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.02)
+        if not self.publish_nexus_bool("teleop_armed", True):
+            return False
         publisher.publish(Bool(data=True))
         return True
 
