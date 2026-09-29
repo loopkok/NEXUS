@@ -1,5 +1,12 @@
 # NEXUS Changelog
 
+## 2026-09-29 — Clarify Nero TCP setting
+
+- Corrected the migrated Nero teleop README: the actual left/right `tcp_offset`
+  default is six zeros, matching the original XNero YAML and the `link7` flange
+  target used by NEXUS. The nonzero `link7_to_xhand_palm` geometry remains a
+  separate model-frame transform and is not applied to the teleop IK target.
+
 ## 2026-09-29 — Reconcile local, GitHub, and deployment host
 
 - Selected GitHub `origin/main` as the source of truth. The canonical host

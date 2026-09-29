@@ -334,14 +334,9 @@ R_right = [[ 0,  0, -1],
 
 ### TCP Offset
 
-`tcp_offset: [x, y, z, roll, pitch, yaw]` 定义了从**法兰末端到夹爪工具中心点**的变换。
+`tcp_offset: [x, y, z, roll, pitch, yaw]` 是旧版独立遥操节点可选的法兰到工具 TCP 变换。Nero 当前左右臂配置均为 `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]`：Quest3 提供的是 `link7` 法兰位姿，IK 也以 `link7` 为目标，无需额外 TCP 偏移。
 
-默认值：`[0.175, 0.0, -0.0235, 0, 0, 0]`
-
-- 法兰在夹爪后方 0.175m（X 方向）
-- 法兰在夹爪上方 0.0235m（Z 方向为负值，即夹爪在法兰下方）
-
-遥操时，VR 手部位姿增量 = 夹爪位姿增量，系统自动转换为法兰位姿后再做逆解算：
+只有输入目标明确是工具 TCP 时，才应配置非零偏移并转换为法兰目标：
 
 ```
 T_flange_target = T_gripper_target @ inv(T_flange_to_tcp)
@@ -392,7 +387,7 @@ T_flange_target = T_gripper_target @ inv(T_flange_to_tcp)
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `tcp_offset` | `[0.175, 0.0, -0.0235, 0, 0, 0]` | 法兰到夹爪的变换 `[x,y,z,roll,pitch,yaw]` (m/rad) |
+| `tcp_offset` | `[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` | 可选的法兰到工具 TCP 变换 `[x,y,z,roll,pitch,yaw]` (m/rad)；当前 Nero 法兰目标不使用偏移 |
 
 ### 安全参数
 
