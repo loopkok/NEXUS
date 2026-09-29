@@ -33,3 +33,7 @@ pi_metrics.jsonl
 # 真机测试归档（日志+分析图+汇总，全部可复现、不入库）
 inference_test_logs/
 pi05_infer_test_log/
+
+# 本地机器人数据、仿真 episode 与导出测试产物
+/data/
+/test_artifacts/
