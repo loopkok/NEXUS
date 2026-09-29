@@ -31,7 +31,7 @@ On the deployment host:
 ```bash
 cd /home/loopkok/NEXUS
 git status --short --branch
-git config http.version HTTP/1.1
+git remote set-url origin git@github.com:loopkok/NEXUS.git
 git fetch origin
 git pull --ff-only origin main
 git rev-parse HEAD
@@ -40,10 +40,13 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-The `http.version` setting works around the host's observed GitHub HTTP/2
-framing error. Confirm that the host commit hash exactly matches the local
-commit that was pushed. If the checkout is dirty, preserve and review the
-changes before updating; do not reset or overwrite them.
+Use the host's configured GitHub SSH key. HTTPS ref listing worked, but the
+host's HTTPS pack fetch stalled even with HTTP/1.1; GitHub SSH authentication
+and fast-forward pulls were verified. For a new host checkout, clone with
+`git clone git@github.com:loopkok/NEXUS.git /home/loopkok/NEXUS`. Confirm that
+the host commit hash exactly matches the local commit that was pushed. If the
+checkout is dirty, preserve and review the changes before updating; do not reset
+or overwrite them.
 
 Run the simulation in an isolated ROS domain. Disable physical input and camera
 drivers when synthetic Quest 3 and camera topics are used:

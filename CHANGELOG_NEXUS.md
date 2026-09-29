@@ -15,7 +15,8 @@
   interfaces. No real driver or camera was launched. ACT/pi0.5 training was not
   repeated because this host has no LeRobot training command or OpenPI runtime.
 - Added [the deployment workflow](docs/DEVELOPMENT_WORKFLOW.md): local edits
-  push to GitHub, then the host fast-forwards and runs build/simulation gates.
+  push to GitHub, then the host fast-forwards over its verified GitHub SSH key
+  and runs build/simulation gates. HTTPS pack fetching stalled on the host.
 
 ## 2026-09-29 — Correct Nero Quest frame contract
 

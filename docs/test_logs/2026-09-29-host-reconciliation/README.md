@@ -16,8 +16,10 @@ This report and its raw logs are documentation-only follow-up changes.
   policy regression test, plus a newline-only package file difference. The
   current candidate contains their later committed replacements. The old host
   checkout and its data are retained intact during the final path switch.
-- GitHub fetch from the host succeeds with `http.version=HTTP/1.1`; the default
-  HTTP/2 request had previously failed with a curl framing error.
+- HTTPS ref listing works, but an HTTPS pack fetch stalls on this host even
+  with HTTP/1.1. GitHub SSH authentication succeeded, and the candidate
+  checkout fast-forwarded to the published documentation/test-log commit over
+  SSH. The canonical host checkout will use the SSH remote.
 
 ## Passed on the Ubuntu 22.04 / ROS 2 Humble host
 
