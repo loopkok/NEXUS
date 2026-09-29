@@ -35,5 +35,5 @@ inference_test_logs/
 pi05_infer_test_log/
 
 # 本地机器人数据、仿真 episode 与导出测试产物
-/data/
-/test_artifacts/
+/data
+/test_artifacts
