@@ -45,12 +45,13 @@ def _landmarks(curl: float) -> list[tuple[float, float, float]]:
 
 class SyntheticQuestSource(Node):
     def __init__(self, profile: Profile, amplitude: float, frequency: float,
-                 image_rate: float, hand_curl: float):
+                 image_rate: float, hand_curl: float, motion_axis: str = "y"):
         super().__init__("nexus_synthetic_quest_source")
         self.profile = profile
         self.amplitude = amplitude
         self.frequency = frequency
         self.hand_curl = hand_curl
+        self.motion_axis = motion_axis
         self.wrist_mapping = profile.raw.get("input_settings", {}).get(
             "quest3_wrist_pose_mapping", {}
         )
@@ -62,6 +63,10 @@ class SyntheticQuestSource(Node):
             for side in ("left", "right")
         }
         self.started = time.monotonic()
+        self._rate_started = self.started
+        self._last_input_at = 0.0
+        self._max_input_gap = 0.0
+        self._input_count = 0
         self.frame = 0
         self.wrists = {}
         self.hands = {}
@@ -105,9 +110,15 @@ class SyntheticQuestSource(Node):
             self.camera_frames[camera["role"]] = encoded.tobytes()
         self.create_timer(.02, self._publish_inputs)
         self.create_timer(1.0 / image_rate, self._publish_images)
+        self.create_timer(5.0, self._log_input_rate)
 
     def _publish_inputs(self):
-        elapsed = time.monotonic() - self.started
+        now = time.monotonic()
+        if self._last_input_at:
+            self._max_input_gap = max(self._max_input_gap, now - self._last_input_at)
+        self._last_input_at = now
+        self._input_count += 1
+        elapsed = now - self.started
         curl = self.hand_curl
         stamp = self.get_clock().now().to_msg()
         for side in ("left", "right"):
@@ -115,11 +126,9 @@ class SyntheticQuestSource(Node):
             wrist.header.stamp = stamp
             wrist.header.frame_id = self.wrist_mapping.get(
                 f"{side}_frame_id", f"quest3_{side}_wrist")
-            raw_position = np.array([
-                0.0,
-                self.amplitude * math.sin(2 * math.pi * self.frequency * elapsed),
-                0.0,
-            ])
+            raw_position = np.zeros(3, dtype=float)
+            raw_position["xyz".index(self.motion_axis)] = (
+                self.amplitude * math.sin(2 * math.pi * self.frequency * elapsed))
             mapped_position, mapped_quat = rotate_pose(
                 raw_position, np.array([0.0, 0.0, 0.0, 1.0]),
                 self.wrist_rotations[side])
@@ -154,6 +163,16 @@ class SyntheticQuestSource(Node):
         if self.body_names_pub:
             self.body_names_pub.publish(String(data='["root"]'))
 
+    def _log_input_rate(self):
+        now = time.monotonic()
+        elapsed = max(1e-6, now - self._rate_started)
+        self.get_logger().info(
+            f"synthetic inputs hz={self._input_count / elapsed:.1f} "
+            f"max_gap_ms={self._max_input_gap * 1000:.1f}")
+        self._rate_started = now
+        self._input_count = 0
+        self._max_input_gap = 0.0
+
     def _publish_images(self):
         self.frame += 1
         stamp = self.get_clock().now().to_msg()
@@ -171,6 +190,7 @@ def main():
     parser.add_argument("--profile", required=True)
     parser.add_argument("--amplitude", type=float, default=.008)
     parser.add_argument("--frequency", type=float, default=.15)
+    parser.add_argument("--motion-axis", choices=("x", "y", "z"), default="y")
     parser.add_argument("--image-rate", type=float, default=30.0)
     parser.add_argument("--hand-curl", type=float, default=0.0,
                         help="fixed synthetic finger curl in [0, 1]")
@@ -180,7 +200,7 @@ def main():
         parser.error("amplitude/rates must be positive and hand-curl must be in [0, 1]")
     rclpy.init()
     node = SyntheticQuestSource(Profile.load(args.profile), args.amplitude, args.frequency,
-                                args.image_rate, args.hand_curl)
+                                args.image_rate, args.hand_curl, args.motion_axis)
     node.get_logger().info(f"synthetic Quest source profile={node.profile.profile_id} "
                            f"sha256={node.profile.digest}")
     try:
