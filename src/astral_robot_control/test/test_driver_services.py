@@ -41,6 +41,13 @@ class _FakeRes:
         self.message = ""
 
 
+class _FakeDriverLog:
+    enabled = False
+
+    def write(self, _record):
+        pass
+
+
 class _FakeRobot:
     def __init__(self, powered=False, motion_mode=1, online=True, enable_ok=False):
         self._robot_powered = powered
@@ -94,6 +101,10 @@ def _make_node(robot=None, dry_run=False, q18=None):
     node._full_cmd_t = 0.0
     node._head_cmd_t = 0.0
     node._use_full_priority = False
+    node._grip_rad = {"left": None, "right": None}
+    node._grip_open_rad = {"left": 0.8, "right": 0.8}
+    node._grip_closed_rad = {"left": 0.0, "right": 0.0}
+    node._dlog = _FakeDriverLog()
     return node
 
 
