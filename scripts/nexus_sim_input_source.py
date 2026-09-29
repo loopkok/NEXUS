@@ -16,7 +16,8 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import Point, Pose, PoseArray, PoseStamped, Quaternion
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
+                       ReliabilityPolicy, qos_profile_sensor_data)
 from sensor_msgs.msg import CompressedImage, Joy
 from std_msgs.msg import String
 
@@ -80,7 +81,12 @@ class SyntheticQuestSource(Node):
         self.body_names_pub = None
         names_spec = profile.input_spec("body", "body_joint_names")
         if names_spec:
-            self.body_names_pub = self.create_publisher(String, names_spec["topic"], 10)
+            names_qos = QoSProfile(
+                depth=1, history=HistoryPolicy.KEEP_LAST,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL)
+            self.body_names_pub = self.create_publisher(
+                String, names_spec["topic"], names_qos)
 
         self.camera_publishers = {}
         self.camera_frames = {}
