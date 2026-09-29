@@ -304,7 +304,10 @@ class JointBridgeNode(Node):
 def main() -> None:
     rclpy.init()
     node = JointBridgeNode()
-    if node.candidate_only:
+    # The ratio-only Astral gripper bridge has no lifecycle services. On ROS 2
+    # Humble, its small callbacks can be starved by MultiThreadedExecutor;
+    # use the same single-threaded path as candidate-only bridges.
+    if node.candidate_only or node.spec.kind == "gripper":
         try:
             rclpy.spin(node)
         except (KeyboardInterrupt, ExternalShutdownException):
