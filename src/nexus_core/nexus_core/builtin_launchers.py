@@ -241,6 +241,7 @@ def launch_wuji_retargeter(profile, components, path: str, dry_run: bool):
     return [_node("wujihand_retargeting", "wujihand_retarget_node",
                   _node_name("retarget", component), [{
                       "hand_side": side, "input_topic": "/hand_landmarks", "viz": False,
+                      "retarget_backend": "dexpilot" if dry_run else "official",
                   }], [
                       (f"/hand_landmarks/{side}", f"{ns}/input/{channel}/hand_landmarks"),
                       (f"/{side}_hand/joint_commands", f"{ns}/legacy/{side}_wuji_candidate"),
