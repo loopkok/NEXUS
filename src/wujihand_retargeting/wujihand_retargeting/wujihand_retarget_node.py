@@ -32,6 +32,14 @@ def _command_qos() -> QoSProfile:
         depth=1,
     )
 
+
+def _sensor_qos() -> QoSProfile:
+    return QoSProfile(
+        reliability=ReliabilityPolicy.BEST_EFFORT,
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+    )
+
 from wujihand_retargeting.constants import (
     DEFAULT_HAND_MODEL,
     NUM_JOINTS,
@@ -130,7 +138,7 @@ class WujiHandRetargetNode(Node):
                 PoseArray,
                 f"{self.input_topic}/{side}",
                 lambda msg, s=side: self._on_landmarks(msg, s),
-                10,
+                _sensor_qos(),
             )
             self.create_service(
                 Trigger,
