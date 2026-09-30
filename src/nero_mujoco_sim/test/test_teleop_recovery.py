@@ -25,7 +25,13 @@ class TeleopRecoveryTests(unittest.TestCase):
         self.assertTrue(n._start()[0])
         self.messages = []
         n._pub = SimpleNamespace(publish=self.messages.append)
+        n._worker.close()
+        n._worker = SimpleNamespace(
+            take=lambda: (n._generation, n._anchor, n._solver.solve(None),
+                          {'reason': 'test'}, time.monotonic(), 1.),
+            submit=lambda *args: None, close=lambda: None)
         n._solver = SimpleNamespace(solve=lambda target: None,
+                                   residual=lambda *args: np.zeros(6),
                                    fk=lambda q: np.eye(4),
                                    sync_state=lambda *args, **kwargs: None)
 

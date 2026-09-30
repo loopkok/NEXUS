@@ -8,7 +8,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 
@@ -54,7 +54,7 @@ class NeroDriverNode(Node):
         self._state_pub = self.create_publisher(
             JointState, self.profile.topic(self.spec.name, "joint_states"), qos_profile_sensor_data)
         self.create_subscription(JointState, self.profile.topic(self.spec.name, "joint_commands"),
-                                 self._on_command, qos_profile_sensor_data)
+                                 self._on_command, QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
         prefix = f"{self.profile.namespace}/drivers/{self.spec.name}"
         self.create_service(Trigger, f"{prefix}/ready", self._ready)
         self.create_service(Trigger, f"{prefix}/enable", self._enable)
@@ -167,6 +167,10 @@ class NeroDriverNode(Node):
 
     def _on_command(self, msg: JointState) -> None:
         if not self._enabled or self._stopped or self._homing:
+            return
+        stamp = int(msg.header.stamp.sec)*1_000_000_000 + int(msg.header.stamp.nanosec)
+        if stamp > 0 and (int(self.get_clock().now().nanoseconds)-stamp)*1e-9 > self._timeout:
+            self.get_logger().warning("Expired Nero command rejected", throttle_duration_sec=2.0)
             return
         if list(msg.name) != list(self.spec.joints) or len(msg.position) != self.spec.dim:
             self.get_logger().error("Nero command joint order/dimension mismatch", throttle_duration_sec=2.0)

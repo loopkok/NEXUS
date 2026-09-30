@@ -14,7 +14,8 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
-from nero_quest_teleop.ik_solver import IKSolver
+from .nero_ik_adapter import InteractiveNeroIK
+from .latest_ik_worker import LatestIKWorker
 from nero_quest_teleop.pose_processor import PoseProcessor
 from nero_quest_teleop.safety_filter import SafetyFilter
 from .profile import Profile
@@ -40,7 +41,16 @@ class NeroTeleopNode(Node):
         if self.spec.ik != "nero_analytic":
             raise ValueError("Nero teleop requires nero_analytic IK adapter")
         cfg = self.profile.teleop_config(self.spec.name)
-        self._solver = IKSolver()
+        self._solver = InteractiveNeroIK(self.spec.lower, self.spec.upper,
+                                         refinement_ms=float(cfg.get("ik_refinement_ms", 8.0)))
+        self._worker = LatestIKWorker(self._solver)
+        self._generation = 0
+        self._seed_pending = None
+        self._last_ik_report = {}
+        # The old base-origin sphere incorrectly clipped legal Nero poses.
+        # Optional site workspace bounds remain explicit profile constraints;
+        # the default uses the exact shoulder/wrist triangle and joint limits.
+        self._explicit_workspace = "workspace_radius" in cfg
         self._processor = PoseProcessor(
             np.array(cfg["vr_to_arm_rot"], dtype=float).reshape(3, 3),
             pos_smoothing=float(cfg.get("pos_smoothing", 0.0 if self.spec.driver == "nero_mujoco" else 0.8)),
@@ -105,7 +115,8 @@ class NeroTeleopNode(Node):
             return False, "fresh Nero joint feedback required"
         if self._vr is None or now - self._vr_time > float(self.get_parameter("input_timeout").value):
             return False, "fresh wrist pose required"
-        self._solver.sync_state(self._state)
+        self._generation += 1
+        self._seed_pending = self._state.copy()
         # Quest3 already reports the Nero link7 flange pose. Anchor and solve
         # directly in the unchanged IK solver's link7 frame.
         self._anchor = self._solver.fk(self._state)
@@ -123,6 +134,7 @@ class NeroTeleopNode(Node):
     def _on_disarm(self, msg: Bool) -> None:
         if msg.data:
             self._armed = False
+            self._generation += 1
 
     def _start_service(self, _request, response):
         response.success, response.message = self._start()
@@ -140,25 +152,37 @@ class NeroTeleopNode(Node):
         delta_pos, delta_rot = self._processor.process()
         target = self._processor.compute_target_pose(
             delta_pos, delta_rot, self._anchor[:3, 3], self._anchor[:3, :3])
-        unclipped = target[:3, 3].copy()
-        target[:3, 3] = self._safety.check_workspace(target[:3, 3])
-        self._workspace_clips += int(not np.allclose(unclipped, target[:3, 3]))
-        started = time.monotonic()
-        solved = self._solver.solve(target)
-        self._solve_ms.append((time.monotonic() - started) * 1000.)
+        if self._explicit_workspace:
+            unclipped = target[:3, 3].copy()
+            target[:3, 3] = self._safety.check_workspace(target[:3, 3])
+            self._workspace_clips += int(not np.allclose(unclipped, target[:3, 3]))
+        result = self._worker.take()
+        self._worker.submit(self._generation, target, self._seed_pending)
+        self._seed_pending = None
+        if result is None or result[0] != self._generation:
+            # Never wait for the IK worker on the control callback.
+            self._publish_candidate(self._state)
+            return
+        _, solved_target, solved, report, finished, duration_ms = result
+        self._solve_ms.append(duration_ms)
         self._input_age_ms.append((now - self._vr_time) * 1000.)
         self._failed_solves += int(solved is None)
+        self._last_ik_report = report
         self._report_metrics()
-        if solved is None:
-            self.get_logger().warning("Nero IK target has no feasible solution; holding measured joints; retrying latest input",
-                                      throttle_duration_sec=2.0)
-            # A geometrically unreachable target is not loss of the input source.
-            # Keep a fresh hold while the operator returns to reachable space.
-            # Recheck freshness after an expensive failed solve before publishing.
+        error = self._solver.residual(solved_target, target)
+        obsolete = (now-finished > .1 or np.linalg.norm(error[:3]) > .02
+                    or np.linalg.norm(error[3:]) > .1)
+        if solved is None or obsolete:
+            if solved is None:
+                self.get_logger().warning(
+                    f"Nero IK hold: reason={report.get('reason')} "
+                    f"wrist_distance_m={report.get('wrist_distance_m')} "
+                    f"target_position_m={report.get('target_position_m')} "
+                    f"method={report.get('method')} solve_ms={duration_ms:.1f}",
+                    throttle_duration_sec=2.0)
             if self._feedback_is_fresh():
                 self._publish_candidate(self._state)
                 self._safety.set_initial_state(self._state, self._solver.fk(self._state)[:3, 3])
-                self._solver.sync_state(self._state, reset_branch=False)
             return
         safe, info = self._safety.filter(np.asarray(solved, dtype=float), now - self._last_step)
         self._last_step = now
@@ -166,6 +190,10 @@ class NeroTeleopNode(Node):
             return
         if self._feedback_is_fresh():
             self._publish_candidate(safe)
+
+    def destroy_node(self):
+        self._worker.close()
+        return super().destroy_node()
 
     def _feedback_is_fresh(self) -> bool:
         now = time.monotonic()
@@ -188,7 +216,9 @@ class NeroTeleopNode(Node):
             f"Nero IK side={self.side} solve_hz={len(self._solve_ms) / elapsed:.1f} "
             f"solve_p95_ms={np.percentile(self._solve_ms, 95):.1f} "
             f"input_age_p95_ms={np.percentile(self._input_age_ms, 95):.1f} "
-            f"failed={self._failed_solves} workspace_clips={self._workspace_clips}")
+            f"failed={self._failed_solves} workspace_clips={self._workspace_clips} "
+            f"last_method={self._last_ik_report.get('method')} "
+            f"last_reason={self._last_ik_report.get('reason')}")
         self._metrics_since = now
         self._solve_ms.clear()
         self._input_age_ms.clear()
