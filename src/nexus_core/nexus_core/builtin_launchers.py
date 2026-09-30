@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import re
+
+import yaml
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -183,6 +185,10 @@ def launch_astral_ik(profile, components, path: str, dry_run: bool):
     side = component.side
     cfg = _share("astral_arm_teleop", "config", f"astral_arm_teleop_{side}.yaml")
     teleop = profile.teleop_config(component.name)
+    # ROS YAML keys target node names. NEXUS gives components instance-local
+    # names, so load the legacy preset as a parameter dictionary explicitly.
+    with open(cfg, encoding="utf-8") as stream:
+        preset = yaml.safe_load(stream)[f"astral_arm_teleop_{side}"]["ros__parameters"]
     ns = profile.namespace
     remaps = [
         (f"/{side}_arm/joint_commands", profile.candidate_topic("teleop", component.name)),
@@ -195,7 +201,8 @@ def launch_astral_ik(profile, components, path: str, dry_run: bool):
         ("/teleop/armed", f"{ns}/control/teleop_armed"),
     ]
     return [_node("astral_arm_teleop", "astral_arm_teleop_node",
-                  _node_name("teleop", component), [cfg, {
+                  _node_name("teleop", component), [preset, {
+                      "control_rate": float(teleop.get("control_rate", 100.0)),
                       "arm_side": side, "require_start_signal": True, "move_to_init_pose": False,
                       "reanchor_require_measured": True,
                       "motion_scale": float(teleop["motion_scale"]),
@@ -210,6 +217,7 @@ def launch_nero_ik(profile, components, path: str, dry_run: bool):
               ("/teleop/disarm", f"{ns}/control/teleop_disarm")]
     return [_node("nexus_core", "nexus_nero_teleop", _node_name("teleop", component), [{
         "profile_file": path, "component": component.name, "side": component.side or "left",
+        "control_rate": float(profile.teleop_config(component.name).get("control_rate", 100.0)),
     }], remaps + [("/teleop/armed", f"{ns}/control/teleop_armed")])]
 
 

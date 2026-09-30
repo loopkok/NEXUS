@@ -32,7 +32,7 @@ class NeroTeleopNode(Node):
         self.declare_parameter("profile_file", "")
         self.declare_parameter("side", "left")
         self.declare_parameter("component", "")
-        self.declare_parameter("control_rate", 50.0)
+        self.declare_parameter("control_rate", 100.0)
         self.declare_parameter("input_timeout", 0.5)
         self.profile = Profile.load(str(self.get_parameter("profile_file").value))
         side_param = str(self.get_parameter("side").value)
@@ -57,9 +57,15 @@ class NeroTeleopNode(Node):
             pos_smoothing=float(cfg.get("pos_smoothing", 0.0 if self.spec.driver == "nero_mujoco" else 0.8)),
             rot_smoothing=float(cfg.get("rot_smoothing", 0.0 if self.spec.driver == "nero_mujoco" else 0.8)),
             motion_scale=float(cfg["motion_scale"]), flip_pitch=False)
+        control_rate = float(self.get_parameter("control_rate").value)
+        if not np.isfinite(control_rate) or not 1.0 <= control_rate <= 500.0:
+            raise ValueError("control_rate must be between 1 and 500 Hz")
+        self._control_period = 1.0 / control_rate
+        self._time_based_joint_step = "max_joint_step" not in cfg
         self._safety = SafetyFilter(
             np.array(self.spec.lower), np.array(self.spec.upper),
-            max_joint_vel=float(cfg.get("max_joint_step", 0.065)),
+            # Preserve the previous 3.25 rad/s default when changing rate.
+            max_joint_vel=float(cfg.get("max_joint_step", 3.25 / control_rate)),
             workspace_radius=float(cfg.get("workspace_radius", 0.58)),
             workspace_z_min=-1.0, workspace_z_max=1.0)
         self._armed = False
@@ -89,7 +95,7 @@ class NeroTeleopNode(Node):
         self.create_service(Trigger, "~/reanchor", self._start_service)
         self.create_timer(1.0 / max(1.0, float(self.get_parameter("control_rate").value)), self._tick)
         self.get_logger().info(f"Nero teleop {self.side}: IK core=nero_quest_teleop.ik_solver; "
-                               f"profile_sha256={self.profile.digest}")
+                               f"control_rate={control_rate:.1f}Hz profile_sha256={self.profile.digest}")
 
     def _on_vr(self, msg: PoseStamped) -> None:
         p = msg.pose.position
@@ -189,7 +195,12 @@ class NeroTeleopNode(Node):
                 self._publish_candidate(self._state)
                 self._safety.set_initial_state(self._state, self._solver.fk(self._state)[:3, 3])
             return
-        safe, info = self._safety.filter(np.asarray(solved, dtype=float), now - self._last_step)
+        elapsed = now - self._last_step
+        if self._time_based_joint_step:
+            # A worker may finish every second tick. Use elapsed time while
+            # bounding catch-up motion to two periods after a delayed solve.
+            self._safety.max_joint_vel = 3.25 * min(max(elapsed, 0.0), 2*self._control_period)
+        safe, info = self._safety.filter(np.asarray(solved, dtype=float), elapsed)
         self._last_step = now
         if info.get("collision"):
             return

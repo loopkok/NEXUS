@@ -108,7 +108,7 @@ class AstralTeleopArmNode(Node):
     def __init__(self) -> None:
         super().__init__("astral_arm_teleop_arm")
         self.declare_parameter("arm_side", "left")
-        self.declare_parameter("control_rate", 50.0)
+        self.declare_parameter("control_rate", 100.0)
         self.declare_parameter("solver_type", "geometric")
         self.declare_parameter("urdf_path", "")  # empty → astral_robot.pin.urdf
         self.declare_parameter("ik_max_iter", 20)

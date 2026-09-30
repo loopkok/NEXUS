@@ -19,7 +19,7 @@ from nexus_core.adapter_registry import (Adapter, CameraAdapter, IKAdapter,
                                          INPUT_ADAPTERS, RETARGETERS, discover_plugins,
                                          load_target)
 from nexus_core.profile import Profile, ProfileError, verify_model_manifest
-from nexus_core.builtin_launchers import _astral_control_board_ip
+from nexus_core.builtin_launchers import (_astral_control_board_ip, launch_astral_ik, launch_nero_ik)
 from astral_data_collect.schema import CollectSchema, NexusCollectSchema
 
 
@@ -385,3 +385,28 @@ class ArbiterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TeleopLaunchRateTests(unittest.TestCase):
+    def test_astral_presets_apply_to_renamed_components_at_100hz(self):
+        raw = copy.deepcopy(profile("astral_dual_gripper").raw)
+        raw['components'][0]['name'] = 'primary_arm'
+        p = Profile(raw)
+        for component in [c for c in p.components if c.kind == 'arm']:
+            def share(package, *parts):
+                return str(ROOT / 'src' / package / Path(*parts))
+            with patch('nexus_core.builtin_launchers._share', side_effect=share), \
+                 patch('nexus_core.builtin_launchers._node') as node:
+                launch_astral_ik(p, [component], '', True)
+                params = node.call_args.args[3]
+                self.assertEqual(params[0]['control_rate'],100.)
+                self.assertEqual(params[0]['solver_type'],'geometric')
+                self.assertEqual(params[1]['control_rate'],100.)
+
+    def test_nero_sim_and_physical_launch_at_100hz(self):
+        for name in ['nero_dual_xhand','nero_dual_xhand_mujoco']:
+            p = profile(name)
+            for component in [c for c in p.components if c.kind == 'arm']:
+                with patch('nexus_core.builtin_launchers._node') as node:
+                    launch_nero_ik(p,[component],'profile.json',True)
+                    self.assertEqual(node.call_args.args[3][0]['control_rate'],100.)

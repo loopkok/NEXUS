@@ -79,3 +79,8 @@ class TeleopRecoveryTests(unittest.TestCase):
         n._tick()
         self.assertFalse(n._armed)
         self.assertFalse(self.messages)
+
+    def test_100hz_default_preserves_joint_speed_limit(self):
+        n = self.node
+        self.assertEqual(n.get_parameter('control_rate').value,100.)
+        self.assertAlmostEqual(n._safety.max_joint_vel*100.,3.25)
