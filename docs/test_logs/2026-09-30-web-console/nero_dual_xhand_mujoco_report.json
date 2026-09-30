@@ -1,0 +1,1569 @@
+{
+  "id": "fee4de7922b9461da8f8393d07ac1bb7",
+  "started_at": 1790753678.555315,
+  "git_commit": "e47a77b29b53e48c0fecb23bc5970b5c7d51ddc5",
+  "profile": {
+    "schema_version": 2,
+    "profile_id": "nero_dual_xhand_mujoco",
+    "instance": "nero_sim",
+    "inputs": {
+      "left": {
+        "wrist": {
+          "source": "quest3",
+          "topic": "/quest3/left_wrist_pose",
+          "frame_policy": "stable"
+        },
+        "hand": {
+          "source": "quest3",
+          "topic": "/hand_landmarks/left",
+          "frame_policy": "stable"
+        }
+      },
+      "right": {
+        "wrist": {
+          "source": "quest3",
+          "topic": "/quest3/right_wrist_pose",
+          "frame_policy": "stable"
+        },
+        "hand": {
+          "source": "quest3",
+          "topic": "/hand_landmarks/right",
+          "frame_policy": "stable"
+        }
+      },
+      "body": {
+        "body_joints": {
+          "source": "quest3",
+          "topic": "/quest3/body_joints",
+          "frame_policy": "stable"
+        },
+        "body_joint_names": {
+          "source": "quest3",
+          "topic": "/quest3/body_joint_names"
+        }
+      }
+    },
+    "input_settings": {
+      "landmark_preprocess": "mano",
+      "quest3_wrist_pose_mapping": {
+        "mode": "per_side",
+        "left_rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "right_rotation": [
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "left_frame_id": "nero_left_wrist_mapped",
+        "right_frame_id": "nero_right_wrist_mapped"
+      }
+    },
+    "components": [
+      {
+        "name": "left_arm",
+        "kind": "arm",
+        "joints": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3",
+          "left_joint4",
+          "left_joint5",
+          "left_joint6",
+          "left_joint7"
+        ],
+        "lower": [
+          -2.705261,
+          -1.74533,
+          -2.757621,
+          -1.012291,
+          -2.757621,
+          -0.733039,
+          -1.570797
+        ],
+        "upper": [
+          2.705261,
+          1.74533,
+          2.757621,
+          2.146755,
+          2.757621,
+          0.959932,
+          1.570797
+        ],
+        "driver": "nero_mujoco",
+        "feedback": "measured",
+        "ik": "nero_analytic",
+        "side": "left",
+        "unit": "rad",
+        "input_channel": "left",
+        "teleop": {
+          "arm_base_frame": "left_arm_base",
+          "vr_to_arm_rot": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "motion_scale": 0.65
+        },
+        "frame_transforms": {
+          "link7_to_xhand_palm": [
+            0.125,
+            0.0,
+            -0.0235,
+            1.5708,
+            0.0,
+            1.5708
+          ]
+        }
+      },
+      {
+        "name": "right_arm",
+        "kind": "arm",
+        "joints": [
+          "right_joint1",
+          "right_joint2",
+          "right_joint3",
+          "right_joint4",
+          "right_joint5",
+          "right_joint6",
+          "right_joint7"
+        ],
+        "lower": [
+          -2.705261,
+          -1.74533,
+          -2.757621,
+          -1.012291,
+          -2.757621,
+          -0.733039,
+          -1.570797
+        ],
+        "upper": [
+          2.705261,
+          1.74533,
+          2.757621,
+          2.146755,
+          2.757621,
+          0.959932,
+          1.570797
+        ],
+        "driver": "nero_mujoco",
+        "feedback": "measured",
+        "ik": "nero_analytic",
+        "side": "right",
+        "unit": "rad",
+        "input_channel": "right",
+        "teleop": {
+          "arm_base_frame": "right_arm_base",
+          "vr_to_arm_rot": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "motion_scale": 0.65
+        },
+        "frame_transforms": {
+          "link7_to_xhand_palm": [
+            0.125,
+            0.0,
+            -0.0235,
+            1.5708,
+            0.0,
+            1.5708
+          ]
+        }
+      },
+      {
+        "name": "left_ee",
+        "kind": "hand",
+        "joints": [
+          "left_hand_thumb_bend_joint",
+          "left_hand_thumb_rota_joint1",
+          "left_hand_thumb_rota_joint2",
+          "left_hand_index_bend_joint",
+          "left_hand_index_joint1",
+          "left_hand_index_joint2",
+          "left_hand_mid_joint1",
+          "left_hand_mid_joint2",
+          "left_hand_ring_joint1",
+          "left_hand_ring_joint2",
+          "left_hand_pinky_joint1",
+          "left_hand_pinky_joint2"
+        ],
+        "lower": [
+          0.0,
+          -0.698,
+          0.0,
+          -0.174,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "upper": [
+          1.832,
+          1.57,
+          1.57,
+          0.174,
+          1.919,
+          1.919,
+          1.919,
+          1.919,
+          1.919,
+          1.919,
+          1.919,
+          1.919
+        ],
+        "driver": "nero_mujoco",
+        "feedback": "measured",
+        "side": "left",
+        "unit": "rad",
+        "input_channel": "left",
+        "retargeter": "xhand_dexpilot"
+      },
+      {
+        "name": "right_ee",
+        "kind": "hand",
+        "joints": [
+          "right_hand_thumb_bend_joint",
+          "right_hand_thumb_rota_joint1",
+          "right_hand_thumb_rota_joint2",
+          "right_hand_index_bend_joint",
+          "right_hand_index_joint1",
+          "right_hand_index_joint2",
+          "right_hand_mid_joint1",
+          "right_hand_mid_joint2",
+          "right_hand_ring_joint1",
+          "right_hand_ring_joint2",
+          "right_hand_pinky_joint1",
+          "right_hand_pinky_joint2"
+        ],
+        "lower": [
+          0.0,
+          -0.698,
+          0.0,
+          -0.174,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "upper": [
+          1.832,
+          1.57,
+          1.57,
+          0.174,
+          1.919,
+          1.919,
+          1.919,
+          1.919,
+          1.919,
+          1.919,
+          1.919,
+          1.919
+        ],
+        "driver": "nero_mujoco",
+        "feedback": "measured",
+        "side": "right",
+        "unit": "rad",
+        "input_channel": "right",
+        "retargeter": "xhand_dexpilot"
+      }
+    ],
+    "cameras": [
+      {
+        "role": "base",
+        "source": "orbbec",
+        "device": "SIM_BASE",
+        "capture_topic": "/nexus/nero_sim/sim_camera/base/image/compressed"
+      },
+      {
+        "role": "left_wrist",
+        "source": "orbbec",
+        "device": "SIM_LEFT_WRIST",
+        "capture_topic": "/nexus/nero_sim/sim_camera/left_wrist/image/compressed"
+      },
+      {
+        "role": "right_wrist",
+        "source": "orbbec",
+        "device": "SIM_RIGHT_WRIST",
+        "capture_topic": "/nexus/nero_sim/sim_camera/right_wrist/image/compressed"
+      }
+    ],
+    "dataset": {
+      "fps": 30,
+      "action_source": "next_state"
+    },
+    "policy": {
+      "camera_map": {
+        "base_0_rgb": "base",
+        "left_wrist_0_rgb": "left_wrist",
+        "right_wrist_0_rgb": "right_wrist"
+      }
+    },
+    "adapter_config": {
+      "nero_mujoco": {
+        "enable_viewer": false,
+        "realtime": true,
+        "timestep": 0.002,
+        "state_rate": 100.0,
+        "command_timeout": 0.5,
+        "homing_timeout": 45.0,
+        "joint_zero_offsets": {
+          "left_joint2": -1.5708,
+          "right_joint2": -1.5708
+        },
+        "home_pose": {
+          "left": [
+            -0.405,
+            1.281,
+            -0.957,
+            1.311,
+            2.682,
+            -0.314,
+            -0.163
+          ],
+          "right": [
+            0.405,
+            1.281,
+            0.957,
+            1.311,
+            -2.682,
+            0.314,
+            -0.163
+          ]
+        }
+      }
+    }
+  },
+  "profile_sha256": "bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+  "settings": {
+    "profile": "nero_dual_xhand_mujoco",
+    "session": "nero_dual_xhand_mujoco_web_test",
+    "dry_run": false,
+    "with_inputs": false,
+    "with_cameras": false,
+    "with_recording": true,
+    "with_policy": false,
+    "viewer": false,
+    "data_root": "/tmp/nexus_web_optimization_data"
+  },
+  "events": [
+    {
+      "time": 1790753678.555646,
+      "action": "start"
+    },
+    {
+      "time": 1790753680.698457,
+      "action": "driver_request",
+      "verb": "ready",
+      "operation_id": "f382033e1b1a47f085db6be4ddc7ad53"
+    },
+    {
+      "time": 1790753680.9761891,
+      "action": "driver_result",
+      "operation": {
+        "id": "f382033e1b1a47f085db6be4ddc7ad53",
+        "verb": "ready",
+        "status": "succeeded",
+        "started_at": 1790753680.6984494,
+        "message": "ready complete",
+        "finished_at": 1790753680.9761837
+      }
+    },
+    {
+      "time": 1790753681.0166743,
+      "action": "driver_request",
+      "verb": "enable",
+      "operation_id": "8b76338302b3440fa31f157eea7772e8"
+    },
+    {
+      "time": 1790753681.043892,
+      "action": "driver_result",
+      "operation": {
+        "id": "8b76338302b3440fa31f157eea7772e8",
+        "verb": "enable",
+        "status": "succeeded",
+        "started_at": 1790753681.0166698,
+        "message": "enable complete",
+        "finished_at": 1790753681.043887
+      }
+    },
+    {
+      "time": 1790753681.334879,
+      "action": "driver_request",
+      "verb": "home",
+      "operation_id": "8271ff49f6244f2fa11c90b5cb5792ec"
+    },
+    {
+      "time": 1790753681.687707,
+      "action": "driver_result",
+      "operation": {
+        "id": "8271ff49f6244f2fa11c90b5cb5792ec",
+        "verb": "home",
+        "status": "succeeded",
+        "started_at": 1790753681.3348753,
+        "message": "home complete",
+        "finished_at": 1790753681.687701
+      }
+    },
+    {
+      "time": 1790753681.9574943,
+      "action": "teleop_reanchor"
+    },
+    {
+      "time": 1790753681.9697874,
+      "action": "pause"
+    },
+    {
+      "time": 1790753681.984173,
+      "action": "resume_reanchor"
+    },
+    {
+      "time": 1790753681.994383,
+      "action": "recording_command",
+      "command": "start"
+    },
+    {
+      "time": 1790753685.323642,
+      "action": "recording_command",
+      "command": "stop"
+    },
+    {
+      "time": 1790753685.6490073,
+      "action": "pause"
+    },
+    {
+      "time": 1790753685.6547213,
+      "action": "driver_request",
+      "verb": "estop",
+      "operation_id": "b92a51a88ebd40589daaa0e9e02b5561"
+    },
+    {
+      "time": 1790753685.7033272,
+      "action": "driver_result",
+      "operation": {
+        "id": "b92a51a88ebd40589daaa0e9e02b5561",
+        "verb": "estop",
+        "status": "succeeded",
+        "started_at": 1790753685.6547174,
+        "message": "estop complete",
+        "finished_at": 1790753685.7033222
+      }
+    }
+  ],
+  "exported_at": 1790753685.9720554,
+  "robot": {
+    "diagnostics": {
+      "streams": {
+        "feedback/left_arm": {
+          "hz": 100.00099457239432,
+          "age_s": 0.010116833029314876
+        },
+        "command/left_arm": {
+          "hz": 100.00980196906897,
+          "age_s": 0.312927789054811
+        },
+        "candidate/left_arm": {
+          "hz": 99.99243941238626,
+          "age_s": 0.32485473598353565
+        },
+        "feedback/right_arm": {
+          "hz": 99.98188952582217,
+          "age_s": 0.009460925124585629
+        },
+        "command/right_arm": {
+          "hz": 100.00971594394635,
+          "age_s": 0.3128602229990065
+        },
+        "candidate/right_arm": {
+          "hz": 99.99069962535549,
+          "age_s": 0.33098265808075666
+        },
+        "feedback/left_ee": {
+          "hz": 100.00001291112275,
+          "age_s": 0.009387636091560125
+        },
+        "command/left_ee": {
+          "hz": 99.97378280605676,
+          "age_s": 0.3118327020201832
+        },
+        "candidate/left_ee": {
+          "hz": 100.01100177322705,
+          "age_s": 0.0021755159832537174
+        },
+        "feedback/right_ee": {
+          "hz": 100.0000781972062,
+          "age_s": 0.00931769609451294
+        },
+        "command/right_ee": {
+          "hz": 99.97182525295453,
+          "age_s": 0.31170273502357304
+        },
+        "candidate/right_ee": {
+          "hz": 100.00005715676302,
+          "age_s": 0.009246221976354718
+        },
+        "input/left/wrist": {
+          "hz": 100.0000901658116,
+          "age_s": 0.006312333047389984
+        },
+        "input/left/hand": {
+          "hz": 99.99942612668356,
+          "age_s": 0.004737792070955038
+        },
+        "input/right/wrist": {
+          "hz": 99.95982875735663,
+          "age_s": 0.0029193011578172445
+        },
+        "input/right/hand": {
+          "hz": 99.95281231373815,
+          "age_s": 0.0018615571316331625
+        }
+      },
+      "command_publishers": {
+        "left_arm": [
+          {
+            "node": "nexus_command_mux",
+            "reliability": "ReliabilityPolicy.BEST_EFFORT",
+            "durability": "DurabilityPolicy.VOLATILE"
+          }
+        ],
+        "right_arm": [
+          {
+            "node": "nexus_command_mux",
+            "reliability": "ReliabilityPolicy.BEST_EFFORT",
+            "durability": "DurabilityPolicy.VOLATILE"
+          }
+        ],
+        "left_ee": [
+          {
+            "node": "nexus_command_mux",
+            "reliability": "ReliabilityPolicy.BEST_EFFORT",
+            "durability": "DurabilityPolicy.VOLATILE"
+          }
+        ],
+        "right_ee": [
+          {
+            "node": "nexus_command_mux",
+            "reliability": "ReliabilityPolicy.BEST_EFFORT",
+            "durability": "DurabilityPolicy.VOLATILE"
+          }
+        ]
+      },
+      "joint_error": {
+        "left_arm": 0.0,
+        "right_arm": 0.0,
+        "left_ee": 0.0,
+        "right_ee": 0.0
+      }
+    },
+    "profile": {
+      "id": "nero_dual_xhand_mujoco",
+      "sha256": "bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+      "instance": "nero_sim"
+    },
+    "control": {
+      "mode": "ESTOP",
+      "fault": "emergency stop",
+      "profile_id": "nero_dual_xhand_mujoco",
+      "profile_sha256": "bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+      "ready_components": [
+        "left_arm",
+        "left_ee",
+        "right_arm",
+        "right_ee"
+      ]
+    },
+    "data_collect": {
+      "state": "IDLE",
+      "session": "nero_dual_xhand_mujoco_web_test",
+      "episode_index": -1,
+      "elapsed_s": 0.0,
+      "task_next": "",
+      "samples_per_s": {},
+      "dropped": {},
+      "schema": {
+        "nexus_profile": {
+          "schema_version": 2,
+          "profile_id": "nero_dual_xhand_mujoco",
+          "instance": "nero_sim",
+          "inputs": {
+            "left": {
+              "wrist": {
+                "source": "quest3",
+                "topic": "/quest3/left_wrist_pose",
+                "frame_policy": "stable"
+              },
+              "hand": {
+                "source": "quest3",
+                "topic": "/hand_landmarks/left",
+                "frame_policy": "stable"
+              }
+            },
+            "right": {
+              "wrist": {
+                "source": "quest3",
+                "topic": "/quest3/right_wrist_pose",
+                "frame_policy": "stable"
+              },
+              "hand": {
+                "source": "quest3",
+                "topic": "/hand_landmarks/right",
+                "frame_policy": "stable"
+              }
+            },
+            "body": {
+              "body_joints": {
+                "source": "quest3",
+                "topic": "/quest3/body_joints",
+                "frame_policy": "stable"
+              },
+              "body_joint_names": {
+                "source": "quest3",
+                "topic": "/quest3/body_joint_names"
+              }
+            }
+          },
+          "input_settings": {
+            "landmark_preprocess": "mano",
+            "quest3_wrist_pose_mapping": {
+              "mode": "per_side",
+              "left_rotation": [
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                -1.0,
+                0.0,
+                0.0
+              ],
+              "right_rotation": [
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                -1.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              "left_frame_id": "nero_left_wrist_mapped",
+              "right_frame_id": "nero_right_wrist_mapped"
+            }
+          },
+          "components": [
+            {
+              "name": "left_arm",
+              "kind": "arm",
+              "joints": [
+                "left_joint1",
+                "left_joint2",
+                "left_joint3",
+                "left_joint4",
+                "left_joint5",
+                "left_joint6",
+                "left_joint7"
+              ],
+              "lower": [
+                -2.705261,
+                -1.74533,
+                -2.757621,
+                -1.012291,
+                -2.757621,
+                -0.733039,
+                -1.570797
+              ],
+              "upper": [
+                2.705261,
+                1.74533,
+                2.757621,
+                2.146755,
+                2.757621,
+                0.959932,
+                1.570797
+              ],
+              "driver": "nero_mujoco",
+              "feedback": "measured",
+              "ik": "nero_analytic",
+              "side": "left",
+              "unit": "rad",
+              "input_channel": "left",
+              "teleop": {
+                "arm_base_frame": "left_arm_base",
+                "vr_to_arm_rot": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "motion_scale": 0.65
+              },
+              "frame_transforms": {
+                "link7_to_xhand_palm": [
+                  0.125,
+                  0.0,
+                  -0.0235,
+                  1.5708,
+                  0.0,
+                  1.5708
+                ]
+              }
+            },
+            {
+              "name": "right_arm",
+              "kind": "arm",
+              "joints": [
+                "right_joint1",
+                "right_joint2",
+                "right_joint3",
+                "right_joint4",
+                "right_joint5",
+                "right_joint6",
+                "right_joint7"
+              ],
+              "lower": [
+                -2.705261,
+                -1.74533,
+                -2.757621,
+                -1.012291,
+                -2.757621,
+                -0.733039,
+                -1.570797
+              ],
+              "upper": [
+                2.705261,
+                1.74533,
+                2.757621,
+                2.146755,
+                2.757621,
+                0.959932,
+                1.570797
+              ],
+              "driver": "nero_mujoco",
+              "feedback": "measured",
+              "ik": "nero_analytic",
+              "side": "right",
+              "unit": "rad",
+              "input_channel": "right",
+              "teleop": {
+                "arm_base_frame": "right_arm_base",
+                "vr_to_arm_rot": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "motion_scale": 0.65
+              },
+              "frame_transforms": {
+                "link7_to_xhand_palm": [
+                  0.125,
+                  0.0,
+                  -0.0235,
+                  1.5708,
+                  0.0,
+                  1.5708
+                ]
+              }
+            },
+            {
+              "name": "left_ee",
+              "kind": "hand",
+              "joints": [
+                "left_hand_thumb_bend_joint",
+                "left_hand_thumb_rota_joint1",
+                "left_hand_thumb_rota_joint2",
+                "left_hand_index_bend_joint",
+                "left_hand_index_joint1",
+                "left_hand_index_joint2",
+                "left_hand_mid_joint1",
+                "left_hand_mid_joint2",
+                "left_hand_ring_joint1",
+                "left_hand_ring_joint2",
+                "left_hand_pinky_joint1",
+                "left_hand_pinky_joint2"
+              ],
+              "lower": [
+                0.0,
+                -0.698,
+                0.0,
+                -0.174,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "upper": [
+                1.832,
+                1.57,
+                1.57,
+                0.174,
+                1.919,
+                1.919,
+                1.919,
+                1.919,
+                1.919,
+                1.919,
+                1.919,
+                1.919
+              ],
+              "driver": "nero_mujoco",
+              "feedback": "measured",
+              "side": "left",
+              "unit": "rad",
+              "input_channel": "left",
+              "retargeter": "xhand_dexpilot"
+            },
+            {
+              "name": "right_ee",
+              "kind": "hand",
+              "joints": [
+                "right_hand_thumb_bend_joint",
+                "right_hand_thumb_rota_joint1",
+                "right_hand_thumb_rota_joint2",
+                "right_hand_index_bend_joint",
+                "right_hand_index_joint1",
+                "right_hand_index_joint2",
+                "right_hand_mid_joint1",
+                "right_hand_mid_joint2",
+                "right_hand_ring_joint1",
+                "right_hand_ring_joint2",
+                "right_hand_pinky_joint1",
+                "right_hand_pinky_joint2"
+              ],
+              "lower": [
+                0.0,
+                -0.698,
+                0.0,
+                -0.174,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "upper": [
+                1.832,
+                1.57,
+                1.57,
+                0.174,
+                1.919,
+                1.919,
+                1.919,
+                1.919,
+                1.919,
+                1.919,
+                1.919,
+                1.919
+              ],
+              "driver": "nero_mujoco",
+              "feedback": "measured",
+              "side": "right",
+              "unit": "rad",
+              "input_channel": "right",
+              "retargeter": "xhand_dexpilot"
+            }
+          ],
+          "cameras": [
+            {
+              "role": "base",
+              "source": "orbbec",
+              "device": "SIM_BASE",
+              "capture_topic": "/nexus/nero_sim/sim_camera/base/image/compressed"
+            },
+            {
+              "role": "left_wrist",
+              "source": "orbbec",
+              "device": "SIM_LEFT_WRIST",
+              "capture_topic": "/nexus/nero_sim/sim_camera/left_wrist/image/compressed"
+            },
+            {
+              "role": "right_wrist",
+              "source": "orbbec",
+              "device": "SIM_RIGHT_WRIST",
+              "capture_topic": "/nexus/nero_sim/sim_camera/right_wrist/image/compressed"
+            }
+          ],
+          "dataset": {
+            "fps": 30,
+            "action_source": "next_state"
+          },
+          "policy": {
+            "camera_map": {
+              "base_0_rgb": "base",
+              "left_wrist_0_rgb": "left_wrist",
+              "right_wrist_0_rgb": "right_wrist"
+            }
+          },
+          "adapter_config": {
+            "nero_mujoco": {
+              "enable_viewer": false,
+              "realtime": true,
+              "timestep": 0.002,
+              "state_rate": 100.0,
+              "command_timeout": 0.5,
+              "homing_timeout": 45.0,
+              "joint_zero_offsets": {
+                "left_joint2": -1.5708,
+                "right_joint2": -1.5708
+              },
+              "home_pose": {
+                "left": [
+                  -0.405,
+                  1.281,
+                  -0.957,
+                  1.311,
+                  2.682,
+                  -0.314,
+                  -0.163
+                ],
+                "right": [
+                  0.405,
+                  1.281,
+                  0.957,
+                  1.311,
+                  -2.682,
+                  0.314,
+                  -0.163
+                ]
+              }
+            }
+          }
+        },
+        "profile_sha256": "bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+        "schema_version": 2,
+        "dataset_fps": 30,
+        "action_source": "next_state",
+        "cameras": [
+          "base",
+          "left_wrist",
+          "right_wrist"
+        ],
+        "hold_frames": 10,
+        "max_gap_ms": 100.0,
+        "state_dim": 38,
+        "state_blocks": [
+          {
+            "name": "left_arm",
+            "dim": 7
+          },
+          {
+            "name": "right_arm",
+            "dim": 7
+          },
+          {
+            "name": "left_ee",
+            "dim": 12
+          },
+          {
+            "name": "right_ee",
+            "dim": 12
+          }
+        ]
+      },
+      "low_fps_warning": null,
+      "empty_warning": null,
+      "ignored": {},
+      "folder": "/tmp/nexus_web_optimization_data/nero_dual_xhand_mujoco_web_test",
+      "episode_counts": {},
+      "camera_counts": {},
+      "episode_bytes": 0,
+      "session_bytes": 718096,
+      "stale": false
+    },
+    "infer": null,
+    "joints": {
+      "left_arm": {
+        "values": [
+          -0.4048265855568003,
+          1.2814176672554094,
+          -0.9568293062674265,
+          1.3091866999115114,
+          2.681821906018019,
+          -0.3135336441179244,
+          -0.16476159133446133
+        ],
+        "stale": false,
+        "age_s": 0.010147571563720703
+      },
+      "right_arm": {
+        "values": [
+          0.4048265855568003,
+          1.2814176672554085,
+          0.9568293062674282,
+          1.3091866999115114,
+          -2.681821906018019,
+          0.31353364411792306,
+          -0.1647615913344609
+        ],
+        "stale": false,
+        "age_s": 0.009493112564086914
+      },
+      "left_ee": {
+        "values": [
+          1.832,
+          -0.698,
+          1.105330228805542,
+          0.174,
+          1.919,
+          1.5419156551361084,
+          1.919,
+          1.5691382884979248,
+          1.919,
+          1.6393556594848633,
+          1.919,
+          1.7512949705123901
+        ],
+        "stale": false,
+        "age_s": 0.009419441223144531
+      },
+      "right_ee": {
+        "values": [
+          1.8309999704360962,
+          -0.698,
+          1.288262128829956,
+          0.174,
+          1.919,
+          1.5440372228622437,
+          1.919,
+          1.5717054605484009,
+          1.919,
+          1.6453664302825928,
+          1.919,
+          1.7607171535491943
+        ],
+        "stale": false,
+        "age_s": 0.009349346160888672
+      }
+    }
+  },
+  "operations": [
+    {
+      "id": "f382033e1b1a47f085db6be4ddc7ad53",
+      "verb": "ready",
+      "status": "succeeded",
+      "started_at": 1790753680.6984494,
+      "message": "ready complete",
+      "finished_at": 1790753680.9761837
+    },
+    {
+      "id": "8b76338302b3440fa31f157eea7772e8",
+      "verb": "enable",
+      "status": "succeeded",
+      "started_at": 1790753681.0166698,
+      "message": "enable complete",
+      "finished_at": 1790753681.043887
+    },
+    {
+      "id": "8271ff49f6244f2fa11c90b5cb5792ec",
+      "verb": "home",
+      "status": "succeeded",
+      "started_at": 1790753681.3348753,
+      "message": "home complete",
+      "finished_at": 1790753681.687701
+    },
+    {
+      "id": "b92a51a88ebd40589daaa0e9e02b5561",
+      "verb": "estop",
+      "status": "succeeded",
+      "started_at": 1790753685.6547174,
+      "message": "estop complete",
+      "finished_at": 1790753685.7033222
+    }
+  ],
+  "logs": [
+    "[INFO] [launch]: All log files can be found below /home/loopkok/.ros/log/2026-09-30-15-34-38-849803-haining14-1565846",
+    "[INFO] [launch]: Default logging verbosity is set to INFO",
+    "[INFO] [launch.user]: NEXUS profile=nero_dual_xhand_mujoco instance=nero_sim sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc dry_run=False",
+    "[INFO] [nexus_command_mux-1]: process started with pid [1565860]",
+    "[INFO] [nexus_driver_manager-2]: process started with pid [1565862]",
+    "[INFO] [nexus_input_bridge-3]: process started with pid [1565864]",
+    "[INFO] [nero_mujoco_sim_node-4]: process started with pid [1565866]",
+    "[INFO] [nexus_joint_bridge-5]: process started with pid [1565868]",
+    "[INFO] [nexus_joint_bridge-6]: process started with pid [1565870]",
+    "[INFO] [nexus_nero_teleop-7]: process started with pid [1565872]",
+    "[INFO] [nexus_nero_teleop-8]: process started with pid [1565874]",
+    "[INFO] [xhand_dex_retargeting_node-9]: process started with pid [1565876]",
+    "[INFO] [data_collect_node-10]: process started with pid [1565878]",
+    "[data_collect_node-10] [INFO] [1790753679.567666186] [nexus_data_collect]: NEXUS frozen profile sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+    "[data_collect_node-10] [INFO] [1790753679.775086843] [nexus_data_collect]: data_collect ready: save_root=/tmp/nexus_web_optimization_data session=nero_dual_xhand_mujoco_web_test schema={",
+    "[data_collect_node-10]   \"nexus_profile\": {",
+    "[data_collect_node-10]     \"schema_version\": 2,",
+    "[data_collect_node-10]     \"profile_id\": \"nero_dual_xhand_mujoco\",",
+    "[data_collect_node-10]     \"instance\": \"nero_sim\",",
+    "[data_collect_node-10]     \"inputs\": {",
+    "[data_collect_node-10]       \"left\": {",
+    "[data_collect_node-10]         \"wrist\": {",
+    "[data_collect_node-10]           \"source\": \"quest3\",",
+    "[data_collect_node-10]           \"topic\": \"/quest3/left_wrist_pose\",",
+    "[data_collect_node-10]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-10]         },",
+    "[data_collect_node-10]         \"hand\": {",
+    "[data_collect_node-10]           \"source\": \"quest3\",",
+    "[data_collect_node-10]           \"topic\": \"/hand_landmarks/left\",",
+    "[data_collect_node-10]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-10]         }",
+    "[data_collect_node-10]       },",
+    "[data_collect_node-10]       \"right\": {",
+    "[data_collect_node-10]         \"wrist\": {",
+    "[data_collect_node-10]           \"source\": \"quest3\",",
+    "[data_collect_node-10]           \"topic\": \"/quest3/right_wrist_pose\",",
+    "[data_collect_node-10]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-10]         },",
+    "[data_collect_node-10]         \"hand\": {",
+    "[data_collect_node-10]           \"source\": \"quest3\",",
+    "[data_collect_node-10]           \"topic\": \"/hand_landmarks/right\",",
+    "[data_collect_node-10]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-10]         }",
+    "[data_collect_node-10]       },",
+    "[data_collect_node-10]       \"body\": {",
+    "[data_collect_node-10]         \"body_joints\": {",
+    "[data_collect_node-10]           \"source\": \"quest3\",",
+    "[data_collect_node-10]           \"topic\": \"/quest3/body_joints\",",
+    "[data_collect_node-10]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-10]         },",
+    "[data_collect_node-10]         \"body_joint_names\": {",
+    "[data_collect_node-10]           \"source\": \"quest3\",",
+    "[data_collect_node-10]           \"topic\": \"/quest3/body_joint_names\"",
+    "[data_collect_node-10]         }",
+    "[data_collect_node-10]       }",
+    "[data_collect_node-10]     },",
+    "[data_collect_node-10]     \"input_settings\": {",
+    "[data_collect_node-10]       \"landmark_preprocess\": \"mano\",",
+    "[data_collect_node-10]       \"quest3_wrist_pose_mapping\": {",
+    "[data_collect_node-10]         \"mode\": \"per_side\",",
+    "[data_collect_node-10]         \"left_rotation\": [",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           1.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           1.0,",
+    "[data_collect_node-10]           -1.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"right_rotation\": [",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           1.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           -1.0,",
+    "[data_collect_node-10]           1.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"left_frame_id\": \"nero_left_wrist_mapped\",",
+    "[data_collect_node-10]         \"right_frame_id\": \"nero_right_wrist_mapped\"",
+    "[data_collect_node-10]       }",
+    "[data_collect_node-10]     },",
+    "[data_collect_node-10]     \"components\": [",
+    "[data_collect_node-10]       {",
+    "[data_collect_node-10]         \"name\": \"left_arm\",",
+    "[data_collect_node-10]         \"kind\": \"arm\",",
+    "[data_collect_node-10]         \"joints\": [",
+    "[data_collect_node-10]           \"left_joint1\",",
+    "[data_collect_node-10]           \"left_joint2\",",
+    "[data_collect_node-10]           \"left_joint3\",",
+    "[data_collect_node-10]           \"left_joint4\",",
+    "[data_collect_node-10]           \"left_joint5\",",
+    "[data_collect_node-10]           \"left_joint6\",",
+    "[data_collect_node-10]           \"left_joint7\"",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"lower\": [",
+    "[data_collect_node-10]           -2.705261,",
+    "[data_collect_node-10]           -1.74533,",
+    "[data_collect_node-10]           -2.757621,",
+    "[data_collect_node-10]           -1.012291,",
+    "[data_collect_node-10]           -2.757621,",
+    "[data_collect_node-10]           -0.733039,",
+    "[data_collect_node-10]           -1.570797",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"upper\": [",
+    "[data_collect_node-10]           2.705261,",
+    "[data_collect_node-10]           1.74533,",
+    "[data_collect_node-10]           2.757621,",
+    "[data_collect_node-10]           2.146755,",
+    "[data_collect_node-10]           2.757621,",
+    "[data_collect_node-10]           0.959932,",
+    "[data_collect_node-10]           1.570797",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"driver\": \"nero_mujoco\",",
+    "[data_collect_node-10]         \"feedback\": \"measured\",",
+    "[data_collect_node-10]         \"ik\": \"nero_analytic\",",
+    "[data_collect_node-10]         \"side\": \"left\",",
+    "[data_collect_node-10]         \"unit\": \"rad\",",
+    "[data_collect_node-10]         \"input_channel\": \"left\",",
+    "[data_collect_node-10]         \"teleop\": {",
+    "[data_collect_node-10]           \"arm_base_frame\": \"left_arm_base\",",
+    "[data_collect_node-10]           \"vr_to_arm_rot\": [",
+    "[data_collect_node-10]             1.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             1.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             1.0",
+    "[data_collect_node-10]           ],",
+    "[data_collect_node-10]           \"motion_scale\": 0.65",
+    "[data_collect_node-10]         },",
+    "[data_collect_node-10]         \"frame_transforms\": {",
+    "[data_collect_node-10]           \"link7_to_xhand_palm\": [",
+    "[data_collect_node-10]             0.125,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             -0.0235,",
+    "[data_collect_node-10]             1.5708,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             1.5708",
+    "[data_collect_node-10]           ]",
+    "[data_collect_node-10]         }",
+    "[data_collect_node-10]       },",
+    "[data_collect_node-10]       {",
+    "[data_collect_node-10]         \"name\": \"right_arm\",",
+    "[data_collect_node-10]         \"kind\": \"arm\",",
+    "[data_collect_node-10]         \"joints\": [",
+    "[data_collect_node-10]           \"right_joint1\",",
+    "[data_collect_node-10]           \"right_joint2\",",
+    "[data_collect_node-10]           \"right_joint3\",",
+    "[data_collect_node-10]           \"right_joint4\",",
+    "[data_collect_node-10]           \"right_joint5\",",
+    "[data_collect_node-10]           \"right_joint6\",",
+    "[data_collect_node-10]           \"right_joint7\"",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"lower\": [",
+    "[data_collect_node-10]           -2.705261,",
+    "[data_collect_node-10]           -1.74533,",
+    "[data_collect_node-10]           -2.757621,",
+    "[data_collect_node-10]           -1.012291,",
+    "[data_collect_node-10]           -2.757621,",
+    "[data_collect_node-10]           -0.733039,",
+    "[data_collect_node-10]           -1.570797",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"upper\": [",
+    "[data_collect_node-10]           2.705261,",
+    "[data_collect_node-10]           1.74533,",
+    "[data_collect_node-10]           2.757621,",
+    "[data_collect_node-10]           2.146755,",
+    "[data_collect_node-10]           2.757621,",
+    "[data_collect_node-10]           0.959932,",
+    "[data_collect_node-10]           1.570797",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"driver\": \"nero_mujoco\",",
+    "[data_collect_node-10]         \"feedback\": \"measured\",",
+    "[data_collect_node-10]         \"ik\": \"nero_analytic\",",
+    "[data_collect_node-10]         \"side\": \"right\",",
+    "[data_collect_node-10]         \"unit\": \"rad\",",
+    "[data_collect_node-10]         \"input_channel\": \"right\",",
+    "[data_collect_node-10]         \"teleop\": {",
+    "[data_collect_node-10]           \"arm_base_frame\": \"right_arm_base\",",
+    "[data_collect_node-10]           \"vr_to_arm_rot\": [",
+    "[data_collect_node-10]             1.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             1.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             1.0",
+    "[data_collect_node-10]           ],",
+    "[data_collect_node-10]           \"motion_scale\": 0.65",
+    "[data_collect_node-10]         },",
+    "[data_collect_node-10]         \"frame_transforms\": {",
+    "[data_collect_node-10]           \"link7_to_xhand_palm\": [",
+    "[data_collect_node-10]             0.125,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             -0.0235,",
+    "[data_collect_node-10]             1.5708,",
+    "[data_collect_node-10]             0.0,",
+    "[data_collect_node-10]             1.5708",
+    "[data_collect_node-10]           ]",
+    "[data_collect_node-10]         }",
+    "[data_collect_node-10]       },",
+    "[data_collect_node-10]       {",
+    "[data_collect_node-10]         \"name\": \"left_ee\",",
+    "[data_collect_node-10]         \"kind\": \"hand\",",
+    "[data_collect_node-10]         \"joints\": [",
+    "[data_collect_node-10]           \"left_hand_thumb_bend_joint\",",
+    "[data_collect_node-10]           \"left_hand_thumb_rota_joint1\",",
+    "[data_collect_node-10]           \"left_hand_thumb_rota_joint2\",",
+    "[data_collect_node-10]           \"left_hand_index_bend_joint\",",
+    "[data_collect_node-10]           \"left_hand_index_joint1\",",
+    "[data_collect_node-10]           \"left_hand_index_joint2\",",
+    "[data_collect_node-10]           \"left_hand_mid_joint1\",",
+    "[data_collect_node-10]           \"left_hand_mid_joint2\",",
+    "[data_collect_node-10]           \"left_hand_ring_joint1\",",
+    "[data_collect_node-10]           \"left_hand_ring_joint2\",",
+    "[data_collect_node-10]           \"left_hand_pinky_joint1\",",
+    "[data_collect_node-10]           \"left_hand_pinky_joint2\"",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"lower\": [",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           -0.698,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           -0.174,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"upper\": [",
+    "[data_collect_node-10]           1.832,",
+    "[data_collect_node-10]           1.57,",
+    "[data_collect_node-10]           1.57,",
+    "[data_collect_node-10]           0.174,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"driver\": \"nero_mujoco\",",
+    "[data_collect_node-10]         \"feedback\": \"measured\",",
+    "[data_collect_node-10]         \"side\": \"left\",",
+    "[data_collect_node-10]         \"unit\": \"rad\",",
+    "[data_collect_node-10]         \"input_channel\": \"left\",",
+    "[data_collect_node-10]         \"retargeter\": \"xhand_dexpilot\"",
+    "[data_collect_node-10]       },",
+    "[data_collect_node-10]       {",
+    "[data_collect_node-10]         \"name\": \"right_ee\",",
+    "[data_collect_node-10]         \"kind\": \"hand\",",
+    "[data_collect_node-10]         \"joints\": [",
+    "[data_collect_node-10]           \"right_hand_thumb_bend_joint\",",
+    "[data_collect_node-10]           \"right_hand_thumb_rota_joint1\",",
+    "[data_collect_node-10]           \"right_hand_thumb_rota_joint2\",",
+    "[data_collect_node-10]           \"right_hand_index_bend_joint\",",
+    "[data_collect_node-10]           \"right_hand_index_joint1\",",
+    "[data_collect_node-10]           \"right_hand_index_joint2\",",
+    "[data_collect_node-10]           \"right_hand_mid_joint1\",",
+    "[data_collect_node-10]           \"right_hand_mid_joint2\",",
+    "[data_collect_node-10]           \"right_hand_ring_joint1\",",
+    "[data_collect_node-10]           \"right_hand_ring_joint2\",",
+    "[data_collect_node-10]           \"right_hand_pinky_joint1\",",
+    "[data_collect_node-10]           \"right_hand_pinky_joint2\"",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"lower\": [",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           -0.698,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           -0.174,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0,",
+    "[data_collect_node-10]           0.0",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"upper\": [",
+    "[data_collect_node-10]           1.832,",
+    "[data_collect_node-10]           1.57,",
+    "[data_collect_node-10]           1.57,",
+    "[data_collect_node-10]           0.174,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919,",
+    "[data_collect_node-10]           1.919",
+    "[data_collect_node-10]         ],",
+    "[data_collect_node-10]         \"driver\": \"nero_mujoco\",",
+    "[data_collect_node-10]         \"feedback\": \"measured\",",
+    "[data_collect_node-10]         \"side\": \"right\",",
+    "[data_collect_node-10]         \"unit\": \"rad\",",
+    "[data_collect_node-10]         \"input_channel\": \"right\",",
+    "[data_collect_node-10]         \"retargeter\": \"xhand_dexpilot\"",
+    "[data_collect_node-10]       }",
+    "[data_collect_node-10]     ],",
+    "[data_collect_node-10]     \"cameras\": [",
+    "[data_collect_node-10]       {",
+    "[data_collect_node-10]         \"role\": \"base\",",
+    "[data_collect_node-10]         \"source\": \"orbbec\",",
+    "[data_collect_node-10]         \"device\": \"SIM_BASE\",",
+    "[data_collect_node-10]         \"capture_topic\": \"/nexus/nero_sim/sim_camera/base/image/compressed\"",
+    "[data_collect_node-10]       },",
+    "[data_collect_node-10]       {",
+    "[data_collect_node-10]         \"role\": \"left_wrist\",",
+    "[data_collect_node-10]         \"source\": \"orbbec\",",
+    "[data_collect_node-10]         \"device\": \"SIM_LEFT_WRIST\",",
+    "[data_collect_node-10]         \"capture_topic\": \"/nexus/nero_sim/sim_camera/left_wrist/image/compressed\"",
+    "[data_collect_node-10]       },",
+    "[data_collect_node-10]       {",
+    "[data_collect_node-10]         \"role\": \"right_wrist\",",
+    "[data_collect_node-10]         \"source\": \"orbbec\",",
+    "[data_collect_node-10]         \"device\": \"SIM_RIGHT_WRIST\",",
+    "[data_collect_node-10]         \"capture_topic\": \"/nexus/nero_sim/sim_camera/right_wrist/image/compressed\"",
+    "[data_collect_node-10]       }",
+    "[data_collect_node-10]     ],",
+    "[data_collect_node-10]     \"dataset\": {",
+    "[data_collect_node-10]       \"fps\": 30,",
+    "[data_collect_node-10]       \"action_source\": \"next_state\"",
+    "[data_collect_node-10]     },",
+    "[data_collect_node-10]     \"policy\": {",
+    "[data_collect_node-10]       \"camera_map\": {",
+    "[data_collect_node-10]         \"base_0_rgb\": \"base\",",
+    "[data_collect_node-10]         \"left_wrist_0_rgb\": \"left_wrist\",",
+    "[data_collect_node-10]         \"right_wrist_0_rgb\": \"right_wrist\"",
+    "[data_collect_node-10]       }",
+    "[data_collect_node-10]     },",
+    "[data_collect_node-10]     \"adapter_config\": {",
+    "[data_collect_node-10]       \"nero_mujoco\": {",
+    "[data_collect_node-10]         \"enable_viewer\": false,",
+    "[data_collect_node-10]         \"realtime\": true,",
+    "[data_collect_node-10]         \"timestep\": 0.002,",
+    "[data_collect_node-10]         \"state_rate\": 100.0,",
+    "[data_collect_node-10]         \"command_timeout\": 0.5,",
+    "[data_collect_node-10]         \"homing_timeout\": 45.0,",
+    "[data_collect_node-10]         \"joint_zero_offsets\": {",
+    "[data_collect_node-10]           \"left_joint2\": -1.5708,",
+    "[data_collect_node-10]           \"right_joint2\": -1.5708",
+    "[data_collect_node-10]         },",
+    "[data_collect_node-10]         \"home_pose\": {",
+    "[data_collect_node-10]           \"left\": [",
+    "[data_collect_node-10]             -0.405,",
+    "[data_collect_node-10]             1.281,",
+    "[data_collect_node-10]             -0.957,",
+    "[data_collect_node-10]             1.311,",
+    "[data_collect_node-10]             2.682,",
+    "[data_collect_node-10]             -0.314,",
+    "[data_collect_node-10]             -0.163",
+    "[data_collect_node-10]           ],",
+    "[data_collect_node-10]           \"right\": [",
+    "[data_collect_node-10]             0.405,",
+    "[data_collect_node-10]             1.281,",
+    "[data_collect_node-10]             0.957,",
+    "[data_collect_node-10]             1.311,",
+    "[data_collect_node-10]             -2.682,",
+    "[data_collect_node-10]             0.314,",
+    "[data_collect_node-10]             -0.163",
+    "[data_collect_node-10]           ]",
+    "[data_collect_node-10]         }",
+    "[data_collect_node-10]       }",
+    "[data_collect_node-10]     }",
+    "[data_collect_node-10]   },",
+    "[data_collect_node-10]   \"profile_sha256\": \"bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc\",",
+    "[data_collect_node-10]   \"schema_version\": 2,",
+    "[data_collect_node-10]   \"dataset_fps\": 30,",
+    "[data_collect_node-10]   \"action_source\": \"next_state\",",
+    "[data_collect_node-10]   \"cameras\": [",
+    "[data_collect_node-10]     \"base\",",
+    "[data_collect_node-10]     \"left_wrist\",",
+    "[data_collect_node-10]     \"right_wrist\"",
+    "[data_collect_node-10]   ],",
+    "[data_collect_node-10]   \"hold_frames\": 10,",
+    "[data_collect_node-10]   \"max_gap_ms\": 100.0,",
+    "[data_collect_node-10]   \"state_dim\": 38,",
+    "[data_collect_node-10]   \"state_blocks\": [",
+    "[data_collect_node-10]     {",
+    "[data_collect_node-10]       \"name\": \"left_arm\",",
+    "[data_collect_node-10]       \"dim\": 7",
+    "[data_collect_node-10]     },",
+    "[data_collect_node-10]     {",
+    "[data_collect_node-10]       \"name\": \"right_arm\",",
+    "[data_collect_node-10]       \"dim\": 7",
+    "[data_collect_node-10]     },",
+    "[data_collect_node-10]     {",
+    "[data_collect_node-10]       \"name\": \"left_ee\",",
+    "[data_collect_node-10]       \"dim\": 12",
+    "[data_collect_node-10]     },",
+    "[data_collect_node-10]     {",
+    "[data_collect_node-10]       \"name\": \"right_ee\",",
+    "[data_collect_node-10]       \"dim\": 12",
+    "[data_collect_node-10]     }",
+    "[data_collect_node-10]   ]",
+    "[data_collect_node-10] }",
+    "[nexus_joint_bridge-5] [INFO] [1790753679.827347037] [mujoco_hand_bridge_left_ee]: joint bridge xhand component=left_ee",
+    "[nexus_joint_bridge-6] [INFO] [1790753679.828918644] [mujoco_hand_bridge_right_ee]: joint bridge xhand component=right_ee",
+    "[nexus_input_bridge-3] [INFO] [1790753679.838425066] [nexus_input_bridge]: input bridge profile=nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+    "[nexus_command_mux-1] [INFO] [1790753679.844772638] [nexus_command_mux]: NEXUS mux: nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc components=['left_arm', 'right_arm', 'left_ee', 'right_ee']",
+    "[nexus_nero_teleop-7] [INFO] [1790753679.849842656] [teleop_left_arm]: Nero teleop left: IK core=nero_quest_teleop.ik_solver; control_rate=100.0Hz profile_sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+    "[nexus_nero_teleop-8] [INFO] [1790753679.851529218] [teleop_right_arm]: Nero teleop right: IK core=nero_quest_teleop.ik_solver; control_rate=100.0Hz profile_sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc",
+    "[nexus_driver_manager-2] [INFO] [1790753679.854185952] [nexus_driver_manager]: driver manager profile=nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc components=['left_arm', 'right_arm', 'left_ee', 'right_ee']",
+    "[nero_mujoco_sim_node-4] [INFO] [1790753680.148308411] [nero_mujoco_sim]: MuJoCo physics ready profile=nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc nq=45 nv=44 components=['left_arm', 'right_arm', 'left_ee', 'right_ee'] urdf=/home/loopkok/NEXUS/install/xhand_nero_description/share/xhand_nero_description/urdf/xhand_nero_description.urdf",
+    "[xhand_dex_retargeting_node-9] [INFO] [1790753680.605894697] [nexus_xhand_retargeter]: Teleop mode: DIRECT START",
+    "[xhand_dex_retargeting_node-9] [INFO] [1790753680.610327860] [nexus_xhand_retargeter]: XHand Dex Retargeting Node started, topic: /hand_landmarks",
+    "[nexus_nero_teleop-8] [INFO] [1790753681.958423956] [teleop_right_arm]: Nero teleop reanchored to measured joints",
+    "[nexus_nero_teleop-7] [INFO] [1790753681.958934596] [teleop_left_arm]: Nero teleop reanchored to measured joints",
+    "[nexus_nero_teleop-8] [INFO] [1790753681.981777564] [teleop_right_arm]: Nero teleop reanchored to measured joints",
+    "[nexus_nero_teleop-7] [INFO] [1790753681.982345926] [teleop_left_arm]: Nero teleop reanchored to measured joints",
+    "[data_collect_node-10] [INFO] [1790753681.995227997] [nexus_data_collect]: control <- start",
+    "[data_collect_node-10] [INFO] [1790753682.002817738] [nexus_data_collect]: REC start episode000000 task='' -> /tmp/nexus_web_optimization_data/nero_dual_xhand_mujoco_web_test/episode000000",
+    "[data_collect_node-10] [WARN] [1790753682.003581400] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽",
+    "[nexus_joint_bridge-5] [INFO] [1790753684.810080986] [mujoco_hand_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=84.6 received=423 invalid=0 max_callback_gap_ms=13.8 max_publish_ms=0.3 in 5.0s",
+    "[nexus_nero_teleop-8] [INFO] [1790753684.811020065] [teleop_right_arm]: Nero IK side=right solve_hz=56.5 solve_p95_ms=0.6 input_age_p95_ms=2.7 failed=0 workspace_clips=0 last_method=seed last_reason=",
+    "[nexus_joint_bridge-6] [INFO] [1790753684.812440409] [mujoco_hand_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=84.6 received=423 invalid=0 max_callback_gap_ms=19.6 max_publish_ms=0.3 in 5.0s",
+    "[nexus_nero_teleop-7] [INFO] [1790753684.818096448] [teleop_left_arm]: Nero IK side=left solve_hz=56.1 solve_p95_ms=0.7 input_age_p95_ms=9.9 failed=0 workspace_clips=0 last_method=seed last_reason=",
+    "[nero_mujoco_sim_node-4] [INFO] [1790753685.152327735] [nero_mujoco_sim]: MuJoCo mode=kinematic physics_hz=500.1 real_time_factor=1.00 contacts=14 viewer_sync_hz=0.0 viewer_sync_max_ms=0.0",
+    "[data_collect_node-10] [INFO] [1790753685.321977622] [nexus_data_collect]: control <- stop",
+    "[data_collect_node-10] [INFO] [1790753685.333905477] [nexus_data_collect]: REC saved episode000000 (3.3s, streams=2660 samples, images=300) -> /tmp/nexus_web_optimization_data/nero_dual_xhand_mujoco_web_test/episode000000",
+    "[xhand_dex_retargeting_node-9] [INFO] [1790753685.617710823] [nexus_xhand_retargeter]: [Retarget FPS] 199 Hz (armed=True)"
+  ],
+  "jobs": []
+}

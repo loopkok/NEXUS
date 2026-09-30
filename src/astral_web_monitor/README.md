@@ -1,4 +1,14 @@
-# astral_web_monitor
+# NEXUS Web 机器人控制台
+
+默认入口为「系统」，统一管理机器人配置、输入源、驱动、相机、数采和推理。
+前端按 profile 和适配器能力展示组件，支持单臂、双臂、夹爪及灵巧手。
+具体流程见下文「系统页启动机器人与仿真」。
+
+旧版 Astral 预设保留在折叠的兼容入口中。下方旧接口说明仅适用于该入口；
+统一机器人系统使用 `/nexus/<instance>/...` 话题和统一驱动生命周期接口。
+
+## 旧版 Astral 预设接口说明
+
 
 非侵入式 Web 监控面板：通过浏览器启动/暂停/停止遥操作栈，实时查看关节状态、指令频率、健康巡检与实时图表。
 
@@ -101,21 +111,34 @@
 | POST | `/api/v1/start` | `{preset: "...", log?: bool}` 启动指定预设（只把遥操栈拉起来；使能交给 driver auto_ready/一键就绪——曾自动等 `~/enable` 导致启动即 503，已回退）。`log:true` 且预设属 astral_teleop/astral_arm_teleop 时注入 `log_dir=<inference_test_logs>/teleop`（launch 每次自动建 `{stamp}[_tag]/` 运行子目录、按侧拆 `_left/_right`；`ASTRAL_WEB_MONITOR_LOG_ROOT` 可改根目录） |
 | POST | `/api/v1/stop` | SIGINT 停止 launch（30s 超时 SIGKILL） |
 
-### NEXUS 页启动 Nero 双臂双 XHand MuJoCo
+### 系统页启动机器人与仿真
 
-在带桌面的机器人主机终端启动 Web 服务，然后打开 NEXUS 页，选择
-`nero_dual_xhand_mujoco`。页面会默认使用 MuJoCo 驱动、真实 Quest3 输入
-和主机桌面的 MuJoCo 窗口；数采、推理和外部相机默认关闭，可按需开启
-数采和推理。点击「启动 Nero 双臂双手 MuJoCo」，依次使用「检查驱动」、
-「使能」、「归位」、「开始遥操 / 重锚」，停止时点击「停止装配」。启动日志
-在装配卡片显示。
+Web 默认打开「系统」，不再提供单独的 NEXUS 页面。选择机器人配置后，
+按「校验并启动 → 检查驱动 → 使能 → 可选归位 → 开始遥操 / 重锚」操作。
+组件数量、自由度与归位能力来自配置及驱动注册表。旧版 Astral 预设保留
+在「旧版预设兼容入口」中；运行统一机器人接口时隐藏旧硬件模式按钮。
 
-Quest3 接收沿用 mocap 配置的有线 TCP 端口 8000，使用前在主机执行
-`adb reverse tcp:8000 tcp:8000`。Web 服务进程需继承图形会话的
-`DISPLAY` 或 `WAYLAND_DISPLAY`；MuJoCo 窗口显示在运行 Web 服务的主机
-桌面，不嵌入浏览器。窗口开关只作用于该次仿真进程，不改变装配 profile
-及其布局哈希。若 Web 服务以无图形会话的方式运行，关闭窗口选项仍可
-启动无头仿真。
+选择 `nero_dual_xhand_mujoco` 启动 MuJoCo。窗口选项只影响该次仿真进程，
+需要 Web 服务继承桌面的 DISPLAY 或 WAYLAND_DISPLAY；关闭窗口可无头运行。
+Quest3 USB 输入需要 `adb reverse tcp:8000 tcp:8000`。真机选择
+`nero_dual_xhand`，核对 CAN 与串口对应关系后取消「假驱动调试」。
+
+「暂停遥操」独立于推理节点；「重新锚定并恢复」会重新采集当前输入和
+机器人状态。归位显示异步执行进度，不应重复提交运动指令。急停行为由
+各驱动决定，软件封锁不代表硬件断电。录制或保存数据期间必须先完成
+保存，再停止机器人系统。
+
+- 「数采」：语义相机、任务、录制、保存、质量状态。
+- 「数据与训练」：同步、对齐质检、导出、ACT/pi0.5 训练、取消与重试。
+- 「推理」：模型布局、GPU 服务、策略及人工接管。
+- 「日志与诊断」：统一数据流频率、接收年龄、发布者 QoS、跟随误差及报告导出。
+
+运行记录写入 `$NEXUS_DATA_ROOT/runs/<run_id>/report.json`。下载报告会额外
+包含当前诊断、作业与日志。接收年龄不是端到端运动延迟。
+
+新增 API：`POST /api/v1/nexus/validate`、`GET /api/v1/nexus/report`。
+`POST /api/v1/nexus/driver/{verb}` 返回操作 ID；结果在
+`GET /api/v1/nexus/state` 的 `operations` 中查询。
 
 ### NEXUS Astral 真机 profile
 

@@ -24,6 +24,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisco
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from .robot_console import RobotConsole, capabilities
 from . import config
 from .config import STOP_SIGINT_TIMEOUT_S, log_tail_for_push
 from .launch_manager import (
@@ -70,6 +71,8 @@ _web_dist = Path(os.environ.get("ASTRAL_WEB_MONITOR_DIST", ""))
 _nexus_profile: Profile | None = None
 _nexus_jobs = JobRegistry()
 _nexus_router = APIRouter()
+_robot_console = RobotConsole()
+_nexus_settings: dict = {}
 
 
 def _nexus_profile_file(name: str) -> Path:
@@ -113,8 +116,9 @@ async def nexus_profiles() -> ApiEnvelope:
                           "adapters": sorted({c.driver for c in p.components}), "sha256": p.digest,
                           "state_dim": p.dimension,
                           "cameras": [c["role"] for c in p.raw["cameras"]],
-                          "components": [{"name": c.name, "kind": c.kind, "dim": c.dim,
-                                          "feedback": c.feedback} for c in p.components]})
+                          "capabilities": capabilities(p),
+                          "inputs": p.raw["inputs"],
+                          "components": capabilities(p)["components"]})
         except (ProfileError, ValueError):
             continue
     return ApiEnvelope(ok=True, data=items)
@@ -122,15 +126,15 @@ async def nexus_profiles() -> ApiEnvelope:
 
 @_nexus_router.post("/api/v1/nexus/start")
 async def nexus_start(req: dict[str, Any]) -> ApiEnvelope:
-    global _nexus_profile
+    global _nexus_profile, _nexus_settings
     name = str(req.get("profile", ""))
     profile_path = _nexus_profile_file(name)
     profile = Profile.load(profile_path)
     if profile.raw.get("schema_version") != 2:
-        raise HTTPException(status_code=400, detail="NEXUS 装配启动要求 schema v2 profile")
+        raise HTTPException(status_code=400, detail="NEXUS 机器人系统启动要求 schema v2 profile")
     if profile.profile_id != name:
         raise HTTPException(status_code=400, detail="profile_id 必须与文件名一致")
-    sim = {c.driver for c in profile.components} == {"nero_mujoco"}
+    sim = capabilities(profile)["viewer"]
     dry_run = _nexus_bool(req, "dry_run", not sim)
     with_inputs = _nexus_bool(req, "with_inputs", True)
     with_cameras = _nexus_bool(req, "with_cameras", False)
@@ -201,6 +205,15 @@ async def nexus_start(req: dict[str, Any]) -> ApiEnvelope:
         _launch_mgr.stop()
         raise
     _nexus_profile = profile
+    _nexus_settings = dict(req, profile=profile.profile_id, dry_run=dry_run,
+                           with_inputs=with_inputs, with_cameras=with_cameras,
+                           with_recording=with_recording, with_policy=with_policy,
+                           viewer=viewer, session=session, data_root=str(data_root))
+    try:
+        _robot_console.begin(profile, _nexus_settings, data_root)
+    except OSError as exc:
+        _launch_mgr.stop()
+        raise HTTPException(status_code=500, detail=f"无法保存运行记录: {exc}") from exc
     return ApiEnvelope(ok=True, message=message,
                        data={"profile_sha256": profile.digest, "viewer": viewer})
 
@@ -213,6 +226,10 @@ async def nexus_state() -> ApiEnvelope:
         "profile": _nexus_profile.frozen_schema() if _nexus_profile else None,
         "robot": node.nexus_snapshot() if node else None,
         "jobs": _nexus_jobs.list(),
+        "settings": _nexus_settings,
+        "capabilities": capabilities(_nexus_profile) if _nexus_profile else None,
+        "operations": list(_robot_console.operations.values()),
+        "run_id": _robot_console.run["id"] if _robot_console.run else None,
     })
 
 
@@ -249,6 +266,7 @@ async def nexus_submit_job(req: dict[str, Any]) -> ApiEnvelope:
         job_id = _nexus_jobs.submit(job, local_session, **kwargs)
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _robot_console.event("gpu_job_submitted", kind=kind, session=session, job_id=job_id)
     return ApiEnvelope(ok=True, data={"job_id": job_id})
 
 
@@ -267,6 +285,7 @@ async def nexus_cancel_job(job_id: str) -> ApiEnvelope:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="未知作业") from exc
     await asyncio.to_thread(job.cancel)
+    _robot_console.event("gpu_job_cancel", job_id=job_id)
     return ApiEnvelope(ok=True, message="已请求取消", data=job.snapshot())
 
 
@@ -276,16 +295,42 @@ async def nexus_driver(verb: str) -> ApiEnvelope:
         raise HTTPException(status_code=400, detail="不支持的驱动操作")
     if _nexus_profile is None:
         raise HTTPException(status_code=409, detail="未选择 NEXUS profile")
-    if verb != "estop" and _launch_mgr.state != RUNNING:
-        raise HTTPException(status_code=409, detail="NEXUS 装配未运行")
+    if verb != "estop" and _launch_mgr.state not in (RUNNING, PAUSED):
+        raise HTTPException(status_code=409, detail="NEXUS 机器人系统未运行")
     node = get_node()
     if node is None:
         raise HTTPException(status_code=503, detail="ROS 节点未就绪")
+    if verb == "home" and not capabilities(_nexus_profile)["home"]:
+        raise HTTPException(status_code=409, detail="当前驱动不支持归位")
     path = f"{_nexus_profile.namespace}/drivers/{verb}"
-    ok, message = await asyncio.to_thread(node.call_trigger, path)
-    if not ok:
-        raise HTTPException(status_code=409, detail=message)
-    return ApiEnvelope(ok=True, message=message, data={"service": path})
+    try:
+        operation = _robot_console.submit(
+            verb, lambda: node.call_trigger(path, timeout_s=120.0 if verb == "home" else 15.0))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ApiEnvelope(ok=True, message="驱动操作已提交；请查看执行结果", data=operation)
+
+
+@_nexus_router.get("/api/v1/nexus/report")
+async def nexus_report():
+    node = get_node()
+    report = _robot_console.report(node.nexus_snapshot() if node else None,
+                                   _launch_mgr.log_tail(), _nexus_jobs.list())
+    return Response(json.dumps(report, ensure_ascii=False, indent=2),
+                    media_type="application/json",
+                    headers={"Content-Disposition": 'attachment; filename="robot-test-report.json"'})
+
+
+@_nexus_router.post("/api/v1/nexus/validate")
+async def nexus_validate(req: dict[str, Any]):
+    try:
+        profile = Profile.load(_nexus_profile_file(str(req.get("profile", ""))))
+    except (ProfileError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiEnvelope(ok=True, message="机器人配置静态校验通过；设备就绪仍需启动后检查",
+                       data={"sha256": profile.digest, "layout": profile.frozen_schema(),
+                             "capabilities": capabilities(profile)})
+
 
 
 def _build_ui_state() -> dict[str, Any]:
@@ -439,6 +484,7 @@ async def get_logs() -> ApiEnvelope:
 
 @app.post("/api/v1/start")
 async def start(req: StartRequest) -> ApiEnvelope:
+    global _nexus_profile, _nexus_settings
     preset = _presets.get(req.preset)
     if preset is None:
         raise HTTPException(status_code=404, detail=f"未知预设: {req.preset}")
@@ -449,12 +495,26 @@ async def start(req: StartRequest) -> ApiEnvelope:
     ok, msg = _launch_mgr.start(preset)
     if not ok:
         raise HTTPException(status_code=409, detail=msg)
+    _nexus_profile = None
+    _nexus_settings = {}
     return ApiEnvelope(ok=True, message=msg)
 
 
 @app.post("/api/v1/stop")
 async def stop() -> ApiEnvelope:
+    node = get_node()
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        snapshot = node.nexus_snapshot() if node else {}
+        if (snapshot.get("data_collect") or {}).get("state") in ("RECORDING", "PAUSED", "SAVING"):
+            raise HTTPException(status_code=409, detail="请先保存或丢弃当前数据段，再停止机器人系统")
+        if any(o["status"] == "running" for o in _robot_console.operations.values()):
+            raise HTTPException(status_code=409, detail="驱动操作执行中，请等待完成；急停仍可使用")
+        if node is None or not node.publish_nexus_bool("teleop_disarm"):
+            raise HTTPException(status_code=503, detail="无法暂停机器人控制，请检查 ROS 连接")
+        _robot_console.event("stop_requested")
     ok, msg = _launch_mgr.stop()
+    if _nexus_profile is not None and ok:
+        _robot_console.event("stop_signal_sent")
     if not ok:
         raise HTTPException(status_code=409, detail=msg)
     return ApiEnvelope(ok=True, message=msg)
@@ -467,7 +527,12 @@ async def pause() -> ApiEnvelope:
         raise HTTPException(status_code=503, detail="ROS 节点未就绪")
     if _launch_mgr.state not in (RUNNING,):
         raise HTTPException(status_code=409, detail=f"当前状态 {_launch_mgr.state} 无法暂停")
-    node.publish_disarm()
+    if _nexus_profile is not None:
+        if not node.publish_nexus_bool("teleop_disarm"):
+            raise HTTPException(status_code=503, detail="遥操暂停入口不可用")
+        _robot_console.event("pause")
+    else:
+        node.publish_disarm()
     _launch_mgr.mark_paused()
     return ApiEnvelope(ok=True, message="已暂停 (disarm)")
 
@@ -479,7 +544,12 @@ async def resume() -> ApiEnvelope:
         raise HTTPException(status_code=503, detail="ROS 节点未就绪")
     if _launch_mgr.state != PAUSED:
         raise HTTPException(status_code=409, detail=f"当前状态 {_launch_mgr.state} 非暂停")
-    node.publish_arm()
+    if _nexus_profile is not None:
+        if not await asyncio.to_thread(node.publish_nexus_teleop_start):
+            raise HTTPException(status_code=503, detail="遥操重锚订阅者未就绪")
+        _robot_console.event("resume_reanchor")
+    else:
+        node.publish_arm()
     _launch_mgr.mark_resumed()
     return ApiEnvelope(ok=True, message="已恢复 (arm)")
 
@@ -498,10 +568,13 @@ async def teleop_start() -> ApiEnvelope:
     node = get_node()
     if node is None:
         raise HTTPException(status_code=503, detail="ROS 节点未就绪")
-    if _nexus_profile is not None and _launch_mgr.state == RUNNING:
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
         if not await asyncio.to_thread(node.publish_nexus_teleop_start):
             raise HTTPException(status_code=503, detail="2 秒内未发现 NEXUS 遥操重锚订阅者")
-        return ApiEnvelope(ok=True, message="已请求 NEXUS 遥操重锚")
+        if _launch_mgr.state == PAUSED:
+            _launch_mgr.mark_resumed()
+        _robot_console.event("teleop_reanchor")
+        return ApiEnvelope(ok=True, message="已请求遥操重锚，请确认控制权进入 TELEOP")
     # 先发 /teleop/armed=true：工作位/HOME/暂停发过的 latched disarm 会把
     # 夹爪 pinch 仲裁门关死——门只在 armed=true 时重开（arm 节点未校准会
     # 忽略 armed，无害；真正 arm 由随后的 /teleop/start 完成）。
@@ -523,6 +596,8 @@ async def teleop_home() -> ApiEnvelope:
     会自己 disarm 并走轨迹（遥操中/未校准都会忽略之外的输入）。之后要再遥操
     需重新 /teleop/start。仅当前 launch 运行中可用。
     """
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        raise HTTPException(status_code=409, detail="该旧版硬件操作不适用于当前机器人配置，请使用系统页的统一驱动接口")
     if _launch_mgr.state not in (RUNNING, PAUSED):
         raise HTTPException(
             status_code=409,
@@ -558,6 +633,8 @@ async def teleop_workpos() -> ApiEnvelope:
     /teleop/start（未先按工作位直接 start 时臂节点会把原点重锚到当前实测，
     纯增量开始）。仅当前 launch 运行中可用。
     """
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        raise HTTPException(status_code=409, detail="该旧版硬件操作不适用于当前机器人配置，请使用系统页的统一驱动接口")
     if _launch_mgr.state not in (RUNNING, PAUSED):
         raise HTTPException(
             status_code=409,
@@ -584,6 +661,8 @@ async def teleop_workpos_direct() -> ApiEnvelope:
     Sequence: 发布 /teleop/disarm + /teleop/init_direct（disarm 先于 init，
     避免臂节点先收 init 启动回位、再收 disarm 取消回位）。仅遥操运行中可用。
     """
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        raise HTTPException(status_code=409, detail="该旧版硬件操作不适用于当前机器人配置，请使用系统页的统一驱动接口")
     if _launch_mgr.state not in (RUNNING, PAUSED):
         raise HTTPException(
             status_code=409,
@@ -704,6 +783,8 @@ def _ensure_driver_enabled(timeout_s: float) -> tuple[bool, str]:
 @app.post("/api/v1/robot/ready")
 async def robot_ready() -> ApiEnvelope:
     """一键就绪：先 disarm 遥操（停掉 homing/armed 发流），再 driver one_click_ready。"""
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        return await nexus_driver("ready")
     _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "ready")
     if not ok:
@@ -714,6 +795,8 @@ async def robot_ready() -> ApiEnvelope:
 @app.post("/api/v1/robot/home")
 async def robot_home() -> ApiEnvelope:
     """归零：先 disarm 遥操，再 driver ~/home（阻尼中会自动切回 POSITION 再归零）。"""
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        return await nexus_driver("home")
     _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "home")
     if not ok:
@@ -724,6 +807,8 @@ async def robot_home() -> ApiEnvelope:
 @app.post("/api/v1/robot/estop")
 async def robot_estop() -> ApiEnvelope:
     """真急停：先 disarm 遥操（断电后不能让陈旧命令流挂着），再 driver ~/estop。"""
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        return await nexus_driver("estop")
     _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "estop")
     if not ok:
@@ -734,6 +819,8 @@ async def robot_estop() -> ApiEnvelope:
 @app.post("/api/v1/robot/damping")
 async def robot_damping() -> ApiEnvelope:
     """阻尼释放：先 disarm 遥操，再 driver ~/damping → motion_mode=0，可手动拖拽。"""
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        raise HTTPException(status_code=409, detail="该旧版硬件操作不适用于当前机器人配置，请使用系统页的统一驱动接口")
     _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "damping")
     if not ok:
@@ -744,6 +831,8 @@ async def robot_damping() -> ApiEnvelope:
 @app.post("/api/v1/robot/position")
 async def robot_position() -> ApiEnvelope:
     """位置保持：先 disarm 遥操，再 driver ~/position → motion_mode=1。"""
+    if _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED):
+        raise HTTPException(status_code=409, detail="该旧版硬件操作不适用于当前机器人配置，请使用系统页的统一驱动接口")
     _disarm_before_hardware()
     ok, msg = await asyncio.to_thread(_driver_call, "position")
     if not ok:
@@ -923,6 +1012,7 @@ async def collect_control(req: CollectControlRequest) -> ApiEnvelope:
             raise HTTPException(status_code=503, detail="NEXUS 数采节点未发现控制订阅者")
     else:
         node.publish_dc_control(cmd)
+    _robot_console.event("recording_command", command=cmd)
     return ApiEnvelope(ok=True, message=f"已发送录制命令: {cmd}")
 
 
@@ -1078,7 +1168,7 @@ async def infer_cmd(req: InferCmdRequest) -> ApiEnvelope:
             detail=f"未知推理命令 {cmd!r}，可选 {config.PI_COMMANDS}（或 playback:<源>）",
         )
     publisher = node.publish_nexus_policy_cmd if (
-        _nexus_profile is not None and _launch_mgr.state == RUNNING) else node.publish_pi_cmd
+        _nexus_profile is not None and _launch_mgr.state in (RUNNING, PAUSED)) else node.publish_pi_cmd
     published = await asyncio.to_thread(publisher, cmd)
     if not published:
         raise HTTPException(
@@ -1088,6 +1178,7 @@ async def infer_cmd(req: InferCmdRequest) -> ApiEnvelope:
                 "请等待推理节点状态显示在线后重试"
             ),
         )
+    _robot_console.event("policy_command", command=cmd)
     return ApiEnvelope(ok=True, message=f"已发送推理命令: {cmd}")
 
 

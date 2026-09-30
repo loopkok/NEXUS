@@ -34,6 +34,7 @@ def driver_adapter() -> Adapter:
         launcher="nero_mujoco_sim.nexus_adapter:launch_driver",
         home_target=_home_target,
         home_tolerance=0.1,
+        supports_viewer=True,
     )
 
 

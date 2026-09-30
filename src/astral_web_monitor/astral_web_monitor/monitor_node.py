@@ -10,13 +10,14 @@ This node is the only ROS surface of the monitor. It:
   * optionally drives the quest3_video_streamer runtime gate (SetBool master
     switch + latched active-camera subset) and mirrors its latched gate_state
 
-It deliberately does NOT subscribe to any hardware command topics. Hardware
+Canonical command topics are observed read-only for diagnostics. Hardware
 mode changes go through the driver's already-exposed services. Start/stop of
 the teleop stack is handled by LaunchManager via subprocess, not by this node.
 """
 from __future__ import annotations
 
 import json
+from collections import deque
 import math
 import re
 import threading
@@ -27,6 +28,7 @@ from typing import Any
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from geometry_msgs.msg import PoseStamped, PoseArray
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float64, String
 
@@ -379,6 +381,9 @@ class MonitorNode(Node):
             self.destroy_subscription(sub)
         self._nexus_subs.clear()
         with self._lock:
+            self._nexus_metrics = {}
+            self._nexus_last_commands = {}
+            self._nexus_command_topics = {}
             self._nexus_joints = {c.name: JointSlot() for c in profile.components}
             self._nexus_expected = {c.name: c.joints for c in profile.components}
             self._nexus_control = {}
@@ -397,6 +402,30 @@ class MonitorNode(Node):
                 JointState, profile.topic(spec.name, "joint_states"),
                 lambda msg, n=spec.name: self._on_nexus_joint(n, msg),
                 _qos_best_effort()))
+        for spec in profile.components:
+            for prefix in ("feedback", "command", "candidate"):
+                self._nexus_metrics[f"{prefix}/{spec.name}"] = {"times": deque(maxlen=1000), "last": None}
+            final_topic = profile.topic(spec.name, "joint_commands")
+            self._nexus_command_topics[spec.name] = final_topic
+            self._nexus_subs.append(self.create_subscription(
+                JointState, final_topic,
+                lambda msg, n=spec.name: self._on_nexus_metric(f"command/{n}", msg, n),
+                _qos_best_effort()))
+            self._nexus_subs.append(self.create_subscription(
+                JointState, profile.candidate_topic("teleop", spec.name),
+                lambda msg, n=spec.name: self._on_nexus_metric(f"candidate/{n}", msg),
+                _qos_best_effort()))
+        for channel in profile.raw["inputs"]:
+            for semantic, message_type, output in (("wrist", PoseStamped, "wrist_pose"),
+                                                   ("hand", PoseArray, "hand_landmarks")):
+                selected = profile.input_spec(channel, semantic)
+                if selected is None or selected["source"] == "none":
+                    continue
+                key = f"input/{channel}/{semantic}"
+                self._nexus_metrics[key] = {"times": deque(maxlen=1000), "last": None}
+                self._nexus_subs.append(self.create_subscription(
+                    message_type, f"{profile.namespace}/input/{channel}/{output}",
+                    lambda msg, k=key: self._on_nexus_metric(k, msg), _qos_best_effort()))
         state_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST,
             depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
@@ -437,7 +466,17 @@ class MonitorNode(Node):
             self._preview_subs[role] = self._nexus_subs[-1]
             self._nexus_preview_roles.add(role)
 
+    def _on_nexus_metric(self, key, msg, component=None):
+        now = time.monotonic()
+        with self._lock:
+            metric = self._nexus_metrics.setdefault(key, {"times": deque(maxlen=1000), "last": now})
+            metric["times"].append(now)
+            metric["last"] = now
+            if component:
+                self._nexus_last_commands[component] = list(msg.position)
+
     def _on_nexus_joint(self, name: str, msg: JointState) -> None:
+        self._on_nexus_metric(f"feedback/{name}", msg)
         with self._lock:
             if (name in self._nexus_joints and tuple(msg.name) == self._nexus_expected[name]
                     and len(msg.position) == len(self._nexus_expected[name])
@@ -534,7 +573,29 @@ class MonitorNode(Node):
         return True
 
     def nexus_snapshot(self) -> dict:
+        publishers = {}
+        for component, topic in getattr(self, "_nexus_command_topics", {}).items():
+            try:
+                info = self.get_publishers_info_by_topic(topic)
+                publishers[component] = [{"node": item.node_name,
+                                           "reliability": str(item.qos_profile.reliability),
+                                           "durability": str(item.qos_profile.durability)} for item in info]
+            except Exception:
+                publishers[component] = None
         with self._lock:
+            monotonic_now = time.monotonic()
+            metrics = {}
+            for key, metric in getattr(self, "_nexus_metrics", {}).items():
+                times = metric["times"]
+                while times and monotonic_now - times[0] > 3.0:
+                    times.popleft()
+                hz = (len(times) - 1) / (times[-1] - times[0]) if len(times) > 1 else 0.0
+                metrics[key] = {"hz": hz, "age_s": monotonic_now - metric["last"] if metric["last"] is not None else None}
+            errors = {}
+            for name, values in getattr(self, "_nexus_last_commands", {}).items():
+                actual = self._nexus_joints[name]
+                if not actual.is_stale(threshold=0.5) and len(actual.values) == len(values):
+                    errors[name] = max((abs(a - b) for a, b in zip(actual.values, values)), default=0.0)
             data_state = dict(self._nexus_data_state) if self._nexus_data_state else None
             policy_state = dict(self._nexus_policy_state) if self._nexus_policy_state else None
             data_state_ts = self._nexus_data_state_ts
@@ -544,11 +605,12 @@ class MonitorNode(Node):
                 data_state["stale"] = now - data_state_ts > STALE_THRESHOLD_S
             if policy_state is not None:
                 policy_state["stale"] = now - policy_state_ts > STALE_THRESHOLD_S
-            return {"profile": self._nexus_profile,
+            return {"diagnostics": {"streams": metrics, "command_publishers": publishers, "joint_error": errors},
+                    "profile": self._nexus_profile,
                     "control": self._nexus_control,
                     "data_collect": data_state,
                     "infer": policy_state,
-                    "joints": {name: {"values": slot.values, "stale": slot.is_stale(threshold=0.5)}
+                    "joints": {name: {"values": slot.values, "stale": slot.is_stale(threshold=0.5), "age_s": max(0.0, now - slot.ts)}
                                for name, slot in self._nexus_joints.items()}}
 
     # --- astral_data_collect bridge -----------------------------------------
@@ -882,6 +944,7 @@ def get_node() -> MonitorNode | None:
 def shutdown_node() -> None:
     global _node, _spin_thread
     if _node is not None:
+        _node.publish_nexus_bool("teleop_disarm")
         _node.publish_disarm()  # safety: disarm on monitor exit
     rclpy.shutdown()
     _node = None

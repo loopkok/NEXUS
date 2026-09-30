@@ -28,6 +28,7 @@ class Adapter:
     validate_config: str | Callable[[dict[str, Any]], None] | None = None
     home_target: Callable[[dict[str, Any], str, str | None, int], list[float] | None] | None = None
     home_tolerance: float = 0.05
+    supports_viewer: bool = False
 
 
 @dataclass(frozen=True)

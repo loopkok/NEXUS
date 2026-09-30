@@ -1,0 +1,45 @@
+[INFO] [1790753662.311987551] [nexus_synthetic_quest_source]: synthetic Quest source profile=astral_dual_gripper sha256=d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246
+[INFO] [1790753667.298870631] [nexus_synthetic_quest_source]: synthetic inputs hz=99.2 max_gap_ms=22.8
+Traceback (most recent call last):
+  File "/tmp/nexus_web_optimization/scripts/nexus_sim_input_source.py", line 211, in main
+    rclpy.spin(node)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+    executor.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 803, in _spin_once_impl
+    handler()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/task.py", line 256, in __call__
+    self._execute_coroutine_step(self._handler)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/task.py", line 272, in _execute_coroutine_step
+    result = coro.send(None)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 488, in handler
+    await call_coroutine(entity, arg)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 396, in _execute_timer
+    await await_or_execute(tmr.callback)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 110, in await_or_execute
+    return callback(*args)
+  File "/tmp/nexus_web_optimization/scripts/nexus_sim_input_source.py", line 133, in _publish_inputs
+    mapped_position, mapped_quat = rotate_pose(
+  File "/home/loopkok/NEXUS/build/quest3_hand_mocap/quest3_hand_mocap/pose_mapping.py", line 62, in rotate_pose
+    if not np.isclose(abs(np.linalg.det(basis)), 1.0, atol=1e-3) or not np.allclose(
+  File "/home/loopkok/.local/lib/python3.10/site-packages/numpy/_core/numeric.py", line 2329, in allclose
+    res = all(isclose(a, b, rtol=rtol, atol=atol, equal_nan=equal_nan))
+  File "/home/loopkok/.local/lib/python3.10/site-packages/numpy/_core/numeric.py", line 2441, in isclose
+    dt = multiarray.result_type(y, 1.)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/tmp/nexus_web_optimization/scripts/nexus_sim_input_source.py", line 218, in <module>
+    main()
+  File "/tmp/nexus_web_optimization/scripts/nexus_sim_input_source.py", line 214, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241

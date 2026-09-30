@@ -3,27 +3,30 @@ import { useRealtime, useWsConnected } from './hooks/useRealtime'
 import { usePresets } from './hooks/usePresets'
 import { ControlBar } from './components/ControlBar'
 import { Tabs } from './components/Tabs'
-import { MonitorTab } from './components/MonitorTab'
-import { HealthPanel } from './components/HealthPanel'
 import { SystemTab } from './components/SystemTab'
-import { NexusTab } from './components/NexusTab'
+import type { RobotSnapshot } from './lib/robotTypes'
 import { ToastHost } from './components/ToastHost'
+import { Icon } from './components/ConsoleWidgets'
+import './console.css'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { api } from './api/client'
 import { pushSample } from './hooks/historyStore'
 
 const TABS = [
-  { id: 'nexus', label: 'NEXUS' },
-  { id: 'monitor', label: '监控' },
-  { id: 'health', label: '健康' },
   { id: 'system', label: '系统' },
+  { id: 'teleop', label: '遥操' },
+  { id: 'data', label: '数采' },
+  { id: 'training', label: '数据与训练' },
+  { id: 'inference', label: '推理' },
+  { id: 'diagnostics', label: '日志与诊断' },
 ]
 
 export default function App() {
   const state = useRealtime()
   const wsConnected = useWsConnected()
   const { presets } = usePresets()
-  const [active, setActive] = useState('nexus')
+  const [active, setActive] = useState('system')
+  const [robot, setRobot] = useState<RobotSnapshot | null>(null)
 
   // Feed the chart ring buffer on every telemetry frame.
   useEffect(() => {
@@ -37,36 +40,38 @@ export default function App() {
     })
   }, [state])
 
+  const canonical = !!robot?.profile && ['running', 'starting', 'paused'].includes(robot.launch_state)
+  const feedbackHealthy = canonical ? !!robot?.capabilities?.components.every((c) => {
+    const joint = robot.robot?.joints[c.name]
+    return joint && !joint.stale && joint.values.length === c.dim
+  }) && !robot?.robot?.control.fault : state?.health?.overall === 'ok'
+
   return (
     <ErrorBoundary>
-      <div style={appStyle}>
+      <div className="console-shell">
         <ToastHost />
-
-        <header style={headerStyle}>
-        <h1 style={titleStyle}>NEXUS</h1>
-        <span style={subStyle}>多机器人遥操与学习控制台</span>
-        <div style={spacer} />
-        <StatusPill ok={wsConnected} okLabel="WS" badLabel="WS 断" colorOk="#22c55e" />
-        <StatusPill ok={!!state} okLabel="ROS" badLabel="ROS 断" colorOk="#3b82f6" />
-        <StatusPill
-          ok={state?.health?.overall === 'ok'}
-          okLabel="数据正常"
-          badLabel={state?.health?.overall ? `数据${state.health.overall === 'stale' ? '陈旧' : '偏慢'}` : '无数据'}
-          colorOk="#22c55e"
-          warn={state?.health?.overall === 'slow' || state?.health?.overall === 'stale'}
-        />
-      </header>
-
-      {active !== 'nexus' && <ControlBar state={state} onAction={() => void api.health()} />}
-
-      <Tabs tabs={TABS} active={active} onChange={setActive} />
-
-      <main style={mainStyle}>
-        {active === 'nexus' && <NexusTab state={state} />}
-        {active === 'monitor' && <MonitorTab state={state} />}
-        {active === 'health' && <HealthPanel state={state} />}
-        {active === 'system' && <SystemTab state={state} presets={presets} onAction={() => void api.health()} />}
-      </main>
+        <aside className="console-sidebar">
+          <div className="brand"><span className="brand-mark"><Icon name="robot" size={25} /></span><div><h1>NEXUS</h1><span>ROBOTICS WORKSPACE</span></div></div>
+          <div className="nav-caption">工作空间</div>
+          <Tabs tabs={TABS} active={active} onChange={setActive} />
+          <div className="sidebar-bottom">
+            <div className="connection-title">系统连接</div>
+            <StatusPill ok={wsConnected} okLabel="Web 在线" badLabel="Web 断开" colorOk="#a7e8cf" />
+            <StatusPill ok={!!state} okLabel="ROS 已连接" badLabel="ROS 未连接" colorOk="#a7e8cf" />
+            <StatusPill ok={feedbackHealthy} okLabel="机器人反馈正常"
+              badLabel={canonical ? '等待有效反馈' : '机器人待机'} colorOk="#a7e8cf" neutral={!canonical && !feedbackHealthy} warn={canonical && !feedbackHealthy} />
+            <small>遥操 · 数据 · 学习</small>
+          </div>
+        </aside>
+        <div className="console-workspace">
+          <header className="workspace-header"><div><span className="eyebrow">ROBOT CONTROL PLATFORM</span><h2>{TABS.find((item) => item.id === active)?.label}</h2></div>
+            <ControlBar state={state} robot={robot} onAction={() => void api.health()} />
+          </header>
+          <main className="console-main">
+            <SystemTab section={active} state={state} robot={robot} onSnapshot={setRobot} presets={presets} onAction={() => void api.health()} />
+          </main>
+          <footer className="workspace-footer"><span>NEXUS / 多机器人遥操与学习框架</span><span>ROS 2 · 配置驱动</span></footer>
+        </div>
       </div>
     </ErrorBoundary>
   )
@@ -78,14 +83,16 @@ function StatusPill({
   badLabel,
   colorOk,
   warn,
+  neutral,
 }: {
   ok: boolean
   okLabel: string
   badLabel: string
   colorOk: string
+  neutral?: boolean
   warn?: boolean
 }) {
-  const color = ok && !warn ? colorOk : warn ? '#f59e0b' : '#ef4444'
+  const color = ok && !warn ? colorOk : warn ? '#f59e0b' : neutral ? '#8195ab' : '#ef4444'
   return (
     <span style={pillStyle(color)}>
       <span style={dotStyle(color)} />
@@ -94,35 +101,6 @@ function StatusPill({
   )
 }
 
-const appStyle: React.CSSProperties = {
-  minHeight: '100vh',
-  background: '#0b0f17',
-  color: '#e5e7eb',
-  fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-  display: 'flex',
-  flexDirection: 'column',
-}
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '12px',
-  padding: '14px 20px',
-  borderBottom: '1px solid #1f2937',
-  flexWrap: 'wrap',
-}
-const titleStyle: React.CSSProperties = { margin: 0, fontSize: '20px', fontWeight: 700 }
-const subStyle: React.CSSProperties = { color: '#6b7280', fontSize: '13px' }
-const spacer: React.CSSProperties = { flex: 1 }
-const mainStyle: React.CSSProperties = {
-  flex: 1,
-  padding: '20px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '16px',
-  maxWidth: '1400px',
-  width: '100%',
-  margin: '0 auto',
-}
 function pillStyle(color: string): React.CSSProperties {
   return {
     display: 'inline-flex',
@@ -130,11 +108,11 @@ function pillStyle(color: string): React.CSSProperties {
     gap: '6px',
     padding: '3px 10px',
     borderRadius: '9999px',
-    background: color + '22',
+    background: color + '0d',
     color,
     fontSize: '12px',
     fontWeight: 600,
-  border: `1px solid ${color}44`,
+  border: `1px solid ${color}22`,
   }
 }
 function dotStyle(color: string): React.CSSProperties {

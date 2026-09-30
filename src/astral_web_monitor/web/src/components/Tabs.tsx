@@ -1,3 +1,4 @@
+import { Icon } from './ConsoleWidgets'
 interface Tab {
   id: string
   label: string
@@ -11,7 +12,7 @@ interface Props {
 
 export function Tabs({ tabs, active, onChange }: Props) {
   return (
-    <div style={barStyle} role="tablist">
+    <nav className="console-nav" role="tablist" aria-label="控制台导航">
       {tabs.map((t) => {
         const on = t.id === active
         return (
@@ -19,32 +20,13 @@ export function Tabs({ tabs, active, onChange }: Props) {
             key={t.id}
             role="tab"
             aria-selected={on}
-            style={tabStyle(on)}
+            className={`nav-item ${on ? 'is-active' : ''}`}
             onClick={() => onChange(t.id)}
           >
-            {t.label}
+            <Icon name={t.id} /><span>{t.label}</span>
           </button>
         )
       })}
-    </div>
+    </nav>
   )
-}
-
-const barStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: '4px',
-  padding: '0 20px',
-  borderBottom: '1px solid #1f2937',
-}
-function tabStyle(on: boolean): React.CSSProperties {
-  return {
-    background: on ? '#1f2937' : 'transparent',
-    color: on ? '#e5e7eb' : '#9ca3af',
-    border: 'none',
-    borderBottom: on ? '2px solid #3b82f6' : '2px solid transparent',
-    padding: '10px 16px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: on ? 600 : 400,
-  }
 }

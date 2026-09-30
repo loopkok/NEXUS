@@ -1,0 +1,1246 @@
+{
+  "id": "0f59a49f821446cf9891a7fe705d8b69",
+  "started_at": 1790753662.0028255,
+  "git_commit": "e47a77b29b53e48c0fecb23bc5970b5c7d51ddc5",
+  "profile": {
+    "schema_version": 2,
+    "instance": "astral",
+    "input_settings": {
+      "landmark_preprocess": "raw"
+    },
+    "inputs": {
+      "left": {
+        "wrist": {
+          "source": "quest3",
+          "topic": "/quest3/left_wrist_pose",
+          "frame_policy": "stable"
+        },
+        "hand": {
+          "source": "quest3",
+          "topic": "/hand_landmarks/left",
+          "frame_policy": "stable"
+        }
+      },
+      "right": {
+        "wrist": {
+          "source": "quest3",
+          "topic": "/quest3/right_wrist_pose",
+          "frame_policy": "stable"
+        },
+        "hand": {
+          "source": "quest3",
+          "topic": "/hand_landmarks/right",
+          "frame_policy": "stable"
+        }
+      },
+      "body": {
+        "body_joints": {
+          "source": "quest3",
+          "topic": "/quest3/body_joints",
+          "frame_policy": "stable"
+        },
+        "body_joint_names": {
+          "source": "quest3",
+          "topic": "/quest3/body_joint_names"
+        }
+      }
+    },
+    "components": [
+      {
+        "name": "left_arm",
+        "kind": "arm",
+        "joints": [
+          "left_shoulder_pitch",
+          "left_shoulder_roll",
+          "left_elbow_roll",
+          "left_elbow_pitch",
+          "left_forearm_roll",
+          "left_wrist_pitch",
+          "left_wrist_roll"
+        ],
+        "lower": [
+          -2.0,
+          -0.3,
+          -2.2689,
+          -2.26,
+          -1.7802,
+          -0.8,
+          -1.57
+        ],
+        "upper": [
+          2.0,
+          2.0,
+          2.2689,
+          0.0,
+          1.7802,
+          0.85,
+          1.57
+        ],
+        "driver": "astral_sdk",
+        "feedback": "measured",
+        "ik": "astral_geometric",
+        "side": "left",
+        "unit": "rad",
+        "input_channel": "left",
+        "teleop": {
+          "arm_base_frame": "left_base_link",
+          "vr_to_arm_rot": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "motion_scale": 1.0,
+          "tcp_offset": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      {
+        "name": "right_arm",
+        "kind": "arm",
+        "joints": [
+          "right_shoulder_pitch",
+          "right_shoulder_roll",
+          "right_elbow_roll",
+          "right_elbow_pitch",
+          "right_forearm_roll",
+          "right_wrist_pitch",
+          "right_wrist_roll"
+        ],
+        "lower": [
+          -2.0,
+          -2.0,
+          -2.2689,
+          -2.26,
+          -1.7802,
+          -0.8,
+          -1.57
+        ],
+        "upper": [
+          2.0,
+          0.3,
+          2.2689,
+          0.0,
+          1.7802,
+          0.85,
+          1.57
+        ],
+        "driver": "astral_sdk",
+        "feedback": "measured",
+        "ik": "astral_geometric",
+        "side": "right",
+        "unit": "rad",
+        "input_channel": "right",
+        "teleop": {
+          "arm_base_frame": "right_base_link",
+          "vr_to_arm_rot": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "motion_scale": 1.0,
+          "tcp_offset": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      {
+        "name": "left_ee",
+        "kind": "gripper",
+        "joints": [
+          "left_gripper"
+        ],
+        "lower": [
+          0.0
+        ],
+        "upper": [
+          2.5
+        ],
+        "driver": "astral_sdk",
+        "feedback": "command_echo",
+        "side": "left",
+        "unit": "rad",
+        "input_channel": "left",
+        "retargeter": "pinch_gripper"
+      },
+      {
+        "name": "right_ee",
+        "kind": "gripper",
+        "joints": [
+          "right_gripper"
+        ],
+        "lower": [
+          0.0
+        ],
+        "upper": [
+          2.5
+        ],
+        "driver": "astral_sdk",
+        "feedback": "command_echo",
+        "side": "right",
+        "unit": "rad",
+        "input_channel": "right",
+        "retargeter": "pinch_gripper"
+      }
+    ],
+    "cameras": [
+      {
+        "role": "base",
+        "source": "quest3_video_streamer",
+        "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.3-video-index0",
+        "mode": "v4l2",
+        "preset": "1080p30",
+        "capture_topic": "/quest3_video_streamer/collect/base"
+      },
+      {
+        "role": "left_wrist",
+        "source": "quest3_video_streamer",
+        "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.2:1.0-video-index0",
+        "mode": "webcam",
+        "preset": "720p30",
+        "capture_topic": "/quest3_video_streamer/collect/left_wrist"
+      },
+      {
+        "role": "right_wrist",
+        "source": "quest3_video_streamer",
+        "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:1.3:1.0-video-index0",
+        "mode": "webcam",
+        "preset": "720p30",
+        "capture_topic": "/quest3_video_streamer/collect/right_wrist"
+      }
+    ],
+    "dataset": {
+      "fps": 30,
+      "action_source": "next_state"
+    },
+    "policy": {
+      "camera_map": {
+        "base_0_rgb": "base",
+        "left_wrist_0_rgb": "left_wrist",
+        "right_wrist_0_rgb": "right_wrist"
+      }
+    },
+    "profile_id": "astral_dual_gripper",
+    "adapter_config": {
+      "astral_sdk": {
+        "control_board_ip": "${ASTRAL_CONTROL_BOARD_IP}",
+        "gripper_open_rad": 2.5,
+        "gripper_closed_rad": 0.0
+      },
+      "wuji_serial": {
+        "serials": {
+          "right": "SET_RIGHT_WUJI_SERIAL"
+        }
+      }
+    }
+  },
+  "profile_sha256": "d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246",
+  "settings": {
+    "profile": "astral_dual_gripper",
+    "session": "astral_dual_gripper_web_test",
+    "dry_run": true,
+    "with_inputs": false,
+    "with_cameras": false,
+    "with_recording": true,
+    "with_policy": false,
+    "viewer": false,
+    "data_root": "/tmp/nexus_web_optimization_data"
+  },
+  "events": [
+    {
+      "time": 1790753662.0030787,
+      "action": "start"
+    },
+    {
+      "time": 1790753664.156133,
+      "action": "driver_request",
+      "verb": "ready",
+      "operation_id": "9c71fd939f494914b4aa71f541e6070a"
+    },
+    {
+      "time": 1790753664.2048085,
+      "action": "driver_result",
+      "operation": {
+        "id": "9c71fd939f494914b4aa71f541e6070a",
+        "verb": "ready",
+        "status": "succeeded",
+        "started_at": 1790753664.156126,
+        "message": "ready complete",
+        "finished_at": 1790753664.2048018
+      }
+    },
+    {
+      "time": 1790753664.473246,
+      "action": "driver_request",
+      "verb": "enable",
+      "operation_id": "4f80d80b1d0e4262babeacbf648424a3"
+    },
+    {
+      "time": 1790753664.5010488,
+      "action": "driver_result",
+      "operation": {
+        "id": "4f80d80b1d0e4262babeacbf648424a3",
+        "verb": "enable",
+        "status": "succeeded",
+        "started_at": 1790753664.4732413,
+        "message": "enable complete",
+        "finished_at": 1790753664.5010426
+      }
+    },
+    {
+      "time": 1790753664.7909427,
+      "action": "driver_request",
+      "verb": "home",
+      "operation_id": "85b0374c2ad245a4bd98517cabb4b37d"
+    },
+    {
+      "time": 1790753665.234613,
+      "action": "driver_result",
+      "operation": {
+        "id": "85b0374c2ad245a4bd98517cabb4b37d",
+        "verb": "home",
+        "status": "succeeded",
+        "started_at": 1790753664.7909381,
+        "message": "home complete",
+        "finished_at": 1790753665.2346058
+      }
+    },
+    {
+      "time": 1790753665.4226954,
+      "action": "teleop_reanchor"
+    },
+    {
+      "time": 1790753665.4430172,
+      "action": "pause"
+    },
+    {
+      "time": 1790753665.4667366,
+      "action": "resume_reanchor"
+    },
+    {
+      "time": 1790753665.4860415,
+      "action": "recording_command",
+      "command": "start"
+    },
+    {
+      "time": 1790753668.5230534,
+      "action": "recording_command",
+      "command": "stop"
+    },
+    {
+      "time": 1790753668.8450367,
+      "action": "pause"
+    },
+    {
+      "time": 1790753668.8538852,
+      "action": "driver_request",
+      "verb": "estop",
+      "operation_id": "ee15cbd0c75f4c82b3512f4ba165ce27"
+    },
+    {
+      "time": 1790753669.5544016,
+      "action": "driver_result",
+      "operation": {
+        "id": "ee15cbd0c75f4c82b3512f4ba165ce27",
+        "verb": "estop",
+        "status": "succeeded",
+        "started_at": 1790753668.853879,
+        "message": "estop complete",
+        "finished_at": 1790753669.554392
+      }
+    }
+  ],
+  "exported_at": 1790753669.7934308,
+  "robot": {
+    "diagnostics": {
+      "streams": {
+        "feedback/left_arm": {
+          "hz": 99.98688924269432,
+          "age_s": 0.002310316078364849
+        },
+        "command/left_arm": {
+          "hz": 99.99500903003646,
+          "age_s": 0.6104189730249345
+        },
+        "candidate/left_arm": {
+          "hz": 100.02479062324448,
+          "age_s": 0.9468896579928696
+        },
+        "feedback/right_arm": {
+          "hz": 100.01477733600049,
+          "age_s": 0.0022370400838553905
+        },
+        "command/right_arm": {
+          "hz": 99.97227382754531,
+          "age_s": 0.609811473172158
+        },
+        "candidate/right_arm": {
+          "hz": 100.00537072371347,
+          "age_s": 0.9501080620102584
+        },
+        "feedback/left_ee": {
+          "hz": 100.01484257125998,
+          "age_s": 0.002169485203921795
+        },
+        "command/left_ee": {
+          "hz": 99.9919812682985,
+          "age_s": 0.6097439180593938
+        },
+        "candidate/left_ee": {
+          "hz": 49.95095269634632,
+          "age_s": 0.9557952261529863
+        },
+        "feedback/right_ee": {
+          "hz": 99.99551933251878,
+          "age_s": 0.0015260442160069942
+        },
+        "command/right_ee": {
+          "hz": 99.99195776494649,
+          "age_s": 0.6096814582124352
+        },
+        "candidate/right_ee": {
+          "hz": 50.000254630366996,
+          "age_s": 0.9598112180829048
+        },
+        "input/left/wrist": {
+          "hz": 99.91327778449309,
+          "age_s": 0.00512798922136426
+        },
+        "input/left/hand": {
+          "hz": 99.95745666570782,
+          "age_s": 0.0047960791271179914
+        },
+        "input/right/wrist": {
+          "hz": 99.95752179509174,
+          "age_s": 0.004721895093098283
+        },
+        "input/right/hand": {
+          "hz": 99.99307112121711,
+          "age_s": 0.0038292421959340572
+        }
+      },
+      "command_publishers": {
+        "left_arm": [
+          {
+            "node": "nexus_command_mux",
+            "reliability": "ReliabilityPolicy.BEST_EFFORT",
+            "durability": "DurabilityPolicy.VOLATILE"
+          }
+        ],
+        "right_arm": [
+          {
+            "node": "nexus_command_mux",
+            "reliability": "ReliabilityPolicy.BEST_EFFORT",
+            "durability": "DurabilityPolicy.VOLATILE"
+          }
+        ],
+        "left_ee": [
+          {
+            "node": "nexus_command_mux",
+            "reliability": "ReliabilityPolicy.BEST_EFFORT",
+            "durability": "DurabilityPolicy.VOLATILE"
+          }
+        ],
+        "right_ee": [
+          {
+            "node": "nexus_command_mux",
+            "reliability": "ReliabilityPolicy.BEST_EFFORT",
+            "durability": "DurabilityPolicy.VOLATILE"
+          }
+        ]
+      },
+      "joint_error": {
+        "left_arm": 0.0,
+        "right_arm": 0.0,
+        "left_ee": 0.0,
+        "right_ee": 0.0
+      }
+    },
+    "profile": {
+      "id": "astral_dual_gripper",
+      "sha256": "d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246",
+      "instance": "astral"
+    },
+    "control": {
+      "mode": "ESTOP",
+      "fault": "emergency stop",
+      "profile_id": "astral_dual_gripper",
+      "profile_sha256": "d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246",
+      "ready_components": [
+        "left_arm",
+        "left_ee",
+        "right_arm",
+        "right_ee"
+      ]
+    },
+    "data_collect": {
+      "state": "IDLE",
+      "session": "astral_dual_gripper_web_test",
+      "episode_index": -1,
+      "elapsed_s": 0.0,
+      "task_next": "",
+      "samples_per_s": {},
+      "dropped": {},
+      "schema": {
+        "nexus_profile": {
+          "schema_version": 2,
+          "instance": "astral",
+          "input_settings": {
+            "landmark_preprocess": "raw"
+          },
+          "inputs": {
+            "left": {
+              "wrist": {
+                "source": "quest3",
+                "topic": "/quest3/left_wrist_pose",
+                "frame_policy": "stable"
+              },
+              "hand": {
+                "source": "quest3",
+                "topic": "/hand_landmarks/left",
+                "frame_policy": "stable"
+              }
+            },
+            "right": {
+              "wrist": {
+                "source": "quest3",
+                "topic": "/quest3/right_wrist_pose",
+                "frame_policy": "stable"
+              },
+              "hand": {
+                "source": "quest3",
+                "topic": "/hand_landmarks/right",
+                "frame_policy": "stable"
+              }
+            },
+            "body": {
+              "body_joints": {
+                "source": "quest3",
+                "topic": "/quest3/body_joints",
+                "frame_policy": "stable"
+              },
+              "body_joint_names": {
+                "source": "quest3",
+                "topic": "/quest3/body_joint_names"
+              }
+            }
+          },
+          "components": [
+            {
+              "name": "left_arm",
+              "kind": "arm",
+              "joints": [
+                "left_shoulder_pitch",
+                "left_shoulder_roll",
+                "left_elbow_roll",
+                "left_elbow_pitch",
+                "left_forearm_roll",
+                "left_wrist_pitch",
+                "left_wrist_roll"
+              ],
+              "lower": [
+                -2.0,
+                -0.3,
+                -2.2689,
+                -2.26,
+                -1.7802,
+                -0.8,
+                -1.57
+              ],
+              "upper": [
+                2.0,
+                2.0,
+                2.2689,
+                0.0,
+                1.7802,
+                0.85,
+                1.57
+              ],
+              "driver": "astral_sdk",
+              "feedback": "measured",
+              "ik": "astral_geometric",
+              "side": "left",
+              "unit": "rad",
+              "input_channel": "left",
+              "teleop": {
+                "arm_base_frame": "left_base_link",
+                "vr_to_arm_rot": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "motion_scale": 1.0,
+                "tcp_offset": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            },
+            {
+              "name": "right_arm",
+              "kind": "arm",
+              "joints": [
+                "right_shoulder_pitch",
+                "right_shoulder_roll",
+                "right_elbow_roll",
+                "right_elbow_pitch",
+                "right_forearm_roll",
+                "right_wrist_pitch",
+                "right_wrist_roll"
+              ],
+              "lower": [
+                -2.0,
+                -2.0,
+                -2.2689,
+                -2.26,
+                -1.7802,
+                -0.8,
+                -1.57
+              ],
+              "upper": [
+                2.0,
+                0.3,
+                2.2689,
+                0.0,
+                1.7802,
+                0.85,
+                1.57
+              ],
+              "driver": "astral_sdk",
+              "feedback": "measured",
+              "ik": "astral_geometric",
+              "side": "right",
+              "unit": "rad",
+              "input_channel": "right",
+              "teleop": {
+                "arm_base_frame": "right_base_link",
+                "vr_to_arm_rot": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ],
+                "motion_scale": 1.0,
+                "tcp_offset": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            },
+            {
+              "name": "left_ee",
+              "kind": "gripper",
+              "joints": [
+                "left_gripper"
+              ],
+              "lower": [
+                0.0
+              ],
+              "upper": [
+                2.5
+              ],
+              "driver": "astral_sdk",
+              "feedback": "command_echo",
+              "side": "left",
+              "unit": "rad",
+              "input_channel": "left",
+              "retargeter": "pinch_gripper"
+            },
+            {
+              "name": "right_ee",
+              "kind": "gripper",
+              "joints": [
+                "right_gripper"
+              ],
+              "lower": [
+                0.0
+              ],
+              "upper": [
+                2.5
+              ],
+              "driver": "astral_sdk",
+              "feedback": "command_echo",
+              "side": "right",
+              "unit": "rad",
+              "input_channel": "right",
+              "retargeter": "pinch_gripper"
+            }
+          ],
+          "cameras": [
+            {
+              "role": "base",
+              "source": "quest3_video_streamer",
+              "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.3-video-index0",
+              "mode": "v4l2",
+              "preset": "1080p30",
+              "capture_topic": "/quest3_video_streamer/collect/base"
+            },
+            {
+              "role": "left_wrist",
+              "source": "quest3_video_streamer",
+              "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:2.2:1.0-video-index0",
+              "mode": "webcam",
+              "preset": "720p30",
+              "capture_topic": "/quest3_video_streamer/collect/left_wrist"
+            },
+            {
+              "role": "right_wrist",
+              "source": "quest3_video_streamer",
+              "device": "/dev/v4l/by-path/platform-3610000.usb-usb-0:1.3:1.0-video-index0",
+              "mode": "webcam",
+              "preset": "720p30",
+              "capture_topic": "/quest3_video_streamer/collect/right_wrist"
+            }
+          ],
+          "dataset": {
+            "fps": 30,
+            "action_source": "next_state"
+          },
+          "policy": {
+            "camera_map": {
+              "base_0_rgb": "base",
+              "left_wrist_0_rgb": "left_wrist",
+              "right_wrist_0_rgb": "right_wrist"
+            }
+          },
+          "profile_id": "astral_dual_gripper",
+          "adapter_config": {
+            "astral_sdk": {
+              "control_board_ip": "${ASTRAL_CONTROL_BOARD_IP}",
+              "gripper_open_rad": 2.5,
+              "gripper_closed_rad": 0.0
+            },
+            "wuji_serial": {
+              "serials": {
+                "right": "SET_RIGHT_WUJI_SERIAL"
+              }
+            }
+          }
+        },
+        "profile_sha256": "d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246",
+        "schema_version": 2,
+        "dataset_fps": 30,
+        "action_source": "next_state",
+        "cameras": [
+          "base",
+          "left_wrist",
+          "right_wrist"
+        ],
+        "hold_frames": 10,
+        "max_gap_ms": 100.0,
+        "state_dim": 16,
+        "state_blocks": [
+          {
+            "name": "left_arm",
+            "dim": 7
+          },
+          {
+            "name": "right_arm",
+            "dim": 7
+          },
+          {
+            "name": "left_ee",
+            "dim": 1
+          },
+          {
+            "name": "right_ee",
+            "dim": 1
+          }
+        ]
+      },
+      "low_fps_warning": null,
+      "empty_warning": null,
+      "ignored": {},
+      "folder": "/tmp/nexus_web_optimization_data/astral_dual_gripper_web_test",
+      "episode_counts": {},
+      "camera_counts": {},
+      "episode_bytes": 0,
+      "session_bytes": 578832,
+      "stale": false
+    },
+    "infer": null,
+    "joints": {
+      "left_arm": {
+        "values": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "stale": false,
+        "age_s": 0.002351045608520508
+      },
+      "right_arm": {
+        "values": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "stale": false,
+        "age_s": 0.0022802352905273438
+      },
+      "left_ee": {
+        "values": [
+          1.2499999999998979
+        ],
+        "stale": false,
+        "age_s": 0.0022134780883789062
+      },
+      "right_ee": {
+        "values": [
+          1.2499999999999019
+        ],
+        "stale": false,
+        "age_s": 0.001567840576171875
+      }
+    }
+  },
+  "operations": [
+    {
+      "id": "9c71fd939f494914b4aa71f541e6070a",
+      "verb": "ready",
+      "status": "succeeded",
+      "started_at": 1790753664.156126,
+      "message": "ready complete",
+      "finished_at": 1790753664.2048018
+    },
+    {
+      "id": "4f80d80b1d0e4262babeacbf648424a3",
+      "verb": "enable",
+      "status": "succeeded",
+      "started_at": 1790753664.4732413,
+      "message": "enable complete",
+      "finished_at": 1790753664.5010426
+    },
+    {
+      "id": "85b0374c2ad245a4bd98517cabb4b37d",
+      "verb": "home",
+      "status": "succeeded",
+      "started_at": 1790753664.7909381,
+      "message": "home complete",
+      "finished_at": 1790753665.2346058
+    },
+    {
+      "id": "ee15cbd0c75f4c82b3512f4ba165ce27",
+      "verb": "estop",
+      "status": "succeeded",
+      "started_at": 1790753668.853879,
+      "message": "estop complete",
+      "finished_at": 1790753669.554392
+    }
+  ],
+  "logs": [
+    "[INFO] [launch]: All log files can be found below /home/loopkok/.ros/log/2026-09-30-15-34-22-313668-haining14-1563535",
+    "[INFO] [launch]: Default logging verbosity is set to INFO",
+    "[INFO] [launch.user]: NEXUS profile=astral_dual_gripper instance=astral sha256=d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246 dry_run=True",
+    "[INFO] [nexus_command_mux-1]: process started with pid [1563550]",
+    "[INFO] [nexus_driver_manager-2]: process started with pid [1563552]",
+    "[INFO] [nexus_input_bridge-3]: process started with pid [1563554]",
+    "[INFO] [astral_robot_driver-4]: process started with pid [1563556]",
+    "[INFO] [astral_arm_teleop_node-5]: process started with pid [1563558]",
+    "[INFO] [astral_arm_teleop_node-6]: process started with pid [1563560]",
+    "[INFO] [pinch_gripper_node-7]: process started with pid [1563562]",
+    "[INFO] [nexus_joint_bridge-8]: process started with pid [1563564]",
+    "[INFO] [pinch_gripper_node-9]: process started with pid [1563566]",
+    "[INFO] [nexus_joint_bridge-10]: process started with pid [1563568]",
+    "[INFO] [data_collect_node-11]: process started with pid [1563570]",
+    "[nexus_command_mux-1] [INFO] [1790753662.947924836] [nexus_command_mux]: NEXUS mux: astral_dual_gripper sha256=d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']",
+    "[astral_robot_driver-4] [WARN] [1790753662.969879480] [astral_robot_driver]: dry_run=true — SDK not connected; commands logged only",
+    "[astral_robot_driver-4] [INFO] [1790753662.970358288] [astral_robot_driver]: Astral driver ready: board=:5001 dry_run=True cmd=[/nexus/astral/components/left_arm/joint_commands, /nexus/astral/components/right_arm/joint_commands, /nexus/astral/components/left_ee/joint_commands|/nexus/astral/components/left_ee/command] state=[/nexus/astral/components/left_arm/joint_states, /nexus/astral/components/right_arm/joint_states, /astral/joint_states, /head/joint_states] (0x31/0x32=head via 0x90; grippers via 0x97/0x98)",
+    "[astral_robot_driver-4] [INFO] [1790753662.991540084] [astral_robot_driver]: [dry_run] move_arm_js L=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] R=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+    "[astral_robot_driver-4] [INFO] [1790753662.992082250] [astral_robot_driver]: [dry_run] set_gripper_angle left=2.500 rad (0x97/0x98)",
+    "[pinch_gripper_node-9] [INFO] [1790753662.992080854] [pinch_right_ee]: gripper arbitration gate: disarm=/nexus/astral/control/teleop_disarm arm=/nexus/astral/control/teleop_armed",
+    "[pinch_gripper_node-9] [INFO] [1790753662.992658885] [pinch_right_ee]: pinch→gripper[right] landmarks=/nexus/astral/input/right/hand_landmarks cmd=/nexus/astral/legacy/teleop/right_gripper_ratio pinch=[0.015,0.080]m auto_range=True forget=8.0s joy=/nexus/astral/input/right/controller_joy axis=0 gamma=1.40 trig_ema=0.40 rate=2.50/s (ratio only; rad mapping in driver config)",
+    "[pinch_gripper_node-7] [INFO] [1790753662.994549209] [pinch_left_ee]: gripper arbitration gate: disarm=/nexus/astral/control/teleop_disarm arm=/nexus/astral/control/teleop_armed",
+    "[pinch_gripper_node-7] [INFO] [1790753662.995123472] [pinch_left_ee]: pinch→gripper[left] landmarks=/nexus/astral/input/left/hand_landmarks cmd=/nexus/astral/legacy/teleop/left_gripper_ratio pinch=[0.015,0.080]m auto_range=True forget=8.0s joy=/nexus/astral/input/left/controller_joy axis=0 gamma=1.40 trig_ema=0.40 rate=2.50/s (ratio only; rad mapping in driver config)",
+    "[nexus_driver_manager-2] [INFO] [1790753663.072962366] [nexus_driver_manager]: driver manager profile=astral_dual_gripper sha256=d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']",
+    "[nexus_joint_bridge-10] [INFO] [1790753663.099512166] [gripper_bridge_right_ee]: joint bridge astral_gripper component=right_ee",
+    "[data_collect_node-11] [INFO] [1790753663.100389423] [nexus_data_collect]: NEXUS frozen profile sha256=d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246",
+    "[nexus_joint_bridge-8] [INFO] [1790753663.110837450] [gripper_bridge_left_ee]: joint bridge astral_gripper component=left_ee",
+    "[nexus_input_bridge-3] [INFO] [1790753663.124971954] [nexus_input_bridge]: input bridge profile=astral_dual_gripper sha256=d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246",
+    "[data_collect_node-11] [INFO] [1790753663.146810369] [nexus_data_collect]: data_collect ready: save_root=/tmp/nexus_web_optimization_data session=astral_dual_gripper_web_test schema={",
+    "[data_collect_node-11]   \"nexus_profile\": {",
+    "[data_collect_node-11]     \"schema_version\": 2,",
+    "[data_collect_node-11]     \"instance\": \"astral\",",
+    "[data_collect_node-11]     \"input_settings\": {",
+    "[data_collect_node-11]       \"landmark_preprocess\": \"raw\"",
+    "[data_collect_node-11]     },",
+    "[data_collect_node-11]     \"inputs\": {",
+    "[data_collect_node-11]       \"left\": {",
+    "[data_collect_node-11]         \"wrist\": {",
+    "[data_collect_node-11]           \"source\": \"quest3\",",
+    "[data_collect_node-11]           \"topic\": \"/quest3/left_wrist_pose\",",
+    "[data_collect_node-11]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-11]         },",
+    "[data_collect_node-11]         \"hand\": {",
+    "[data_collect_node-11]           \"source\": \"quest3\",",
+    "[data_collect_node-11]           \"topic\": \"/hand_landmarks/left\",",
+    "[data_collect_node-11]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-11]         }",
+    "[data_collect_node-11]       },",
+    "[data_collect_node-11]       \"right\": {",
+    "[data_collect_node-11]         \"wrist\": {",
+    "[data_collect_node-11]           \"source\": \"quest3\",",
+    "[data_collect_node-11]           \"topic\": \"/quest3/right_wrist_pose\",",
+    "[data_collect_node-11]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-11]         },",
+    "[data_collect_node-11]         \"hand\": {",
+    "[data_collect_node-11]           \"source\": \"quest3\",",
+    "[data_collect_node-11]           \"topic\": \"/hand_landmarks/right\",",
+    "[data_collect_node-11]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-11]         }",
+    "[data_collect_node-11]       },",
+    "[data_collect_node-11]       \"body\": {",
+    "[data_collect_node-11]         \"body_joints\": {",
+    "[data_collect_node-11]           \"source\": \"quest3\",",
+    "[data_collect_node-11]           \"topic\": \"/quest3/body_joints\",",
+    "[data_collect_node-11]           \"frame_policy\": \"stable\"",
+    "[data_collect_node-11]         },",
+    "[data_collect_node-11]         \"body_joint_names\": {",
+    "[data_collect_node-11]           \"source\": \"quest3\",",
+    "[data_collect_node-11]           \"topic\": \"/quest3/body_joint_names\"",
+    "[data_collect_node-11]         }",
+    "[data_collect_node-11]       }",
+    "[data_collect_node-11]     },",
+    "[data_collect_node-11]     \"components\": [",
+    "[data_collect_node-11]       {",
+    "[data_collect_node-11]         \"name\": \"left_arm\",",
+    "[data_collect_node-11]         \"kind\": \"arm\",",
+    "[data_collect_node-11]         \"joints\": [",
+    "[data_collect_node-11]           \"left_shoulder_pitch\",",
+    "[data_collect_node-11]           \"left_shoulder_roll\",",
+    "[data_collect_node-11]           \"left_elbow_roll\",",
+    "[data_collect_node-11]           \"left_elbow_pitch\",",
+    "[data_collect_node-11]           \"left_forearm_roll\",",
+    "[data_collect_node-11]           \"left_wrist_pitch\",",
+    "[data_collect_node-11]           \"left_wrist_roll\"",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"lower\": [",
+    "[data_collect_node-11]           -2.0,",
+    "[data_collect_node-11]           -0.3,",
+    "[data_collect_node-11]           -2.2689,",
+    "[data_collect_node-11]           -2.26,",
+    "[data_collect_node-11]           -1.7802,",
+    "[data_collect_node-11]           -0.8,",
+    "[data_collect_node-11]           -1.57",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"upper\": [",
+    "[data_collect_node-11]           2.0,",
+    "[data_collect_node-11]           2.0,",
+    "[data_collect_node-11]           2.2689,",
+    "[data_collect_node-11]           0.0,",
+    "[data_collect_node-11]           1.7802,",
+    "[data_collect_node-11]           0.85,",
+    "[data_collect_node-11]           1.57",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"driver\": \"astral_sdk\",",
+    "[data_collect_node-11]         \"feedback\": \"measured\",",
+    "[data_collect_node-11]         \"ik\": \"astral_geometric\",",
+    "[data_collect_node-11]         \"side\": \"left\",",
+    "[data_collect_node-11]         \"unit\": \"rad\",",
+    "[data_collect_node-11]         \"input_channel\": \"left\",",
+    "[data_collect_node-11]         \"teleop\": {",
+    "[data_collect_node-11]           \"arm_base_frame\": \"left_base_link\",",
+    "[data_collect_node-11]           \"vr_to_arm_rot\": [",
+    "[data_collect_node-11]             1.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             1.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             1.0",
+    "[data_collect_node-11]           ],",
+    "[data_collect_node-11]           \"motion_scale\": 1.0,",
+    "[data_collect_node-11]           \"tcp_offset\": [",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0",
+    "[data_collect_node-11]           ]",
+    "[data_collect_node-11]         }",
+    "[data_collect_node-11]       },",
+    "[data_collect_node-11]       {",
+    "[data_collect_node-11]         \"name\": \"right_arm\",",
+    "[data_collect_node-11]         \"kind\": \"arm\",",
+    "[data_collect_node-11]         \"joints\": [",
+    "[data_collect_node-11]           \"right_shoulder_pitch\",",
+    "[data_collect_node-11]           \"right_shoulder_roll\",",
+    "[data_collect_node-11]           \"right_elbow_roll\",",
+    "[data_collect_node-11]           \"right_elbow_pitch\",",
+    "[data_collect_node-11]           \"right_forearm_roll\",",
+    "[data_collect_node-11]           \"right_wrist_pitch\",",
+    "[data_collect_node-11]           \"right_wrist_roll\"",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"lower\": [",
+    "[data_collect_node-11]           -2.0,",
+    "[data_collect_node-11]           -2.0,",
+    "[data_collect_node-11]           -2.2689,",
+    "[data_collect_node-11]           -2.26,",
+    "[data_collect_node-11]           -1.7802,",
+    "[data_collect_node-11]           -0.8,",
+    "[data_collect_node-11]           -1.57",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"upper\": [",
+    "[data_collect_node-11]           2.0,",
+    "[data_collect_node-11]           0.3,",
+    "[data_collect_node-11]           2.2689,",
+    "[data_collect_node-11]           0.0,",
+    "[data_collect_node-11]           1.7802,",
+    "[data_collect_node-11]           0.85,",
+    "[data_collect_node-11]           1.57",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"driver\": \"astral_sdk\",",
+    "[data_collect_node-11]         \"feedback\": \"measured\",",
+    "[data_collect_node-11]         \"ik\": \"astral_geometric\",",
+    "[data_collect_node-11]         \"side\": \"right\",",
+    "[data_collect_node-11]         \"unit\": \"rad\",",
+    "[data_collect_node-11]         \"input_channel\": \"right\",",
+    "[data_collect_node-11]         \"teleop\": {",
+    "[data_collect_node-11]           \"arm_base_frame\": \"right_base_link\",",
+    "[data_collect_node-11]           \"vr_to_arm_rot\": [",
+    "[data_collect_node-11]             1.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             1.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             1.0",
+    "[data_collect_node-11]           ],",
+    "[data_collect_node-11]           \"motion_scale\": 1.0,",
+    "[data_collect_node-11]           \"tcp_offset\": [",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0,",
+    "[data_collect_node-11]             0.0",
+    "[data_collect_node-11]           ]",
+    "[data_collect_node-11]         }",
+    "[data_collect_node-11]       },",
+    "[data_collect_node-11]       {",
+    "[data_collect_node-11]         \"name\": \"left_ee\",",
+    "[data_collect_node-11]         \"kind\": \"gripper\",",
+    "[data_collect_node-11]         \"joints\": [",
+    "[data_collect_node-11]           \"left_gripper\"",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"lower\": [",
+    "[data_collect_node-11]           0.0",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"upper\": [",
+    "[data_collect_node-11]           2.5",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"driver\": \"astral_sdk\",",
+    "[data_collect_node-11]         \"feedback\": \"command_echo\",",
+    "[data_collect_node-11]         \"side\": \"left\",",
+    "[data_collect_node-11]         \"unit\": \"rad\",",
+    "[data_collect_node-11]         \"input_channel\": \"left\",",
+    "[data_collect_node-11]         \"retargeter\": \"pinch_gripper\"",
+    "[data_collect_node-11]       },",
+    "[data_collect_node-11]       {",
+    "[data_collect_node-11]         \"name\": \"right_ee\",",
+    "[data_collect_node-11]         \"kind\": \"gripper\",",
+    "[data_collect_node-11]         \"joints\": [",
+    "[data_collect_node-11]           \"right_gripper\"",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"lower\": [",
+    "[data_collect_node-11]           0.0",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"upper\": [",
+    "[data_collect_node-11]           2.5",
+    "[data_collect_node-11]         ],",
+    "[data_collect_node-11]         \"driver\": \"astral_sdk\",",
+    "[data_collect_node-11]         \"feedback\": \"command_echo\",",
+    "[data_collect_node-11]         \"side\": \"right\",",
+    "[data_collect_node-11]         \"unit\": \"rad\",",
+    "[data_collect_node-11]         \"input_channel\": \"right\",",
+    "[data_collect_node-11]         \"retargeter\": \"pinch_gripper\"",
+    "[data_collect_node-11]       }",
+    "[data_collect_node-11]     ],",
+    "[data_collect_node-11]     \"cameras\": [",
+    "[data_collect_node-11]       {",
+    "[data_collect_node-11]         \"role\": \"base\",",
+    "[data_collect_node-11]         \"source\": \"quest3_video_streamer\",",
+    "[data_collect_node-11]         \"device\": \"/dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.3-video-index0\",",
+    "[data_collect_node-11]         \"mode\": \"v4l2\",",
+    "[data_collect_node-11]         \"preset\": \"1080p30\",",
+    "[data_collect_node-11]         \"capture_topic\": \"/quest3_video_streamer/collect/base\"",
+    "[data_collect_node-11]       },",
+    "[data_collect_node-11]       {",
+    "[data_collect_node-11]         \"role\": \"left_wrist\",",
+    "[data_collect_node-11]         \"source\": \"quest3_video_streamer\",",
+    "[data_collect_node-11]         \"device\": \"/dev/v4l/by-path/platform-3610000.usb-usb-0:2.2:1.0-video-index0\",",
+    "[data_collect_node-11]         \"mode\": \"webcam\",",
+    "[data_collect_node-11]         \"preset\": \"720p30\",",
+    "[data_collect_node-11]         \"capture_topic\": \"/quest3_video_streamer/collect/left_wrist\"",
+    "[data_collect_node-11]       },",
+    "[data_collect_node-11]       {",
+    "[data_collect_node-11]         \"role\": \"right_wrist\",",
+    "[data_collect_node-11]         \"source\": \"quest3_video_streamer\",",
+    "[data_collect_node-11]         \"device\": \"/dev/v4l/by-path/platform-3610000.usb-usb-0:1.3:1.0-video-index0\",",
+    "[data_collect_node-11]         \"mode\": \"webcam\",",
+    "[data_collect_node-11]         \"preset\": \"720p30\",",
+    "[data_collect_node-11]         \"capture_topic\": \"/quest3_video_streamer/collect/right_wrist\"",
+    "[data_collect_node-11]       }",
+    "[data_collect_node-11]     ],",
+    "[data_collect_node-11]     \"dataset\": {",
+    "[data_collect_node-11]       \"fps\": 30,",
+    "[data_collect_node-11]       \"action_source\": \"next_state\"",
+    "[data_collect_node-11]     },",
+    "[data_collect_node-11]     \"policy\": {",
+    "[data_collect_node-11]       \"camera_map\": {",
+    "[data_collect_node-11]         \"base_0_rgb\": \"base\",",
+    "[data_collect_node-11]         \"left_wrist_0_rgb\": \"left_wrist\",",
+    "[data_collect_node-11]         \"right_wrist_0_rgb\": \"right_wrist\"",
+    "[data_collect_node-11]       }",
+    "[data_collect_node-11]     },",
+    "[data_collect_node-11]     \"profile_id\": \"astral_dual_gripper\",",
+    "[data_collect_node-11]     \"adapter_config\": {",
+    "[data_collect_node-11]       \"astral_sdk\": {",
+    "[data_collect_node-11]         \"control_board_ip\": \"${ASTRAL_CONTROL_BOARD_IP}\",",
+    "[data_collect_node-11]         \"gripper_open_rad\": 2.5,",
+    "[data_collect_node-11]         \"gripper_closed_rad\": 0.0",
+    "[data_collect_node-11]       },",
+    "[data_collect_node-11]       \"wuji_serial\": {",
+    "[data_collect_node-11]         \"serials\": {",
+    "[data_collect_node-11]           \"right\": \"SET_RIGHT_WUJI_SERIAL\"",
+    "[data_collect_node-11]         }",
+    "[data_collect_node-11]       }",
+    "[data_collect_node-11]     }",
+    "[data_collect_node-11]   },",
+    "[data_collect_node-11]   \"profile_sha256\": \"d26724061c78de952cf63362058be80a7e631a9325b373422760f08b76211246\",",
+    "[data_collect_node-11]   \"schema_version\": 2,",
+    "[data_collect_node-11]   \"dataset_fps\": 30,",
+    "[data_collect_node-11]   \"action_source\": \"next_state\",",
+    "[data_collect_node-11]   \"cameras\": [",
+    "[data_collect_node-11]     \"base\",",
+    "[data_collect_node-11]     \"left_wrist\",",
+    "[data_collect_node-11]     \"right_wrist\"",
+    "[data_collect_node-11]   ],",
+    "[data_collect_node-11]   \"hold_frames\": 10,",
+    "[data_collect_node-11]   \"max_gap_ms\": 100.0,",
+    "[data_collect_node-11]   \"state_dim\": 16,",
+    "[data_collect_node-11]   \"state_blocks\": [",
+    "[data_collect_node-11]     {",
+    "[data_collect_node-11]       \"name\": \"left_arm\",",
+    "[data_collect_node-11]       \"dim\": 7",
+    "[data_collect_node-11]     },",
+    "[data_collect_node-11]     {",
+    "[data_collect_node-11]       \"name\": \"right_arm\",",
+    "[data_collect_node-11]       \"dim\": 7",
+    "[data_collect_node-11]     },",
+    "[data_collect_node-11]     {",
+    "[data_collect_node-11]       \"name\": \"left_ee\",",
+    "[data_collect_node-11]       \"dim\": 1",
+    "[data_collect_node-11]     },",
+    "[data_collect_node-11]     {",
+    "[data_collect_node-11]       \"name\": \"right_ee\",",
+    "[data_collect_node-11]       \"dim\": 1",
+    "[data_collect_node-11]     }",
+    "[data_collect_node-11]   ]",
+    "[data_collect_node-11] }",
+    "[astral_robot_driver-4] [INFO] [1790753663.991887688] [astral_robot_driver]: [dry_run] move_arm_js L=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] R=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+    "[astral_robot_driver-4] [INFO] [1790753663.992757897] [astral_robot_driver]: [dry_run] set_gripper_angle left=2.500 rad (0x97/0x98)",
+    "[astral_arm_teleop_node-6] [INFO] [1790753664.808423861] [teleop_right_arm]: tune topics: /teleop/right/tune/ee_{vr,filt,cmd} + xyz",
+    "[astral_arm_teleop_node-6] [INFO] [1790753664.810613011] [teleop_right_arm]: [right] human elbow prior on: quest3/body_joints (right-arm-upper/-lower), w=2.0",
+    "[astral_arm_teleop_node-5] [INFO] [1790753664.811592937] [teleop_left_arm]: tune topics: /teleop/left/tune/ee_{vr,filt,cmd} + xyz",
+    "[astral_arm_teleop_node-5] [INFO] [1790753664.813849146] [teleop_left_arm]: [left] human elbow prior on: quest3/body_joints (left-arm-upper/-lower), w=2.0",
+    "[astral_arm_teleop_node-6] [INFO] [1790753664.818777525] [teleop_right_arm]: Astral arm teleop: right solver=geometric_swe_arm_angle/right EE0=[-0.15, -0.143, -0.225] r=0.306m ws_r=0.650m scale=1.0 dry_run=False homing off",
+    "[astral_arm_teleop_node-6] [WARN] [1790753664.819186020] [teleop_right_arm]: [right] require_start_signal=true: waiting for /teleop/start (Bool true) or ~/start service. Place your hand at the initial pose, then send start to capture vr_init and arm.",
+    "[astral_arm_teleop_node-5] [INFO] [1790753664.822227886] [teleop_left_arm]: Astral arm teleop: left solver=geometric_swe_arm_angle/left EE0=[0.15, -0.143, -0.225] r=0.306m ws_r=0.650m scale=1.0 dry_run=False homing off",
+    "[astral_arm_teleop_node-5] [WARN] [1790753664.822648103] [teleop_left_arm]: [left] require_start_signal=true: waiting for /teleop/start (Bool true) or ~/start service. Place your hand at the initial pose, then send start to capture vr_init and arm.",
+    "[astral_robot_driver-4] [INFO] [1790753664.993406493] [astral_robot_driver]: [dry_run] set_gripper_angle right=2.500 rad (0x97/0x98)",
+    "[astral_robot_driver-4] [INFO] [1790753665.001921826] [astral_robot_driver]: [dry_run] move_arm_js L=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] R=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]",
+    "[astral_arm_teleop_node-5] [WARN] [1790753665.418704910] [teleop_left_arm]: [left] armed ignored: not calibrated — send /teleop/start to capture vr_init first",
+    "[astral_arm_teleop_node-6] [WARN] [1790753665.418772878] [teleop_right_arm]: [right] armed ignored: not calibrated — send /teleop/start to capture vr_init first",
+    "[astral_arm_teleop_node-5] [WARN] [1790753665.421050004] [teleop_left_arm]: [left] START: 臂不在初始工作位——原点重锚到 measured joint state，遥操从当前位姿纯增量开始；建议先用「工作位」移到 init_pose",
+    "[astral_arm_teleop_node-6] [WARN] [1790753665.421778947] [teleop_right_arm]: [right] START: 臂不在初始工作位——原点重锚到 measured joint state，遥操从当前位姿纯增量开始；建议先用「工作位」移到 init_pose",
+    "[astral_arm_teleop_node-5] [WARN] [1790753665.422030860] [teleop_left_arm]: [left] START: vr_init captured from current pose, teleop armed",
+    "[astral_arm_teleop_node-6] [WARN] [1790753665.422733356] [teleop_right_arm]: [right] START: vr_init captured from current pose, teleop armed",
+    "[pinch_gripper_node-9] [INFO] [1790753665.444130892] [pinch_right_ee]: [gripper right] disarmed by arbitration gate — not publishing (waiting for open)",
+    "[pinch_gripper_node-7] [INFO] [1790753665.444182949] [pinch_left_ee]: [gripper left] disarmed by arbitration gate — not publishing (waiting for open)",
+    "[pinch_gripper_node-9] [INFO] [1790753665.467538359] [pinch_right_ee]: [gripper right] arbitration gate open — publishing resumed",
+    "[pinch_gripper_node-7] [INFO] [1790753665.468643566] [pinch_left_ee]: [gripper left] arbitration gate open — publishing resumed",
+    "[data_collect_node-11] [INFO] [1790753665.485117842] [nexus_data_collect]: control <- start",
+    "[data_collect_node-11] [INFO] [1790753665.491890883] [nexus_data_collect]: REC start episode000000 task='' -> /tmp/nexus_web_optimization_data/astral_dual_gripper_web_test/episode000000",
+    "[data_collect_node-11] [WARN] [1790753665.492617942] [nexus_data_collect]: LOW-FPS 参考相机 base 实率 0fps < 15fps（目标 30fps 的一半）——检查相机格式/总线带宽",
+    "[astral_arm_teleop_node-5] [WARN] [1790753665.523515182] [teleop_left_arm]: [left] arm-angle escape: wrist limit swallowed the local psi window during a big roll; shoulder swings once, returns after ik_return_after_frames of feasible home psi",
+    "[astral_arm_teleop_node-5] [INFO] [1790753665.529757810] [teleop_left_arm]: [left] armed via /teleop/armed",
+    "[astral_arm_teleop_node-5] [WARN] [1790753665.530410691] [teleop_left_arm]: [left] START: 臂不在初始工作位——原点重锚到 measured joint state，遥操从当前位姿纯增量开始；建议先用「工作位」移到 init_pose",
+    "[astral_arm_teleop_node-5] [WARN] [1790753665.530814379] [teleop_left_arm]: [left] START: vr_init captured from current pose, teleop armed",
+    "[astral_arm_teleop_node-6] [WARN] [1790753665.537168171] [teleop_right_arm]: [right] arm-angle escape: wrist limit swallowed the local psi window during a big roll; shoulder swings once, returns after ik_return_after_frames of feasible home psi",
+    "[astral_arm_teleop_node-6] [INFO] [1790753665.543612260] [teleop_right_arm]: [right] armed via /teleop/armed",
+    "[astral_arm_teleop_node-6] [WARN] [1790753665.544283493] [teleop_right_arm]: [right] START: 臂不在初始工作位——原点重锚到 measured joint state，遥操从当前位姿纯增量开始；建议先用「工作位」移到 init_pose",
+    "[astral_arm_teleop_node-6] [WARN] [1790753665.544690043] [teleop_right_arm]: [right] START: vr_init captured from current pose, teleop armed",
+    "[astral_robot_driver-4] [INFO] [1790753666.002651536] [astral_robot_driver]: [dry_run] set_gripper_angle left=1.250 rad (0x97/0x98)",
+    "[astral_robot_driver-4] [INFO] [1790753666.011926883] [astral_robot_driver]: [dry_run] move_arm_js L=[-0.05, 0.001, -0.011, -0.129, -0.011, -0.06, 0.001] R=[-0.05, -0.0, 0.003, -0.129, 0.003, -0.059, -0.0]",
+    "[astral_arm_teleop_node-6] [INFO] [1790753666.822941423] [teleop_right_arm]: [Latency][right] vr_rx=3.0ms(p95=3.9,max=10.3,n=183) vr_age=3.0ms(p95=1.8,max=110.5,n=122) ee_r=486.6mm(p95=486.7,max=486.7,n=122) ik=4.5ms(p95=3.1,max=107.0,n=122) loop=4.9ms(p95=3.5,max=108.8,n=122) reach_clip=122 psi_off=24 psi_escape=1",
+    "[astral_arm_teleop_node-5] [INFO] [1790753666.826436252] [teleop_left_arm]: [Latency][left] vr_rx=1.8ms(p95=2.1,max=8.7,n=182) vr_age=7.0ms(p95=5.6,max=109.0,n=124) ee_r=486.6mm(p95=486.7,max=486.7,n=124) ik=4.3ms(p95=3.0,max=99.3,n=124) loop=4.8ms(p95=3.4,max=101.0,n=124) reach_clip=124 psi_off=24 psi_escape=1",
+    "[astral_robot_driver-4] [INFO] [1790753667.002658129] [astral_robot_driver]: [dry_run] set_gripper_angle left=1.250 rad (0x97/0x98)",
+    "[astral_robot_driver-4] [INFO] [1790753667.011928432] [astral_robot_driver]: [dry_run] move_arm_js L=[-0.046, 0.001, -0.011, -0.13, -0.011, -0.064, 0.001] R=[-0.046, -0.0, 0.003, -0.13, 0.003, -0.064, -0.0]",
+    "[astral_robot_driver-4] [INFO] [1790753668.003029263] [astral_robot_driver]: [dry_run] set_gripper_angle right=1.250 rad (0x97/0x98)",
+    "[astral_robot_driver-4] [INFO] [1790753668.021678603] [astral_robot_driver]: [dry_run] move_arm_js L=[-0.047, 0.001, -0.011, -0.13, -0.011, -0.063, 0.001] R=[-0.047, -0.0, 0.003, -0.13, 0.003, -0.063, -0.0]",
+    "[data_collect_node-11] [INFO] [1790753668.525548550] [nexus_data_collect]: control <- stop",
+    "[data_collect_node-11] [INFO] [1790753668.547772344] [nexus_data_collect]: REC saved episode000000 (3.1s, streams=2424 samples, images=273) -> /tmp/nexus_web_optimization_data/astral_dual_gripper_web_test/episode000000",
+    "[astral_arm_teleop_node-6] [INFO] [1790753668.822984152] [teleop_right_arm]: [Latency][right] vr_rx=2.8ms(p95=3.3,max=3.5,n=200) vr_age=1.2ms(p95=1.6,max=1.8,n=200) ee_r=486.7mm(p95=486.7,max=486.7,n=200) ik=2.8ms(p95=3.0,max=3.1,n=200) loop=3.3ms(p95=3.4,max=3.6,n=200) reach_clip=200",
+    "[astral_arm_teleop_node-5] [INFO] [1790753668.826526923] [teleop_left_arm]: [Latency][left] vr_rx=1.9ms(p95=2.0,max=2.4,n=200) vr_age=5.6ms(p95=5.6,max=5.7,n=200) ee_r=486.7mm(p95=486.7,max=486.7,n=200) ik=2.8ms(p95=2.9,max=3.0,n=200) loop=3.3ms(p95=3.4,max=3.4,n=200) reach_clip=200",
+    "[pinch_gripper_node-9] [INFO] [1790753668.846204982] [pinch_right_ee]: [gripper right] disarmed by arbitration gate — not publishing (waiting for open)",
+    "[pinch_gripper_node-7] [INFO] [1790753668.846557194] [pinch_left_ee]: [gripper left] disarmed by arbitration gate — not publishing (waiting for open)",
+    "[astral_robot_driver-4] [INFO] [1790753669.011487018] [astral_robot_driver]: [dry_run] set_gripper_angle left=1.250 rad (0x97/0x98)",
+    "[astral_robot_driver-4] [INFO] [1790753669.031095505] [astral_robot_driver]: [dry_run] move_arm_js L=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] R=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"
+  ],
+  "jobs": []
+}
