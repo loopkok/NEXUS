@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import math
+import functools
+import threading
 import time
 from pathlib import Path
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
+from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 
@@ -19,11 +22,22 @@ from .homing import is_pre_home_command
 from .model_builder import build_mjcf_from_urdf
 
 
+def _physics_locked(method):
+    """Serialize ROS lifecycle callbacks with access to MuJoCo state."""
+    @functools.wraps(method)
+    def call(self, *args, **kwargs):
+        with self._physics_lock:
+            return method(self, *args, **kwargs)
+    return call
+
+
 class NeroMujocoSimNode(Node):
     """Physics-backed driver for every component in a NEXUS assembly profile."""
 
     def __init__(self):
         super().__init__("nero_mujoco_sim")
+        self._physics_lock = threading.RLock()
+        self._run_stop = threading.Event()
         self.declare_parameter("profile_file", "")
         self.declare_parameter("urdf_file", "")
         self.declare_parameter("enable_viewer", True)
@@ -32,6 +46,10 @@ class NeroMujocoSimNode(Node):
         self.declare_parameter("command_timeout", 0.5)
         self.declare_parameter("homing_timeout", 45.0)
         self.declare_parameter("timestep", 0.002)
+        self.declare_parameter("viewer_rate", 30.0)
+        self._viewer_rate = float(self.get_parameter("viewer_rate").value)
+        if not math.isfinite(self._viewer_rate) or not 1.0 <= self._viewer_rate <= 120.0:
+            raise ValueError("viewer_rate must be between 1 and 120 Hz")
 
         profile_path = str(self.get_parameter("profile_file").value).strip()
         if not profile_path:
@@ -113,7 +131,7 @@ class NeroMujocoSimNode(Node):
             self.create_subscription(
                 JointState, self.profile.topic(component.name, "joint_commands"),
                 lambda msg, name=component.name: self._on_command(name, msg),
-                qos_profile_sensor_data)
+                QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
             self._create_lifecycle_services(component.name)
 
         for component in self.profile.components:
@@ -140,6 +158,7 @@ class NeroMujocoSimNode(Node):
         self.create_service(Trigger, f"{prefix}/estop",
                             lambda req, res, name=component: self._estop(name, req, res))
 
+    @_physics_locked
     def _state(self, component: str) -> list[float]:
         spec = self.specs[component]
         values = []
@@ -150,9 +169,15 @@ class NeroMujocoSimNode(Node):
             values.append(min(upper, max(lower, value)))
         return values
 
+    @_physics_locked
     def _on_command(self, component: str, msg: JointState) -> None:
         spec = self.specs[component]
         if self._estopped or not self._enabled[component]:
+            return
+        stamp_ns = int(msg.header.stamp.sec) * 1_000_000_000 + int(msg.header.stamp.nanosec)
+        if stamp_ns > 0 and (self.get_clock().now().nanoseconds - stamp_ns) / 1e9 > self._command_timeout:
+            self.get_logger().warning(f"{component}: expired command rejected",
+                                      throttle_duration_sec=2.0)
             return
         homing_stamp = self._homing_started_ros_ns.get(component)
         if homing_stamp is not None and is_pre_home_command(msg, homing_stamp):
@@ -177,6 +202,7 @@ class NeroMujocoSimNode(Node):
         self._last_commands[component] = time.monotonic()
         self._timeout_reported.discard(component)
 
+    @_physics_locked
     def _publish_states(self) -> None:
         stamp = self.get_clock().now().to_msg()
         for component, spec in self.specs.items():
@@ -194,11 +220,13 @@ class NeroMujocoSimNode(Node):
         response.message = message
         return response
 
+    @_physics_locked
     def _ready(self, component: str, _request, response):
         fresh = time.monotonic() - self._last_state_published < 0.5
         return self._result(response, fresh,
                             "fresh MuJoCo state" if fresh else "MuJoCo state is stale")
 
+    @_physics_locked
     def _enable(self, component: str, _request, response):
         if self._estopped:
             return self._result(response, False, "simulation estop is latched; restart to reset")
@@ -209,6 +237,7 @@ class NeroMujocoSimNode(Node):
         self._enabled[component] = True
         return self._result(response, True, f"{component} enabled; holding measured pose")
 
+    @_physics_locked
     def _home(self, component: str, _request, response):
         if self._estopped or not self._enabled[component]:
             return self._result(response, False, "enable the simulation component before home")
@@ -228,6 +257,7 @@ class NeroMujocoSimNode(Node):
         self._last_commands[component] = time.monotonic()
         return self._result(response, True, f"{component} homing target accepted; waiting for measured convergence")
 
+    @_physics_locked
     def _estop(self, _component: str, _request, response):
         self._estopped = True
         for name in self.specs:
@@ -235,6 +265,7 @@ class NeroMujocoSimNode(Node):
             self._targets[name] = self._state(name)
         return self._result(response, True, "simulation estop latched")
 
+    @_physics_locked
     def _step_physics(self) -> None:
         now = time.monotonic()
         for component, actuator_ids in self._actuator_ids.items():
@@ -259,8 +290,11 @@ class NeroMujocoSimNode(Node):
 
     def run(self) -> None:
         viewer = None
+        viewer_threads = set()
         if bool(self.get_parameter("enable_viewer").value):
+            threads_before = set(threading.enumerate())
             viewer = self._viewer_module.launch_passive(self.model, self.data)
+            viewer_threads = set(threading.enumerate()) - threads_before
             viewer.cam.distance = 2.0
             viewer.cam.lookat[:] = [0.25, 0.0, 0.55]
             viewer.cam.elevation = -18
@@ -269,20 +303,31 @@ class NeroMujocoSimNode(Node):
         report_wall = time.monotonic()
         report_sim = float(self.data.time)
         steps = 0
+        syncs = 0
+        sync_max_ms = 0.0
+        next_sync = time.monotonic()
+        next_step = time.monotonic()
+        executor = SingleThreadedExecutor()
+        executor.add_node(self)
+        def spin():
+            try:
+                executor.spin()
+            except ExternalShutdownException:
+                pass
+        ros_thread = threading.Thread(target=spin, name="nero-sim-ros", daemon=True)
+        ros_thread.start()
         try:
-            while rclpy.ok() and (viewer is None or viewer.is_running()):
-                started = time.monotonic()
-                # One nonblocking executor pass per physics tick is enough to
-                # drain the configured 100 Hz state timer and component command
-                # streams. Repeating 32 empty spin_once calls dominated wall
-                # time on CPU-only hosts and reduced a 500 Hz model to ~200 Hz.
-                rclpy.spin_once(self, timeout_sec=0.0)
-                if viewer is None:
-                    self._step_physics()
-                else:
-                    with viewer.lock():
-                        self._step_physics()
+            while rclpy.ok() and not self._run_stop.is_set() and (viewer is None or viewer.is_running()):
+                # ROS reception must drain independently of rendering/physics;
+                # one callback per step starved four 100 Hz command streams.
+                self._step_physics()
+                now = time.monotonic()
+                if viewer is not None and now >= next_sync:
+                    with self._physics_lock:
                         viewer.sync()
+                    sync_max_ms = max(sync_max_ms, (time.monotonic() - now) * 1000.0)
+                    syncs += 1
+                    next_sync = time.monotonic() + 1.0 / self._viewer_rate
                 steps += 1
                 now = time.monotonic()
                 if now - report_wall >= 5.0:
@@ -290,15 +335,30 @@ class NeroMujocoSimNode(Node):
                     sim_rate = (float(self.data.time) - report_sim) / elapsed
                     self.get_logger().info(
                         f"MuJoCo physics_hz={steps / elapsed:.1f} "
-                        f"real_time_factor={sim_rate:.2f} contacts={self.data.ncon}")
+                        f"real_time_factor={sim_rate:.2f} contacts={self.data.ncon} "
+                        f"viewer_sync_hz={syncs / elapsed:.1f} viewer_sync_max_ms={sync_max_ms:.1f}")
                     report_wall, report_sim, steps = now, float(self.data.time), 0
+                    syncs, sync_max_ms = 0, 0.0
                 if realtime:
-                    remaining = timestep - (time.monotonic() - started)
+                    # Absolute deadlines recover short render stalls, with a
+                    # bounded catch-up budget after long pauses.
+                    next_step = max(next_step + timestep, time.monotonic() - 4 * timestep)
+                    remaining = next_step - time.monotonic()
                     if remaining > 0:
                         time.sleep(remaining)
         finally:
+            executor.shutdown(timeout_sec=2.0)
+            ros_thread.join(timeout=2.0)
+            executor.remove_node(self)
             if viewer is not None:
                 viewer.close()
+                # close() only requests native viewer exit. Join its Python
+                # owner before interpreter teardown destroys GL resources.
+                for thread in viewer_threads:
+                    thread.join(timeout=5.0)
+
+    def request_stop(self) -> None:
+        self._run_stop.set()
 
 
 def main(args=None) -> None:

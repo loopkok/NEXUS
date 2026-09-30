@@ -57,6 +57,11 @@ class NeroTeleopNode(Node):
         self._vr_time = 0.0
         self._anchor = None
         self._last_step = time.monotonic()
+        self._metrics_since = time.monotonic()
+        self._solve_ms = []
+        self._input_age_ms = []
+        self._failed_solves = 0
+        self._workspace_clips = 0
         ns = self.profile.namespace
         self._pub = self.create_publisher(
             JointState, self.profile.candidate_topic("teleop", self.spec.name),
@@ -134,9 +139,18 @@ class NeroTeleopNode(Node):
         delta_pos, delta_rot = self._processor.process()
         target = self._processor.compute_target_pose(
             delta_pos, delta_rot, self._anchor[:3, 3], self._anchor[:3, :3])
+        unclipped = target[:3, 3].copy()
         target[:3, 3] = self._safety.check_workspace(target[:3, 3])
+        self._workspace_clips += int(not np.allclose(unclipped, target[:3, 3]))
+        started = time.monotonic()
         solved = self._solver.solve(target)
+        self._solve_ms.append((time.monotonic() - started) * 1000.)
+        self._input_age_ms.append((now - self._vr_time) * 1000.)
+        self._failed_solves += int(solved is None)
+        self._report_metrics()
         if solved is None:
+            self.get_logger().warning("Nero IK target has no feasible solution; no new candidate",
+                                      throttle_duration_sec=2.0)
             return
         safe, info = self._safety.filter(np.asarray(solved, dtype=float), now - self._last_step)
         self._last_step = now
@@ -147,6 +161,21 @@ class NeroTeleopNode(Node):
         msg.name = list(self.spec.joints)
         msg.position = safe.tolist()
         self._pub.publish(msg)
+
+    def _report_metrics(self) -> None:
+        now = time.monotonic()
+        elapsed = now - self._metrics_since
+        if elapsed < 5.0:
+            return
+        self.get_logger().info(
+            f"Nero IK side={self.side} solve_hz={len(self._solve_ms) / elapsed:.1f} "
+            f"solve_p95_ms={np.percentile(self._solve_ms, 95):.1f} "
+            f"input_age_p95_ms={np.percentile(self._input_age_ms, 95):.1f} "
+            f"failed={self._failed_solves} workspace_clips={self._workspace_clips}")
+        self._metrics_since = now
+        self._solve_ms.clear()
+        self._input_age_ms.clear()
+        self._failed_solves = self._workspace_clips = 0
 
 
 def main() -> None:

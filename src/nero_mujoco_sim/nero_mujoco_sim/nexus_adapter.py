@@ -67,6 +67,7 @@ def launch_driver(profile, components, path: str, _dry_run: bool):
         "command_timeout": float(config.get("command_timeout", 0.5)),
         "homing_timeout": float(config.get("homing_timeout", 45.0)),
         "timestep": float(config.get("timestep", 0.002)),
+        "viewer_rate": float(config.get("viewer_rate", 30.0)),
     }
     if config.get("urdf_file"):
         parameters["urdf_file"] = str(config["urdf_file"])
