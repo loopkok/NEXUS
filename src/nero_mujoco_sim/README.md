@@ -3,10 +3,16 @@
 NEXUS MuJoCo driver plugin for the existing Nero dual-arm and XHand dual-hand
 URDF. The description remains in `xhand_nero_description`; the simulator
 converts that installed URDF to MJCF at startup, including the meshes, inertias,
-joint frames and contact geometry. The MuJoCo model runs position actuators with
-rigid-body dynamics and publishes measured `JointState` feedback.
-Arm servos use `kp=100`, `kv=10` at the default 2 ms step; this keeps mirrored
-left/right wrist tracking stable under the URDF's small wrist inertias.
+joint frames and contact geometry. Interactive simulation defaults to
+`simulation_mode=kinematic`: accepted final joint targets directly update MuJoCo
+`qpos`, velocities are cleared, and `mj_forward` updates link geometry. Feedback
+is the resulting simulated joint position. This matches Astral's direct joint
+visualization and removes physical position-servo settling delay.
+
+`simulation_mode=physics` remains available for rigid-body and contact tests.
+It integrates position actuators (`kp=100`, `kv=10` for arms) using `mj_step`.
+Kinematic mode does not simulate gravity, actuator response, or contact forces;
+objects will not be dynamically manipulated by directly positioned hands.
 
 The driver subscribes to the selected profile's final
 `/nexus/<instance>/components/<component>/joint_commands` topics and publishes
@@ -26,7 +32,9 @@ ros2 launch nexus_core system.launch.py profile:=nero_dual_xhand_mujoco dry_run:
 The default profile runs headless and adds a table and free pick cube. In the
 Web NEXUS tab, enable the host-desktop MuJoCo window before starting the assembly.
 Set `adapter_config.nero_mujoco.enable_viewer` to `false` in a site profile for
-headless physics tests. The simulator does not publish camera images or tactile
+headless tests. Select `adapter_config.nero_mujoco.simulation_mode` as
+`kinematic` (default) or `physics` in a site profile. The standalone launch also
+accepts `simulation_mode:=physics`. The simulator does not publish camera images or tactile
 data. Nero J2's MJCF limit is taken from the NEXUS profile because the URDF
 mount frame contains a +90 degree zero offset while the driver contract uses
 motor angles.
@@ -48,7 +56,15 @@ ROS_DOMAIN_ID=119 ROS_LOCALHOST_ONLY=1 python3 scripts/nexus_nero_sim_runtime_pr
   --profile src/nexus_core/profiles/nero_dual_xhand_mujoco.json --viewer --duration 12
 ```
 
-This phase lag includes the physical position actuator response and is not
-Quest-to-screen latency. The legacy Astral viewer directly assigns joint
-positions, whereas this simulator integrates position actuators and contact
-dynamics. See the [viewer regression report](../../docs/test_logs/2026-09-30-nero-viewer-latency/README.md).
+The phase estimate includes ROS command delivery and feedback sampling; it is
+not Quest-to-screen latency. In default kinematic mode there is no physical
+servo response. Nero simulation also defaults to zero wrist EMA smoothing;
+`pos_smoothing` / `rot_smoothing` in a component's teleop config can override
+this. Physical Nero retains the original 0.8 EMA defaults.
+
+An unreachable IK target now publishes a hold of fresh measured joints while
+fresh wrist input continues. Returning to a reachable pose resumes following
+without rearming. Input/feedback loss still disarms and triggers the mux timeout.
+The original IK core and Quest coordinate transformations remain unchanged.
+See the [direct joint regression report](../../docs/test_logs/2026-09-30-nero-kinematic-teleop/README.md)
+and the earlier [physical-mode viewer report](../../docs/test_logs/2026-09-30-nero-viewer-latency/README.md).
