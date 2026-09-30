@@ -1,0 +1,32 @@
+[INFO] [1790738119.887492761] [nexus_synthetic_quest_source]: synthetic Quest source profile=nero_dual_xhand_mujoco sha256=bc7b5a34cd066f9bdffa06cce939ef681f10149314691f50b1fe3437ac78d3fc
+[INFO] [1790738124.874633181] [nexus_synthetic_quest_source]: synthetic inputs hz=71.5 max_gap_ms=26.0
+[INFO] [1790738129.874012217] [nexus_synthetic_quest_source]: synthetic inputs hz=72.0 max_gap_ms=14.0
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_input_source.py", line 211, in main
+    rclpy.spin(node)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+    executor.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 797, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_input_source.py", line 218, in <module>
+    main()
+  File "/home/loopkok/NEXUS/scripts/nexus_sim_input_source.py", line 214, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
