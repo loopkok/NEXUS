@@ -52,7 +52,7 @@ def main():
     original_command = sim._on_command
     def command(name, msg):
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        received[name].append((time.time() - stamp) * 1000.)
+        received[name].append((time.monotonic() - origin, (time.time() - stamp) * 1000.))
         original_command(name, msg)
     sim._on_command = command
     def publish():
@@ -74,6 +74,12 @@ def main():
     worker = threading.Thread(target=spin, daemon=True)
     worker.start()
     sync_times = []
+    step_times = []
+    original_step = sim._step_physics
+    def step():
+        original_step()
+        step_times.append(time.monotonic() - origin)
+    sim._step_physics = step
     launch = sim._viewer_module.launch_passive
     class ViewerProxy:
         def __init__(self, viewer):
@@ -84,7 +90,7 @@ def main():
         def sync(self):
             started = time.monotonic()
             result = self.viewer.sync()
-            sync_times.append((time.monotonic() - started) * 1000.)
+            sync_times.append((time.monotonic() - origin, (time.monotonic() - started) * 1000.))
             return result
         def close(self):
             self.viewer.close()
@@ -103,18 +109,24 @@ def main():
         timer.cancel()
         executor.shutdown(timeout_sec=2.)
         worker.join(timeout=2.)
-    elapsed = time.monotonic() - origin
+    elapsed = step_times[-1] - step_times[0]
+    # Exclude native window creation/destruction and the first second of DDS
+    # discovery from measured stream rates and servo phase lag.
+    start, end = step_times[0] + 1., step_times[-1]
+    stream_elapsed = end - start
+    sync_durations = [dt for at, dt in sync_times if start <= at <= end]
     result = {'viewer': args.viewer, 'elapsed_s': elapsed,
               'real_time_factor': (sim.data.time - sim_origin) / elapsed,
-              'viewer_sync_hz': len(sync_times) / elapsed,
-              'viewer_sync_p95_ms': float(np.percentile(sync_times, 95)) if sync_times else 0.,
+              'physics_hz': len(step_times) / elapsed,
+              'viewer_sync_hz': len(sync_durations) / stream_elapsed,
+              'viewer_sync_p95_ms': float(np.percentile(sync_durations, 95)) if sync_durations else 0.,
               'components': {}}
     for name, observations in samples.items():
-        ages = received[name]
-        item = {'command_hz': len(ages) / elapsed, 'state_hz': len(observations) / elapsed,
+        ages = [age for at, age in received[name] if start <= at <= end]
+        observations = [(at, value) for at, value in observations if start <= at <= end]
+        item = {'command_hz': len(ages) / stream_elapsed, 'state_hz': len(observations) / stream_elapsed,
                 'command_age_p95_ms': float(np.percentile(ages, 95)) if ages else None}
         trace = np.asarray(observations)
-        trace = trace[trace[:, 0] > 2.] if len(trace) else trace
         if len(trace):
             centered = trace[:, 1] - np.mean(trace[:, 1])
             lags = np.arange(0., .601, .001)

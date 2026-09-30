@@ -45,7 +45,8 @@ def _landmarks(curl: float) -> list[tuple[float, float, float]]:
 
 class SyntheticQuestSource(Node):
     def __init__(self, profile: Profile, amplitude: float, frequency: float,
-                 image_rate: float, hand_curl: float, motion_axis: str = "y"):
+                 image_rate: float, hand_curl: float, motion_axis: str = "y",
+                 input_rate: float = 50.0):
         super().__init__("nexus_synthetic_quest_source")
         self.profile = profile
         self.amplitude = amplitude
@@ -108,7 +109,7 @@ class SyntheticQuestSource(Node):
             self.camera_publishers[camera["role"]] = self.create_publisher(
                 CompressedImage, topic, qos_profile_sensor_data)
             self.camera_frames[camera["role"]] = encoded.tobytes()
-        self.create_timer(.02, self._publish_inputs)
+        self.create_timer(1.0 / input_rate, self._publish_inputs)
         self.create_timer(1.0 / image_rate, self._publish_images)
         self.create_timer(5.0, self._log_input_rate)
 
@@ -192,15 +193,18 @@ def main():
     parser.add_argument("--frequency", type=float, default=.15)
     parser.add_argument("--motion-axis", choices=("x", "y", "z"), default="y")
     parser.add_argument("--image-rate", type=float, default=30.0)
+    parser.add_argument("--input-rate", type=float, default=50.0,
+                        help="wrist/hand stream frequency per side; Quest3 commonly supplies 72 Hz")
     parser.add_argument("--hand-curl", type=float, default=0.0,
                         help="fixed synthetic finger curl in [0, 1]")
     args = parser.parse_args()
     if (args.amplitude < 0 or args.frequency <= 0 or args.image_rate <= 0
+            or not math.isfinite(args.input_rate) or args.input_rate <= 0
             or not 0.0 <= args.hand_curl <= 1.0):
         parser.error("amplitude/rates must be positive and hand-curl must be in [0, 1]")
     rclpy.init()
     node = SyntheticQuestSource(Profile.load(args.profile), args.amplitude, args.frequency,
-                                args.image_rate, args.hand_curl, args.motion_axis)
+                                args.image_rate, args.hand_curl, args.motion_axis, args.input_rate)
     node.get_logger().info(f"synthetic Quest source profile={node.profile.profile_id} "
                            f"sha256={node.profile.digest}")
     try:
