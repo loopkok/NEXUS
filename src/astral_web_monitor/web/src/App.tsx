@@ -8,6 +8,7 @@ import type { RobotSnapshot } from './lib/robotTypes'
 import { ToastHost } from './components/ToastHost'
 import { Icon } from './components/ConsoleWidgets'
 import './console.css'
+import './macos.css'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { api } from './api/client'
 import { pushSample } from './hooks/historyStore'
@@ -50,7 +51,7 @@ export default function App() {
     <ErrorBoundary>
       <div className="console-shell">
         <ToastHost />
-        <aside className="console-sidebar">
+        <aside className="console-sidebar"><div className="window-lights" aria-hidden="true"><i /><i /><i /></div>
           <div className="brand"><span className="brand-mark"><Icon name="robot" size={25} /></span><div><h1>NEXUS</h1><span>ROBOTICS WORKSPACE</span></div></div>
           <div className="nav-caption">工作空间</div>
           <Tabs tabs={TABS} active={active} onChange={setActive} />
@@ -64,7 +65,7 @@ export default function App() {
           </div>
         </aside>
         <div className="console-workspace">
-          <header className="workspace-header"><div><span className="eyebrow">ROBOT CONTROL PLATFORM</span><h2>{TABS.find((item) => item.id === active)?.label}</h2></div>
+          <header className="workspace-header"><div><span className="eyebrow">NEXUS / ROBOTICS WORKSPACE</span><h2>{TABS.find((item) => item.id === active)?.label}<span className="header-subtitle">{({system:"机器人工作空间",teleop:"实时动作与控制",data:"记录每一次交互",training:"从数据到策略",inference:"部署与人在环",diagnostics:"运行状态与诊断"} as Record<string,string>)[active]}</span></h2></div>
             <ControlBar state={state} robot={robot} onAction={() => void api.health()} />
           </header>
           <main className="console-main">

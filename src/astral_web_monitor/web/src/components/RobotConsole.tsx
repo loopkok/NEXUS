@@ -4,8 +4,9 @@ import type { NormalisedState } from '../lib/mapUiState'
 import type { Capabilities, RobotSnapshot } from '../lib/robotTypes'
 import { api } from '../api/client'
 import { pushToast } from '../hooks/useToast'
-import { Icon, FeatureSwitch, componentLabel, stateLabel } from './ConsoleWidgets'
+import { Icon, FeatureSwitch, componentLabel } from './ConsoleWidgets'
 import { LogConsole } from './LogConsole'
+import { RobotOverview } from './RobotOverview'
 
 type ProfileItem = { instance: string; id: string; state_dim: number; sha256: string; capabilities: Capabilities }
 type Props = { section: string; state: NormalisedState | null; onSnapshot: (value: RobotSnapshot) => void }
@@ -85,6 +86,9 @@ export function RobotConsole({ section, state, onSnapshot }: Props) {
   const sim = !!chosen?.capabilities.viewer
   const controlled = active && ready && !busy && !operationRunning
   const driverIdle = ['IDLE', 'PAUSED'].includes(mode)
+  const capture = snapshot?.robot?.data_collect
+  const captureElapsed = typeof capture?.elapsed_s === 'number' ? `${capture.elapsed_s.toFixed(1)} s` : '—'
+  const captureEpisode = typeof capture?.episode_index === 'number' && capture.episode_index >= 0 ? String(capture.episode_index + 1) : '—'
 
   function selectProfile(id: string) {
     const item = profiles.find((p) => p.id === id)
@@ -129,24 +133,16 @@ export function RobotConsole({ section, state, onSnapshot }: Props) {
     <button className="btn-danger wide" disabled={!active} onClick={() => void emergencyStop()}>请求驱动急停</button>
   </section>
 
-  const status = <section className="robot-overview">
-    <div className="overview-top"><div><span className="eyebrow">CURRENT ROBOT</span><h2>{(active ? snapshot?.profile?.profile_id : chosen?.instance?.toUpperCase()) || '选择机器人'}</h2><p>{active ? '运行中的机器人配置与控制状态' : '配置驱动的机器人工作空间'}</p></div>
-      <div className="overview-state"><span className={`state-tag ${active ? 'is-online' : ''}`}><i />{stateLabel(snapshot?.launch_state)}</span><span>{active ? snapshot?.settings.dry_run ? '接口调试' : snapshot?.capabilities?.viewer ? '仿真运行' : '真机运行' : '尚未启动'}</span></div>
-    </div>
-    {snapshot?.robot?.control.fault && <p role="alert" className="notice-error">{snapshot.robot.control.fault}</p>}
-    {error && <p role="alert" className="notice-error">{error}</p>}
-    <div className="component-grid">{caps?.components.map((c) => {
-      const joint = snapshot?.robot?.joints[c.name]
-      const online = active && joint && !joint.stale
-      return <div key={c.name} className="component-item"><span className="component-icon"><Icon name={c.kind === 'arm' ? 'robot' : 'teleop'} /></span><div><strong>{componentLabel(c)}</strong><small>{c.dim} 自由度 · {c.name}</small></div><span className={`component-status ${online ? 'is-online' : ''}`}><i />{online ? '在线' : '待连接'}</span></div>
-    })}</div>
-  </section>
+  const robotName = profiles.find(p => p.id === snapshot?.profile?.profile_id)?.instance ?? chosen?.instance ?? 'NEXUS'
+  const status = <RobotOverview caps={caps} snapshot={snapshot} active={active} name={robotName.toUpperCase()} error={error} />
 
   return <div className="robot-console" style={page}>
     {status}
     {section === 'system' && <div className="system-grid">
       <section className="panel configuration-panel">
-        <div className="panel-heading"><span className="eyebrow">ROBOT SETUP</span><h2>机器人配置</h2><p>选择平台与末端，配置本次运行。</p></div>
+        <div className="panel-heading"><span className="eyebrow">CONFIGURATION</span><h2>机器人配置</h2><p>选择平台与末端，配置本次运行。</p></div>
+        {running && <div className="active-config-summary"><span className="workflow-icon"><Icon name="robot" size={25} /></span><div><strong>{robotName.toUpperCase()}</strong><small>{selected}</small></div><span className="state-tag is-online">配置已冻结</span><div className="runtime-options">{[[inputs,'遥操输入'],[cameras,'相机采集'],[recording,'数据采集'],[policy,'模型推理']].map(([enabled,label]) => <span key={String(label)} className={enabled ? 'enabled' : ''}><i />{label}</span>)}</div><div className="runtime-session"><span>任务目录</span><strong>{session}</strong></div></div>}
+        <details className={`configuration-disclosure ${running ? 'is-running' : ''}`} open={!running}><summary>查看完整运行配置<Icon name="arrow" size={15} /></summary>
         <div className="field-heading"><span>01</span><h3>选择机器人</h3><small>{profiles.length} 个可用配置</small></div>
         <div className="profile-grid">{profiles.map((p) => <button key={p.id} type="button" className={`profile-card ${p.id === selected ? 'is-selected' : ''}`} aria-label={`选择 ${p.id}`} aria-pressed={p.id === selected} disabled={running} onClick={() => selectProfile(p.id)}>
           <div className="profile-card-top"><span className="profile-symbol"><Icon name="robot" size={24} /></span><span className={`profile-type ${p.capabilities.viewer ? 'simulation' : ''}`}>{p.capabilities.viewer ? '仿真' : '机器人'}</span><span className="selection-dot" /></div>
@@ -170,24 +166,26 @@ export function RobotConsole({ section, state, onSnapshot }: Props) {
           {sim && <FeatureSwitch title="仿真可视化" description="在主机桌面打开仿真窗口" icon="system" checked={viewer} disabled={running} onChange={setViewer} />}
         </div>
         <div className="session-field"><label htmlFor="robot-session">数据任务目录</label><input id="robot-session" value={session} disabled={running} onChange={(e) => setSession(e.target.value)} /><small>本次录制与训练使用的任务名称</small></div>
+        </details>
         <div className="setup-actions"><button disabled={busy || running || !selected} onClick={() => void act(async () => { const res = await api.robotValidate(selected); if (res.ok) setValidated(selected); return res })}><Icon name="shield" size={17} />校验配置</button>
           {running ? <button className="btn-danger" disabled={busy || operationRunning || recordingActive} onClick={() => void act(api.stop)}>停止机器人系统</button> : <button className="btn-primary" disabled={busy || !selected} onClick={() => void act(() => api.nexusStart({ profile: selected, session, dry_run: dryRun, with_inputs: inputs, with_cameras: cameras, with_recording: recording, with_policy: policy, viewer, model_manifest: manifest, model, server_host: serverHost, server_port: serverPort }))}>{busy ? '处理中…' : '启动机器人系统'}<Icon name="arrow" size={18} /></button>}
-        </div><small className="validation-hint">{validated === selected ? '配置校验通过' : '启动前自动校验机器人配置与数据布局'}</small>
+        </div><small className="validation-hint">{running ? '配置在运行期间锁定，停止后可切换机器人' : validated === selected ? '配置校验通过' : '启动前自动校验机器人配置与数据布局'}</small>
         {recordingActive && <p>请先保存当前数据段，再停止机器人系统。</p>}
       </section>
       {controlPanel}
     </div>}
     {section === 'teleop' && controlPanel}
-    {section === 'data' && <section style={card}>
-      <h2 style={title}>数据采集</h2>
+    {section === 'data' && <section className="workflow-panel" style={card}>
+      <div className="workflow-heading"><span className="workflow-icon"><Icon name="data" size={24} /></span><div><span className="eyebrow">CAPTURE YOUR DEMONSTRATIONS</span><h2 style={title}>数据采集</h2></div><span className="workflow-badge">RAW / EPISODE</span></div>
+      <div className="capture-metrics"><div><span>录制状态</span><strong>{recordingState ?? '未启动'}</strong></div><div><span>当前数据段</span><strong>{captureEpisode}</strong></div><div><span>本段时长</span><strong>{captureElapsed}</strong></div></div>
       <p>状态：{snapshot?.robot?.data_collect?.state ?? '数采节点未启动'}{snapshot?.robot?.data_collect?.stale ? ' · 状态过期' : ''}</p>
-      <div style={row}><input value={task} onChange={(e) => setTask(e.target.value)} placeholder="任务描述" />
+      {active && recording && <div style={row}><input value={task} onChange={(e) => setTask(e.target.value)} placeholder="任务描述" />
         <button disabled={!active || !recording} onClick={() => void act(() => api.collectTask(task))}>设置任务</button>
         <button disabled={!active || !recording || busy || recordingActive} onClick={() => void act(() => api.collectControl('start'))}>开始录制</button>
         <button disabled={!active || !recording || busy || !recordingActive} onClick={() => void act(() => api.collectControl('stop'))}>停止并保存</button>
         <button disabled={!active || !recording || busy || recordingState !== 'RECORDING'} onClick={() => void act(() => api.collectControl('pause'))}>暂停录制</button>
         <button disabled={!active || !recording || busy || recordingState !== 'PAUSED'} onClick={() => void act(() => api.collectControl('resume'))}>继续录制</button>
-      </div>
+      </div>}
       <p>数据根目录：{snapshot?.settings.data_root ?? '启动后显示'}　任务目录：{snapshot?.settings.session ?? session}</p>
       <details><summary>数采状态与质量信息</summary><pre style={logs}>{JSON.stringify(snapshot?.robot?.data_collect ?? {}, null, 2)}</pre></details>
       <div style={row}>{(snapshot?.settings.with_cameras ? caps?.cameras ?? [] : []).map((role) => <div key={role} style={{ width: 260 }}><p>{role}</p><img style={{ width: '100%' }} src={api.videoFeedUrl(role)} alt={role} /></div>)}</div>
@@ -202,14 +200,16 @@ export function RobotConsole({ section, state, onSnapshot }: Props) {
         <label>模型布局清单 <input value={manifest} disabled={running} onChange={(e) => setManifest(e.target.value)} placeholder="机器人主机上的清单路径" /></label>
       </div>
       {section === 'inference' && <>
+        <div className="inference-identity"><span className="workflow-icon"><Icon name="inference" size={24} /></span><div><small>SELECTED MODEL</small><strong>{model === 'act' ? 'ACT' : 'π₀.₅'}</strong></div><div><small>控制权</small><strong>{snapshot?.robot?.control.mode ?? '未连接'}</strong></div></div>
         <p>推理状态：{snapshot?.robot?.infer?.state ?? '未启动'} · {snapshot?.robot?.infer?.fault || '无已报告故障'}</p>
-        <div style={row}>{[['policy', '启动策略'], ['pause', '暂停策略'], ['takeover', '人工接管'], ['release', '返回策略'], ['stop', '停止策略']].map(([verb, label]) => <button key={verb} disabled={!active || !policy || busy || operationRunning} onClick={() => void act(() => api.inferCmd(verb))}>{label}</button>)}</div>
-        <div style={row}><input value={task} onChange={(e) => setTask(e.target.value)} placeholder="推理任务" /><button disabled={!active || !policy} onClick={() => void act(() => api.inferTask(task))}>设置推理任务</button></div>
+        {active && policy ? <><div style={row}>{[['policy', '启动策略'], ['pause', '暂停策略'], ['takeover', '人工接管'], ['release', '返回策略'], ['stop', '停止策略']].map(([verb, label]) => <button key={verb} disabled={busy || operationRunning} onClick={() => void act(() => api.inferCmd(verb))}>{label}</button>)}</div>
+        <div style={row}><input value={task} onChange={(e) => setTask(e.target.value)} placeholder="推理任务" /><button onClick={() => void act(() => api.inferTask(task))}>设置推理任务</button></div></> : <p>在系统页开启模型推理并启动机器人系统后，显示策略与人在环操作。</p>}
         <small>推理使能前由服务校验状态、动作、关节顺序及相机槽位；控制权以机器人反馈为准。</small>
       </>}
     </section></details>}
-    {section === 'training' && <section style={card}>
-      <h2 style={title}>数据处理与远端训练</h2>
+    {section === 'training' && <section className="workflow-panel" style={card}>
+      <div className="workflow-heading"><span className="workflow-icon"><Icon name="training" size={24} /></span><div><span className="eyebrow">TEACH. TRAIN. DEPLOY.</span><h2 style={title}>数据处理与远端训练</h2></div><span className="workflow-badge">LEARNING PIPELINE</span></div>
+      <div className="learning-pipeline">{[['01','data','同步与处理','对齐、质检与数据导出'],['02','training','策略训练','ACT / pi0.5 · 远端 GPU'],['03','inference','模型部署','清单校验与推理服务']].map(([number,icon,label,description]) => <div key={number}><span className="pipeline-number">{number}</span><Icon name={icon} size={25} /><strong>{label}</strong><small>{description}</small></div>)}</div>
       <p>任务目录：{session} · 使用当前机器人配置的冻结布局</p>
       <div style={row}>
         <button disabled={!snapshot?.profile || recordingActive || busy} onClick={() => void act(() => api.nexusJob('sync_process', session, steps))}>同步 → 对齐与质检 → 导出</button>
@@ -223,8 +223,9 @@ export function RobotConsole({ section, state, onSnapshot }: Props) {
           {['failed', 'cancelled'].includes(job.status) && <button disabled={job.profile_sha256 !== snapshot?.profile?.profile_sha256} title="只有当前机器人布局与原作业一致时才能重新提交" onClick={() => void act(() => api.nexusJob(job.kind, job.session, steps))}>重新提交</button>}
         </div><pre style={logs}>{JSON.stringify(job.artifacts, null, 2)}</pre><pre style={logs}>{job.logs.slice(-20).join('\n')}</pre>
       </div>)}
+      {!snapshot?.jobs?.length && <div className="workflow-empty"><Icon name="training" size={25} /><div><strong>还没有训练作业</strong><small>保存演示数据后，提交数据处理或模型训练。进度、日志和产物会显示在这里。</small></div></div>}
     </section>}
-    {['teleop', 'diagnostics'].includes(section) && <section style={card}>
+    {['teleop', 'diagnostics'].includes(section) && <section className="workflow-panel" style={card}>
       <h2 style={title}>实时控制诊断</h2>
       <table style={{ width: '100%', textAlign: 'left' }}><thead><tr><th>数据流</th><th>频率</th><th>接收年龄</th></tr></thead><tbody>
         {Object.entries(snapshot?.robot?.diagnostics?.streams ?? {}).map(([name, metric]) => <tr key={name}><td>{name}</td><td>{metric.hz.toFixed(1)} Hz</td><td style={metric.age_s === null || metric.age_s > .5 ? alert : undefined}>{metric.age_s === null ? '尚未收到' : `${(metric.age_s * 1000).toFixed(1)} ms`}</td></tr>)}
@@ -234,7 +235,7 @@ export function RobotConsole({ section, state, onSnapshot }: Props) {
       <small>接收年龄表示距最近一帧的时间，不是端到端遥操延迟。IK 耗时与不可达原因查看运行日志。</small>
     </section>}
     {section === 'diagnostics' && <>
-      <section style={card}><h2 style={title}>运行记录</h2><p>运行 ID：{snapshot?.run_id ?? '尚未启动'}</p>
+      <section className="workflow-panel" style={card}><h2 style={title}>运行记录</h2><p>运行 ID：{snapshot?.run_id ?? '尚未启动'}</p>
         <a href={api.robotReportUrl()} download>导出本次测试报告（配置、版本、操作、诊断、作业及日志）</a>
       </section>
       <LogConsole state={state} />
