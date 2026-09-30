@@ -1,0 +1,10 @@
+[INFO] [1790743817.741023089] [offline_right]: Nero teleop right: IK core=nero_quest_teleop.ik_solver; profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74
+[INFO] [1790743819.974292675] [offline_right]: Nero teleop reanchored to measured joints
+[INFO] [1790743822.709397750] [offline_right]: Nero IK side=right solve_hz=27.2 solve_p95_ms=12.3 input_age_p95_ms=13.1 failed=0 workspace_clips=0 last_method=seed last_reason=
+[INFO] [1790743827.709072565] [offline_right]: Nero IK side=right solve_hz=50.0 solve_p95_ms=12.2 input_age_p95_ms=12.6 failed=0 workspace_clips=0 last_method=seed last_reason=
+[WARN] [1790743828.619844936] [offline_right]: Nero IK hold: reason=limits_or_search wrist_distance_m=0.3101229844524339 target_position_m=[-0.28997240455346524, 0.10905860816317337, 0.0792014538368577] method=global_fallback solve_ms=132.9
+[WARN] [1790743830.678267241] [offline_right]: Nero IK hold: reason=limits_or_search wrist_distance_m=0.31421596422187315 target_position_m=[-0.28997240455346524, 0.1205750180015151, 0.0792014538368577] method=global_fallback solve_ms=128.5
+[INFO] [1790743832.758845513] [offline_right]: Nero IK side=right solve_hz=34.4 solve_p95_ms=125.0 input_age_p95_ms=13.4 failed=91 workspace_clips=0 last_method=global_fallback last_reason=limits_or_search
+[WARN] [1790743832.785573888] [offline_right]: Nero IK hold: reason=limits_or_search wrist_distance_m=0.32218182785456495 target_position_m=[-0.28997240455346524, 0.14057968803298088, 0.0792014538368577] method=global_fallback solve_ms=126.6
+[INFO] [1790743837.741823320] [offline_right]: Nero IK side=right solve_hz=47.8 solve_p95_ms=14.2 input_age_p95_ms=12.7 failed=1 workspace_clips=0 last_method=seed last_reason=
+[ERROR] [1790743841.467376955] [offline_right]: Nero input/feedback timeout; teleop disarmed

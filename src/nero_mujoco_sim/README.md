@@ -66,5 +66,16 @@ An unreachable IK target now publishes a hold of fresh measured joints while
 fresh wrist input continues. Returning to a reachable pose resumes following
 without rearming. Input/feedback loss still disarms and triggers the mux timeout.
 The original IK core and Quest coordinate transformations remain unchanged.
+Both physical and simulated Nero use a shared interactive adapter. It derives
+warm-start arm angle from the seed elbow, rejects targets outside the actual
+shoulder/wrist triangle, validates full-pose residuals and profile joint limits,
+and retains global fallback on a separate latest-request worker. The former
+base-origin 0.58 m sphere is disabled unless a site explicitly configures
+`workspace_radius`. Slow fallback does not block input/feedback callbacks;
+obsolete results and results from before reanchor cannot issue new commands.
+Failure warnings include `reason`, wrist distance, target position, method,
+and solve time. `limits_or_search` means no candidate was found within the
+limits/search; it is not proof that a pose is mathematically unreachable.
+See the [IK and physical-profile audit](../../docs/test_logs/2026-09-30-nero-ik-audit/README.md).
 See the [direct joint regression report](../../docs/test_logs/2026-09-30-nero-kinematic-teleop/README.md)
 and the earlier [physical-mode viewer report](../../docs/test_logs/2026-09-30-nero-viewer-latency/README.md).

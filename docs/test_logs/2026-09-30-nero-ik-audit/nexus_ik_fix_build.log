@@ -1,0 +1,15 @@
+[0.782s] WARNING:colcon.colcon_core.package_selection:Some selected packages are already built in one or more underlay workspaces:
+	'nexus_core' is in: /home/loopkok/NEXUS/install/nexus_core
+If a package in a merged underlay workspace is overridden and it installs headers, then all packages in the overlay must sort their include directories by workspace order. Failure to do so may result in build failures or undefined behavior at run time.
+If the overridden package is used by another package in any underlay, then the overriding package in the overlay must be API and ABI compatible or undefined behavior at run time may occur.
+
+If you understand the risks and want to override a package anyways, add the following to the command line:
+	--allow-overriding nexus_core
+
+This may be promoted to an error in a future release of colcon-override-check.
+Starting >>> nexus_core
+Finished <<< nexus_core [1.22s]
+Starting >>> nero_mujoco_sim
+Finished <<< nero_mujoco_sim [1.21s]
+
+Summary: 2 packages finished [3.13s]

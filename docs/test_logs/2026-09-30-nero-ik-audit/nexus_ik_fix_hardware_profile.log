@@ -1,0 +1,3 @@
+HARDWARE_PROFILE_VIRTUAL_RESULT left {"normal": {"candidate_hz": 50.0, "motion_rad": 0.04203009517871692}, "unreachable": {"candidate_hz": 47.666666666666664, "motion_rad": 0.0}, "recovery": {"candidate_hz": 50.0, "motion_rad": 0.04202956221450549}}
+HARDWARE_PROFILE_VIRTUAL_RESULT right {"normal": {"candidate_hz": 50.0, "motion_rad": 0.043151802403301964}, "unreachable": {"candidate_hz": 48.0, "motion_rad": 0.0}, "recovery": {"candidate_hz": 50.0, "motion_rad": 0.042435686843239395}}
+NO_HARDWARE_DRIVERS_STARTED

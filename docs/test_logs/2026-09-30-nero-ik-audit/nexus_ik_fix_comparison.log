@@ -1,0 +1,4 @@
+NEAR_HOME left failed 0 count 128 p95_ms 5.163124017417431 max_ms 11.162600014358759 methods {'analytic_local': 127, 'bounded_refinement': 1}
+NEAR_HOME right failed 0 count 128 p95_ms 9.765195986255991 max_ms 111.67146707884967 methods {'analytic_local': 117, 'global_fallback': 5, 'bounded_refinement': 6}
+BROAD_COMPARISON left counts {'': 48, 'limits_or_search': 6, 'reach_outer': 21, 'elbow_limit': 5} regressions [] p95_ms 108.13224771991372 max_ms 110.67837500013411
+BROAD_COMPARISON right counts {'': 43, 'reach_outer': 29, 'limits_or_search': 3, 'elbow_limit': 5} regressions [] p95_ms 109.21186713967472 max_ms 114.69671013765037
