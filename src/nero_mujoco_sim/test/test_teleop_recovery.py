@@ -46,6 +46,7 @@ class TeleopRecoveryTests(unittest.TestCase):
         target = self.node._state.copy()
         target[0] += .01
         self.node._solver.solve = lambda _: target
+        self.node._last_step = time.monotonic() - .01
         self.node._tick()
         self.assertTrue(self.node._armed)
         np.testing.assert_allclose(self.messages[-1].position, target)
@@ -84,3 +85,12 @@ class TeleopRecoveryTests(unittest.TestCase):
         n = self.node
         self.assertEqual(n.get_parameter('control_rate').value,100.)
         self.assertAlmostEqual(n._safety.max_joint_vel*100.,3.25)
+
+    def test_delayed_solution_cannot_double_default_joint_speed(self):
+        n = self.node
+        n._solver.solve = lambda _: n._state+.2
+        n._last_step = time.monotonic()-1.
+        n._tick()
+        step = np.asarray(self.messages[-1].position)-n._state
+        self.assertLessEqual(float(np.max(np.abs(step))),.065+1e-8)
+        self.assertGreater(float(np.max(np.abs(step))),0.)
