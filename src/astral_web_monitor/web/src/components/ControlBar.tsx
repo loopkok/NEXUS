@@ -46,7 +46,7 @@ export function ControlBar({ state, robot, onAction }: Props) {
     <div className="global-controls">
 <span className="toolbar-state"><i />{stateLabel(teleopState)}</span>
 
-      {state && state.uptimeS > 0 && (
+      {state && state.uptimeS > 0 && (canonicalRunning || legacyRunning) && (
         <span className="uptime">运行 {formatUptime(state.uptimeS)}</span>
       )}
 
