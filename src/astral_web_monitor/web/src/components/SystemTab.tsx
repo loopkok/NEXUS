@@ -19,6 +19,8 @@ export function SystemTab({ section, state, robot, presets, onSnapshot, onAction
     {!canonical && ['data', 'inference'].includes(section) && <details>
       <summary>旧版数采与推理控制</summary><MonitorTab state={state} />
     </details>}
-    {section === 'diagnostics' && !canonical && <HealthPanel state={state} />}
+    {section === 'diagnostics' && !canonical && <details>
+      <summary>旧版话题诊断</summary><HealthPanel state={state} />
+    </details>}
   </>
 }
