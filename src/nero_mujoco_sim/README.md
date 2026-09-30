@@ -60,7 +60,10 @@ The phase estimate includes ROS command delivery and feedback sampling; it is
 not Quest-to-screen latency. In default kinematic mode there is no physical
 servo response. Nero simulation also defaults to zero wrist EMA smoothing;
 `pos_smoothing` / `rot_smoothing` in a component's teleop config can override
-this. Physical Nero retains the original 0.8 EMA defaults.
+this. Physical Nero retains the original 0.8 EMA defaults. Both Nero and
+Astral arm teleop now default to 100 Hz (10 ms); at this rate the 0.8 EMA
+low-frequency delay is about 40 ms. This is a configured control frequency,
+not a guarantee of 100 distinct Quest samples or completed IK solves per second.
 
 An unreachable IK target now publishes a hold of fresh measured joints while
 fresh wrist input continues. Returning to a reachable pose resumes following
