@@ -63,3 +63,19 @@ class TeleopRecoveryTests(unittest.TestCase):
         self.node._solver.solve = failed_solve
         self.node._tick()
         self.assertFalse(self.messages)
+
+    def test_pre_reanchor_worker_result_is_discarded(self):
+        n = self.node
+        n._worker.take = lambda: (n._generation-1, n._anchor,
+                                  n._state+.1, {}, time.monotonic(), 1.)
+        n._tick()
+        np.testing.assert_allclose(self.messages[-1].position, n._state)
+
+    def test_worker_exception_disarms_without_refreshing_candidate(self):
+        n = self.node
+        n._worker.take = lambda: (n._generation, n._anchor, None,
+                                  {'reason': 'solver_exception', 'detail': 'test'},
+                                  time.monotonic(), 1.)
+        n._tick()
+        self.assertFalse(n._armed)
+        self.assertFalse(self.messages)

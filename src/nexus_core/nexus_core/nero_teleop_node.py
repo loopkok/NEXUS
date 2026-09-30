@@ -8,6 +8,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
@@ -169,6 +170,10 @@ class NeroTeleopNode(Node):
         self._failed_solves += int(solved is None)
         self._last_ik_report = report
         self._report_metrics()
+        if report.get('reason') == 'solver_exception':
+            self._armed = False
+            self.get_logger().error(f"Nero IK worker failed; teleop disarmed: {report.get('detail')}")
+            return
         error = self._solver.residual(solved_target, target)
         obsolete = (now-finished > .1 or np.linalg.norm(error[:3]) > .02
                     or np.linalg.norm(error[3:]) > .1)
@@ -230,6 +235,9 @@ def main() -> None:
     node = NeroTeleopNode()
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
