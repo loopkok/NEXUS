@@ -11,6 +11,7 @@ def generate_launch_description():
         DeclareLaunchArgument("profile_file", description="Absolute NEXUS profile JSON path"),
         DeclareLaunchArgument("enable_viewer", default_value="true"),
         DeclareLaunchArgument("realtime", default_value="true"),
+        DeclareLaunchArgument("simulation_mode", default_value="kinematic"),
         Node(
             package="nero_mujoco_sim",
             executable="nero_mujoco_sim_node",
@@ -20,6 +21,7 @@ def generate_launch_description():
                 "profile_file": LaunchConfiguration("profile_file"),
                 "enable_viewer": LaunchConfiguration("enable_viewer"),
                 "realtime": LaunchConfiguration("realtime"),
+                "simulation_mode": LaunchConfiguration("simulation_mode"),
             }],
         ),
     ])

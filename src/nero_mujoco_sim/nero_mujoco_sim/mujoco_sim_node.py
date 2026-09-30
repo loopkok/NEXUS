@@ -42,6 +42,10 @@ class NeroMujocoSimNode(Node):
         self.declare_parameter("urdf_file", "")
         self.declare_parameter("enable_viewer", True)
         self.declare_parameter("realtime", True)
+        self.declare_parameter("simulation_mode", "kinematic")
+        self._simulation_mode = str(self.get_parameter("simulation_mode").value)
+        if self._simulation_mode not in ("kinematic", "physics"):
+            raise ValueError("simulation_mode must be kinematic or physics")
         self.declare_parameter("state_rate", 100.0)
         self.declare_parameter("command_timeout", 0.5)
         self.declare_parameter("homing_timeout", 45.0)
@@ -286,7 +290,18 @@ class NeroMujocoSimNode(Node):
                 self._targets[component] = self._state(component)
             for actuator_id, target in zip(actuator_ids, self._targets[component]):
                 self.data.ctrl[actuator_id] = target
-        self._mujoco.mj_step(self.model, self.data)
+        if self._simulation_mode == "kinematic":
+            # Interactive teleop follows the accepted joint targets directly,
+            # like Astral. No position-actuator settling or gravity response.
+            for component, joint_ids in self._joint_ids.items():
+                for joint_id, target in zip(joint_ids, self._targets[component]):
+                    self.data.qpos[self.model.jnt_qposadr[joint_id]] = target
+            self.data.qvel[:] = 0.0
+            self.data.qacc[:] = 0.0
+            self.data.time += float(self.model.opt.timestep)
+            self._mujoco.mj_forward(self.model, self.data)
+        else:
+            self._mujoco.mj_step(self.model, self.data)
 
     def run(self) -> None:
         viewer = None
@@ -334,7 +349,7 @@ class NeroMujocoSimNode(Node):
                     elapsed = now - report_wall
                     sim_rate = (float(self.data.time) - report_sim) / elapsed
                     self.get_logger().info(
-                        f"MuJoCo physics_hz={steps / elapsed:.1f} "
+                        f"MuJoCo mode={self._simulation_mode} physics_hz={steps / elapsed:.1f} "
                         f"real_time_factor={sim_rate:.2f} contacts={self.data.ncon} "
                         f"viewer_sync_hz={syncs / elapsed:.1f} viewer_sync_max_ms={sync_max_ms:.1f}")
                     report_wall, report_sim, steps = now, float(self.data.time), 0

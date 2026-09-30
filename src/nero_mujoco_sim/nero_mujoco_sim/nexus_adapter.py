@@ -63,6 +63,7 @@ def launch_driver(profile, components, path: str, _dry_run: bool):
         "profile_file": path,
         "enable_viewer": enable_viewer,
         "realtime": bool(config.get("realtime", True)),
+        "simulation_mode": str(config.get("simulation_mode", "kinematic")),
         "state_rate": float(config.get("state_rate", 100.0)),
         "command_timeout": float(config.get("command_timeout", 0.5)),
         "homing_timeout": float(config.get("homing_timeout", 45.0)),

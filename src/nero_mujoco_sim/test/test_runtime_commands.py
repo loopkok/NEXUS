@@ -51,6 +51,28 @@ class RuntimeCommandTests(unittest.TestCase):
         self.assertEqual(self.node._targets['left_arm'], home_target)
         self.assertIn('left_arm', self.node._homing_started)
 
+    def test_kinematic_command_matches_feedback_in_one_tick(self):
+        self.assertEqual(self.node._simulation_mode, 'kinematic')
+        msg = self.command(self.node.get_clock().now().nanoseconds)
+        self.node._on_command('left_arm', msg)
+        self.node._step_physics()
+        self.assertEqual(self.node._state('left_arm'), list(msg.position))
+        self.assertTrue((self.node.data.qvel == 0.).all())
+
+    def test_physics_mode_retains_servo_response(self):
+        self.node._simulation_mode = 'physics'
+        msg = self.command(self.node.get_clock().now().nanoseconds)
+        self.node._on_command('left_arm', msg)
+        self.node._step_physics()
+        self.assertNotAlmostEqual(self.node._state('left_arm')[0], msg.position[0], places=5)
+
+    def test_timeout_holds_instead_of_applying_unexecuted_target(self):
+        before = self.node._state('left_arm')
+        self.node._targets['left_arm'][0] = .2
+        self.node._last_commands['left_arm'] = 0.
+        self.node._step_physics()
+        self.assertEqual(self.node._state('left_arm'), before)
+
     def test_estop_ignores_subsequent_fresh_commands(self):
         self.node._estop('left_arm', None, Trigger.Response())
         before = self.node._targets['left_arm'].copy()

@@ -43,7 +43,8 @@ class NeroTeleopNode(Node):
         self._solver = IKSolver()
         self._processor = PoseProcessor(
             np.array(cfg["vr_to_arm_rot"], dtype=float).reshape(3, 3),
-            pos_smoothing=0.8, rot_smoothing=0.8,
+            pos_smoothing=float(cfg.get("pos_smoothing", 0.0 if self.spec.driver == "nero_mujoco" else 0.8)),
+            rot_smoothing=float(cfg.get("rot_smoothing", 0.0 if self.spec.driver == "nero_mujoco" else 0.8)),
             motion_scale=float(cfg["motion_scale"]), flip_pitch=False)
         self._safety = SafetyFilter(
             np.array(self.spec.lower), np.array(self.spec.upper),
@@ -68,9 +69,9 @@ class NeroTeleopNode(Node):
             _CANDIDATE_QOS)
         channel = self.spec.input_channel
         self.create_subscription(PoseStamped, f"{ns}/input/{channel}/wrist_pose",
-                                 self._on_vr, qos_profile_sensor_data)
+                                 self._on_vr, _CANDIDATE_QOS)
         self.create_subscription(JointState, self.profile.topic(self.spec.name, "joint_states"),
-                                 self._on_state, qos_profile_sensor_data)
+                                 self._on_state, _CANDIDATE_QOS)
         self.create_subscription(Bool, "/teleop/start", self._on_start, 10)
         self.create_subscription(Bool, "/teleop/disarm", self._on_disarm, 10)
         self.create_service(Trigger, "~/start", self._start_service)
@@ -149,17 +150,33 @@ class NeroTeleopNode(Node):
         self._failed_solves += int(solved is None)
         self._report_metrics()
         if solved is None:
-            self.get_logger().warning("Nero IK target has no feasible solution; no new candidate",
+            self.get_logger().warning("Nero IK target has no feasible solution; holding measured joints; retrying latest input",
                                       throttle_duration_sec=2.0)
+            # A geometrically unreachable target is not loss of the input source.
+            # Keep a fresh hold while the operator returns to reachable space.
+            # Recheck freshness after an expensive failed solve before publishing.
+            if self._feedback_is_fresh():
+                self._publish_candidate(self._state)
+                self._safety.set_initial_state(self._state, self._solver.fk(self._state)[:3, 3])
+                self._solver.sync_state(self._state, reset_branch=False)
             return
         safe, info = self._safety.filter(np.asarray(solved, dtype=float), now - self._last_step)
         self._last_step = now
         if info.get("collision"):
             return
+        if self._feedback_is_fresh():
+            self._publish_candidate(safe)
+
+    def _feedback_is_fresh(self) -> bool:
+        now = time.monotonic()
+        return (now - self._vr_time <= float(self.get_parameter("input_timeout").value)
+                and now - self._state_time <= 0.5)
+
+    def _publish_candidate(self, positions) -> None:
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = list(self.spec.joints)
-        msg.position = safe.tolist()
+        msg.position = np.asarray(positions, dtype=float).tolist()
         self._pub.publish(msg)
 
     def _report_metrics(self) -> None:
