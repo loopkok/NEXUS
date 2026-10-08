@@ -43,6 +43,7 @@ class FakeArm:
         self.mode = "js"
         self.j_commands = 0
         self.frozen_joints = set()
+        self.bad_motor_cache = False
 
     def connect(self): pass
     def disconnect(self): pass
@@ -74,6 +75,10 @@ class FakeArm:
     def get_driver_states(self, index):
         return SimpleNamespace(timestamp=time.time(), msg=SimpleNamespace(foc_status=SimpleNamespace(
             driver_enable_status=self.enabled, driver_error_status=False, collision_status=False, stall_status=False)))
+
+    def get_motor_states(self, index):
+        return SimpleNamespace(timestamp=time.time(), msg=SimpleNamespace(
+            current=float("nan") if self.bad_motor_cache else .1*index, velocity=0.0))
 
     def move_j(self, target):
         self.start, self.target = list(self.q), list(target)
@@ -188,6 +193,10 @@ class NeroHomeTests(unittest.TestCase):
             gap = max(b - a for a, b in zip(times, times[1:]))
             self.assertLess(gap, 0.5, side)
             self.assertTrue(self.drivers[side]._enabled, side)
+            snapshot = self.drivers[side]._diagnostic_snapshot()
+            self.assertGreater(snapshot["joints"][6]["observed_range_rad"], .1)
+            self.assertEqual(snapshot["motors"][6]["velocity_rad_s_sdk"], 0.0)
+            self.assertEqual(snapshot["minimal_motion_pending_joints"], [])
             print(f"home side={side} feedback_count={len(times)} max_gap_ms={gap*1000:.1f}")
         # An old hold still within the normal 0.5-s command timeout must not
         # pull the right arm away from the measured arrival position.
@@ -256,6 +265,12 @@ class NeroHomeTests(unittest.TestCase):
         self.assertEqual(snapshot["pending_joints"], [name])
         self.assertTrue(snapshot["enabled"])
         self.assertTrue(snapshot["drivers"][6]["driver_enable_status"])
+        self.assertEqual(snapshot["minimal_motion_pending_joints"], [name])
+        self.assertEqual(snapshot["joints"][6]["observed_range_rad"], 0)
+        self.assertEqual(snapshot["joints"][6]["error_reduction_rad"], 0)
+        self.assertAlmostEqual(snapshot["motors"][6]["current_a_sdk"], .7)
+        self.assertTrue(snapshot["motors"][6]["fresh"])
+        self.assertIn("minimal measured motion", future.result().message)
         self.assertFalse(fake.enabled)
 
     def test_diagnostic_service_sends_no_hardware_commands(self):
@@ -272,8 +287,22 @@ class NeroHomeTests(unittest.TestCase):
         data = json.loads(response.message)
         self.assertEqual(len(data["joints"]), 7)
         self.assertEqual(len(data["drivers"]), 7)
+        self.assertEqual(len(data["motors"]), 7)
+        self.assertAlmostEqual(data["motors"][6]["current_a_sdk"], .7)
         self.assertEqual(data["controller"]["arm_status"], 0)
         self.assertEqual((fake.j_commands, len(fake.js_commands), fake.enabled), before)
+
+    def test_bad_motor_diagnostic_cache_does_not_block_home_failure_stop(self):
+        fake, driver = self.fakes["left"], self.drivers["left"]
+        fake.frozen_joints = {6}
+        fake.bad_motor_cache = True
+        driver._home_timeout = .8
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(future.done)
+        self.assertFalse(future.result().success)
+        self.assertFalse(fake.enabled)
+        self.assertIn("non-finite", driver._last_home_diagnostic["motors"][6]["unavailable"])
+        self.assertNotIn("NaN", json.dumps(driver._last_home_diagnostic, allow_nan=False))
 
 
 if __name__ == "__main__": unittest.main()

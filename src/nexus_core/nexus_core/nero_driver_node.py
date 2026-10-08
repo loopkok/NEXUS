@@ -46,6 +46,9 @@ class NeroDriverNode(Node):
         self._home_future = None
         self._home_response = None
         self._home_target = None
+        self._home_start_q = None
+        self._home_q_min = None
+        self._home_q_max = None
         self._home_settled_since = None
         self._home_settle_reference = None
         self._home_deadline = 0.0
@@ -108,14 +111,25 @@ class NeroDriverNode(Node):
             self.profile.adapter_config("nero_can")["home_pose"][self.side])
         rows = []
         if self._last_q is not None:
-            for name, actual, goal in zip(self.spec.joints, self._last_q, target):
+            for index, (name, actual, goal) in enumerate(zip(self.spec.joints, self._last_q, target)):
                 error = abs(actual - goal)
-                rows.append({"name": name, "actual_rad": actual, "target_rad": goal,
-                             "error_rad": error, "error_deg": math.degrees(error)})
+                row = {"name": name, "actual_rad": actual, "target_rad": goal,
+                       "error_rad": error, "error_deg": math.degrees(error)}
+                if self._home_start_q is not None:
+                    start = self._home_start_q[index]
+                    row.update(start_rad=start, displacement_rad=actual-start,
+                               observed_range_rad=self._home_q_max[index]-self._home_q_min[index],
+                               error_reduction_rad=abs(start-goal)-error)
+                rows.append(row)
         snapshot = {"component": self.spec.name, "enabled": self._enabled,
                     "homing": self._homing, "feedback_age_s": time.monotonic() - self._last_state,
                     "tolerance_rad": 0.05, "joints": rows,
-                    "pending_joints": [row["name"] for row in rows if row["error_rad"] >= 0.05]}
+                    "pending_joints": [row["name"] for row in rows if row["error_rad"] >= 0.05],
+                    # This describes observed motion, not a diagnosis of a
+                    # motor, brake, payload or controller fault.
+                    "minimal_motion_pending_joints": [row["name"] for row in rows
+                        if row["error_rad"] >= 0.05 and "observed_range_rad" in row
+                        and row["observed_range_rad"] <= 0.002]}
         if self._robot is None:
             return snapshot
         try:
@@ -141,6 +155,26 @@ class NeroDriverNode(Node):
                        ("driver_enable_status", "driver_error_status", "collision_status", "stall_status")}})
             except Exception as exc:
                 snapshot["drivers"].append({"name": name, "unavailable": str(exc)})
+        snapshot["motors"] = []
+        for index, name in enumerate(self.spec.joints, 1):
+            try:
+                record = self._robot.get_motor_states(index)
+                if record is None:
+                    snapshot["motors"].append({"name": name, "available": False})
+                    continue
+                age = time.time() - float(record.timestamp)
+                current, velocity = float(record.msg.current), float(record.msg.velocity)
+                if not all(math.isfinite(value) for value in (age, current, velocity)):
+                    raise ValueError("non-finite motor cache value")
+                snapshot["motors"].append({
+                    "name": name, "feedback_age_s": age, "fresh": -0.1 <= age < 0.5,
+                    "current_a_sdk": current, "velocity_rad_s_sdk": velocity})
+            except Exception as exc:
+                snapshot["motors"].append({"name": name, "unavailable": str(exc)})
+        # Firmware <=1.10 has version-dependent current signs and invalid
+        # velocity feedback. Never infer joint motion or torque from these
+        # values; use the measured joint position trace above for motion.
+        snapshot["motor_feedback_note"] = "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"
         return snapshot
 
     def _diagnostics(self, _request, response):
@@ -188,6 +222,9 @@ class NeroDriverNode(Node):
             return self._response(response, True, "dry-run home pose set")
         self._homing = True
         self._home_target = target
+        self._home_start_q = self._last_q
+        self._home_q_min = list(self._last_q)
+        self._home_q_max = list(self._last_q)
         self._home_settled_since = None
         self._home_settle_reference = None
         self._home_deadline = time.monotonic() + self._home_timeout
@@ -220,6 +257,9 @@ class NeroDriverNode(Node):
                 for row in self._last_home_diagnostic["joints"] if row["error_rad"] >= 0.05)
             if pending:
                 reason += f"; pending joints [{pending}]"
+            minimal_motion = self._last_home_diagnostic["minimal_motion_pending_joints"]
+            if minimal_motion:
+                reason += f"; minimal measured motion during home: {minimal_motion} (cause undetermined)"
             self.get_logger().error("Nero home diagnostic before stop: " + json.dumps(
                 self._last_home_diagnostic, ensure_ascii=False))
         with self._lock:
@@ -323,6 +363,9 @@ class NeroDriverNode(Node):
             return
         self._last_q = tuple(values)
         self._last_state = time.monotonic()
+        if self._homing:
+            self._home_q_min = [min(a, b) for a, b in zip(self._home_q_min, values)]
+            self._home_q_max = [max(a, b) for a, b in zip(self._home_q_max, values)]
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = list(self.spec.joints)
