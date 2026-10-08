@@ -1,0 +1,106 @@
+/home/loopkok/NEXUS/build/nexus_core/nexus_core/nero_driver_node.py
+/home/loopkok/NEXUS/build/xhand_retargeting/xhand_retargeting/xhand_dex_retargeting_node.py
+test_estop_interrupts_pending_home (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791432696.751885260] [test_nero_left]: Nero driver left profile_sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 dry_run=False
+[INFO] [1791432696.757015885] [test_nero_right]: Nero driver right profile_sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 dry_run=False
+[INFO] [1791432696.764850727] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432696.774067848] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432697.020165133] [test_nero_right]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432697.021914613] [test_nero_left]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[ERROR] [1791432697.028152221] [test_nero_right]: Nero home failed: emergency stop; motors disabled
+[ERROR] [1791432697.275569536] [test_nero_left]: Nero home failed: emergency stop; motors disabled
+ok
+test_right_home_over_five_seconds_no_feedback_gap_or_recoil (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791432697.506947657] [test_nero_left]: Nero driver left profile_sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 dry_run=False
+[INFO] [1791432697.514358522] [test_nero_right]: Nero driver right profile_sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 dry_run=False
+[INFO] [1791432697.525387209] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432697.533893254] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432697.587846534] [test_nero_left]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432697.589438462] [test_nero_right]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432698.040212892] [test_nero_left]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+[INFO] [1791432705.821252986] [test_nero_right]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+ok
+test_stale_sdk_cache_cannot_complete_home (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791432706.105033572] [test_nero_left]: Nero driver left profile_sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 dry_run=False
+[INFO] [1791432706.112786511] [test_nero_right]: Nero driver right profile_sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 dry_run=False
+[INFO] [1791432706.135193948] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432706.143264296] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432706.198806809] [test_nero_left]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432706.199701419] [test_nero_right]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[WARN] [1791432706.215002536] [test_nero_right]: Stale Nero SDK feedback rejected
+[INFO] [1791432706.608400562] [test_nero_left]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+[ERROR] [1791432706.673558075] [test_nero_right]: Nero home failed: measured feedback stale during home; motors disabled
+ok
+test_unreachable_home_fails_and_never_returns_idle (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791432706.757706325] [test_nero_left]: Nero driver left profile_sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 dry_run=False
+[INFO] [1791432706.765470648] [test_nero_right]: Nero driver right profile_sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 dry_run=False
+[INFO] [1791432706.776815367] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432706.788406470] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=52e70f29774e6a35f73ed2e599bb1f81cd2c0757ecc71b5050a3c555d018fe06 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432707.296731586] [test_nero_left]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432707.302784278] [test_nero_right]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=0.8s
+[INFO] [1791432707.877456632] [test_nero_left]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+[ERROR] [1791432708.299941364] [test_nero_right]: Nero home failed: timeout after 0.8s; max_joint_error=0.1456 rad actual=[0.5505681967444253, 1.426568196744425, 1.1025681967444252, 1.456568196744425, -2.536431803255575, 0.4595681967444252, -0.01743180325557479] target=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163]; motors disabled
+ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 11.717s
+
+OK
+home side=left feedback_count=165 max_gap_ms=80.6
+home side=right feedback_count=165 max_gap_ms=77.3
+test_live_runtime_error_is_not_hidden (test_xhand_bridge_ros.BridgeShutdownTests) ... ok
+test_shutdown_context_error_is_handled (test_xhand_bridge_ros.BridgeShutdownTests) ... ok
+test_feedback_stays_ready_under_candidate_load (test_xhand_bridge_ros.XHandBridgeTests) ... [INFO] [1791432708.969920373] [nexus_joint_bridge]: joint bridge xhand component=left_ee
+[INFO] [1791432708.981531873] [astral_web_monitor]: astral_web_monitor ready (read-only subs + pause/resume pubs)
+ok
+test_invalid_feedback_never_refreshes_ready (test_xhand_bridge_ros.XHandBridgeTests) ... [INFO] [1791432712.311025407] [nexus_joint_bridge]: joint bridge xhand component=left_ee
+[INFO] [1791432712.319400463] [astral_web_monitor]: astral_web_monitor ready (read-only subs + pause/resume pubs)
+[ERROR] [1791432712.630632991] [nexus_joint_bridge]: XHand left_ee: measured state timestamp invalid/stale (age=2.002s)
+ok
+test_reordered_measured_state_and_command_qos_gate (test_xhand_bridge_ros.XHandBridgeTests) ... [INFO] [1791432713.089808886] [nexus_joint_bridge]: joint bridge xhand component=left_ee
+[INFO] [1791432713.098027858] [astral_web_monitor]: astral_web_monitor ready (read-only subs + pause/resume pubs)
+ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 5.376s
+
+OK
+XHand synthetic feedback count=283 candidates=208 max_gap_ms=11.5
+test_best_effort_native_feedback_reaches_both_latency_callbacks (test_feedback_qos_ros.HandFeedbackQoSTests) ... [INFO] [1791432715.759868146] [xhand_dex_retargeting_node]: Teleop mode: CLENCH-TO-START
+[INFO] [1791432715.762104466] [xhand_dex_retargeting_node]: XHand Dex Retargeting Node started, topic: hand_landmarks
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.053s
+
+OK
+test_bad_order_and_stale_command (test_contract.ArbiterTests) ... ok
+test_estop_latched (test_contract.ArbiterTests) ... ok
+test_homing_suppresses_final_output_and_idle_reseeds_measured_hold (test_contract.ArbiterTests) ... ok
+test_idle_policy_heartbeat_does_not_clear_teleop_safety_pause (test_contract.ArbiterTests) ... ok
+test_legacy_lerobot_mapping_and_original_preservation (test_contract.ArbiterTests) ... ok
+test_legacy_raw_hdf5_import (test_contract.ArbiterTests) ... ok
+test_single_source_and_takeover_hold (test_contract.ArbiterTests) ... ok
+test_stale_feedback_suppresses_driver_output (test_contract.ArbiterTests) ... ok
+test_astral_gripper_limits_and_board_ip_environment (test_contract.ProfileTests) ... ok
+test_bad_profile_fields (test_contract.ProfileTests) ... ok
+test_bad_quest_wrist_side_map_is_rejected (test_contract.ProfileTests) ... ok
+test_builtins_and_schema_roundtrip (test_contract.ProfileTests) ... ok
+test_external_plugins_enable_new_robot_and_effector_without_core_switches (test_contract.ProfileTests) ... ok
+test_manifest_gate (test_contract.ProfileTests) ... ok
+test_nero_quest_maps_each_side_once_and_ik_rotation_is_identity (test_contract.ProfileTests) ... ok
+test_profile_is_a_composition_not_a_robot_switch (test_contract.ProfileTests) ... ok
+test_schema_v2_rejects_robot_selector_and_v1_metadata_stays_readable (test_contract.ProfileTests) ... ok
+test_astral_presets_apply_to_renamed_components_at_100hz (test_contract.TeleopLaunchRateTests) ... ok
+test_nero_sim_and_physical_launch_at_100hz (test_contract.TeleopLaunchRateTests) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.519s
+
+OK
+Internal ctest changing into directory: /home/loopkok/NEXUS/build/xhand_control_ros2
+Test project /home/loopkok/NEXUS/build/xhand_control_ros2
+    Start 1: xhand_feedback_validation
+1/2 Test #1: xhand_feedback_validation ........   Passed    0.00 sec
+    Start 2: xhand_command_packet
+2/2 Test #2: xhand_command_packet .............   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.01 sec

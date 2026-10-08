@@ -29,6 +29,12 @@
 
 XHand 合成反馈负载测试收到 283 帧反馈、208 个候选命令，最大反馈间隔 11.5 ms。未执行真实手运动或复现硬件参数错误。
 
+## 正式目录部署复核
+
+修复代码提交 `1326a141edd6da6425c6086e9f577bd932d45069` 已从本地推送 GitHub，再由主机快进拉取。主机 `/home/loopkok/NEXUS` 完成 `nexus_core`、`xhand_retargeting`、`xhand_control_ros2` 三包编译，并通过正式安装目录加载驱动及重定向模块重新执行全部 31 项隔离检查。记录见 [deployment_build.log](deployment_build.log) 和 [deployment_tests.log](deployment_tests.log)。编译仅有已有 setuptools 配置命名弃用警告，无编译失败。后续归档提交仅补充本报告和日志。
+
+正式目录复核仍使用 FakeArm 和隔离话题，不打开真实驱动设备；用户原有真机进程未重启，仍需用户重新启动机器人会话以加载修复。
+
 ## 复现命令
 
 以下命令在主机更新代码并编译后运行，只执行上述隔离测试：

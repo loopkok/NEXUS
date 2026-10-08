@@ -1,0 +1,17 @@
+Starting >>> nexus_core
+Starting >>> xhand_control_ros2
+Starting >>> xhand_retargeting
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'script-dir' will not be supported in future versions. Please use the underscore name 'script_dir' instead
+  warnings.warn(
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'install-scripts' will not be supported in future versions. Please use the underscore name 'install_scripts' instead
+  warnings.warn(
+Finished <<< nexus_core [1.33s]
+--- stderr: xhand_retargeting
+/usr/lib/python3/dist-packages/setuptools/dist.py:723: UserWarning: Usage of dash-separated 'script-dir' will not be supported in future versions. Please use the underscore name 'script_dir' instead
+  warnings.warn(
+---
+Finished <<< xhand_retargeting [1.33s]
+Finished <<< xhand_control_ros2 [11.1s]
+
+Summary: 3 packages finished [11.8s]
+  1 package had stderr output: xhand_retargeting
