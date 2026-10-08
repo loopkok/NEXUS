@@ -1,0 +1,526 @@
+test_bad_motor_diagnostic_cache_does_not_block_home_failure_stop (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447195.740858046] [test_nero_left]: Nero driver left profile_sha256=17227bd3c213fa126b0ce124334d4286a8185aa9672d56ddcdee8b2a68d2cf10 dry_run=False
+[INFO] [1791447195.746310839] [test_nero_right]: Nero driver right profile_sha256=17227bd3c213fa126b0ce124334d4286a8185aa9672d56ddcdee8b2a68d2cf10 dry_run=False
+[INFO] [1791447195.754289881] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=17227bd3c213fa126b0ce124334d4286a8185aa9672d56ddcdee8b2a68d2cf10 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447196.134742795] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=17227bd3c213fa126b0ce124334d4286a8185aa9672d56ddcdee8b2a68d2cf10 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+FAIL
+test_cached_pre_switch_j_status_cannot_send_target_even_at_home (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447196.330799280] [test_nero_left]: Nero driver left profile_sha256=2388abe9542ee57cff9cc6cfff737d92c5a5b5ecbc5589f59a86bb5852bfe761 dry_run=False
+[INFO] [1791447196.335563234] [test_nero_right]: Nero driver right profile_sha256=2388abe9542ee57cff9cc6cfff737d92c5a5b5ecbc5589f59a86bb5852bfe761 dry_run=False
+[INFO] [1791447196.342334838] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=2388abe9542ee57cff9cc6cfff737d92c5a5b5ecbc5589f59a86bb5852bfe761 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447196.706817184] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=2388abe9542ee57cff9cc6cfff737d92c5a5b5ecbc5589f59a86bb5852bfe761 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+FAIL
+test_controller_fault_before_target_is_rejected (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447196.961878184] [test_nero_left]: Nero driver left profile_sha256=5ef5000f7fa3121132be9fc6a9afcfb530d7d4bb06000715ff53a1b742857691 dry_run=False
+[INFO] [1791447196.969678872] [test_nero_right]: Nero driver right profile_sha256=5ef5000f7fa3121132be9fc6a9afcfb530d7d4bb06000715ff53a1b742857691 dry_run=False
+[INFO] [1791447196.980867460] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=5ef5000f7fa3121132be9fc6a9afcfb530d7d4bb06000715ff53a1b742857691 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447197.346919314] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=5ef5000f7fa3121132be9fc6a9afcfb530d7d4bb06000715ff53a1b742857691 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+FAIL
+test_diagnostic_service_sends_no_hardware_commands (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447197.544919029] [test_nero_left]: Nero driver left profile_sha256=40bce78fa1a5cd10260695dbb75e57c015a0b9cdfb200d414e0394c6c205b227 dry_run=False
+[INFO] [1791447197.550613190] [test_nero_right]: Nero driver right profile_sha256=40bce78fa1a5cd10260695dbb75e57c015a0b9cdfb200d414e0394c6c205b227 dry_run=False
+[INFO] [1791447197.560741358] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=40bce78fa1a5cd10260695dbb75e57c015a0b9cdfb200d414e0394c6c205b227 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+ok
+test_estop_during_mode_wait_prevents_later_target (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447198.127009502] [test_nero_left]: Nero driver left profile_sha256=70e40a305a38e7cdcfdae6c979d9727d9469151a0479e92bff03f4c78d0f9b59 dry_run=False
+[INFO] [1791447198.134913532] [test_nero_right]: Nero driver right profile_sha256=70e40a305a38e7cdcfdae6c979d9727d9469151a0479e92bff03f4c78d0f9b59 dry_run=False
+[INFO] [1791447198.145964607] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=70e40a305a38e7cdcfdae6c979d9727d9469151a0479e92bff03f4c78d0f9b59 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447198.516604925] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=70e40a305a38e7cdcfdae6c979d9727d9469151a0479e92bff03f4c78d0f9b59 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 604, in _wait_for_ready_callbacks
+    context_stack.enter_context(sub.handle)
+  File "/usr/lib/python3.10/contextlib.py", line 492, in enter_context
+    result = _cm_type.__enter__(cm)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+The following exception was never retrieved: cannot use Destroyable because destruction was requested
+FAIL
+test_estop_interrupts_pending_home (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447203.746327919] [test_nero_left]: Nero driver left profile_sha256=b5ed5d03c80c1b497f7f843f5e5df67b17a5ffb88862e502d7587ad71afedcf5 dry_run=False
+[INFO] [1791447203.750967341] [test_nero_right]: Nero driver right profile_sha256=b5ed5d03c80c1b497f7f843f5e5df67b17a5ffb88862e502d7587ad71afedcf5 dry_run=False
+[INFO] [1791447203.758163831] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=b5ed5d03c80c1b497f7f843f5e5df67b17a5ffb88862e502d7587ad71afedcf5 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447204.121395294] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=b5ed5d03c80c1b497f7f843f5e5df67b17a5ffb88862e502d7587ad71afedcf5 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447204.235359063] [test_nero_left]: Nero home waiting for fresh CAN/J feedback before target; mode_timeout=1.00s target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791447204.235791305] [test_nero_right]: Nero home waiting for fresh CAN/J feedback before target; mode_timeout=1.00s target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[ERROR] [1791447204.250401916] [test_nero_right]: Nero home diagnostic before stop: {"component": "right_arm", "enabled": false, "homing": true, "feedback_age_s": 0.03644125396385789, "home_phase": "WAIT_J_MODE", "home_command_attempts": 0, "home_command_sent": false, "home_mode_feedback": null, "tolerance_rad": 0.05, "joints": [{"name": "right_joint1", "actual_rad": 0.555, "target_rad": 0.405, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": 0.555, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint2", "actual_rad": 1.4309999999999998, "target_rad": 1.281, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4309999999999998, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint3", "actual_rad": 1.107, "target_rad": 0.957, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": 1.107, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint4", "actual_rad": 1.4609999999999999, "target_rad": 1.311, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4609999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint5", "actual_rad": -2.532, "target_rad": -2.682, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": -2.532, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint6", "actual_rad": 0.46399999999999997, "target_rad": 0.314, "error_rad": 0.14999999999999997, "error_deg": 8.594366926962346, "start_rad": 0.46399999999999997, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint7", "actual_rad": -0.013000000000000012, "target_rad": -0.163, "error_rad": 0.15, "error_deg": 8.594366926962348, "start_rad": -0.013000000000000012, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}], "pending_joints": ["right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_joint7"], "minimal_motion_pending_joints": ["right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_joint7"], "controller": {"feedback_age_s": 4.76837158203125e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "right_joint1", "feedback_age_s": 6.67572021484375e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint2", "feedback_age_s": 4.76837158203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint3", "feedback_age_s": 4.291534423828125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint4", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint5", "feedback_age_s": 3.0994415283203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint6", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint7", "feedback_age_s": 2.86102294921875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "right_joint1", "feedback_age_s": 4.5299530029296875e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint2", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint3", "feedback_age_s": 2.6226043701171875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint4", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint5", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint6", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint7", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[ERROR] [1791447204.251677026] [test_nero_left]: Nero home diagnostic before stop: {"component": "left_arm", "enabled": false, "homing": true, "feedback_age_s": 0.04363561188802123, "home_phase": "WAIT_J_MODE", "home_command_attempts": 0, "home_command_sent": false, "home_mode_feedback": null, "tolerance_rad": 0.05, "joints": [{"name": "left_joint1", "actual_rad": -0.255, "target_rad": -0.405, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": -0.255, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint2", "actual_rad": 1.4309999999999998, "target_rad": 1.281, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4309999999999998, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint3", "actual_rad": -0.8069999999999999, "target_rad": -0.957, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": -0.8069999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint4", "actual_rad": 1.4609999999999999, "target_rad": 1.311, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4609999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint5", "actual_rad": 2.532, "target_rad": 2.682, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 2.532, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint6", "actual_rad": -0.164, "target_rad": -0.314, "error_rad": 0.15, "error_deg": 8.594366926962348, "start_rad": -0.164, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint7", "actual_rad": -0.013000000000000012, "target_rad": -0.163, "error_rad": 0.15, "error_deg": 8.594366926962348, "start_rad": -0.013000000000000012, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}], "pending_joints": ["left_joint1", "left_joint2", "left_joint3", "left_joint4", "left_joint5", "left_joint6", "left_joint7"], "minimal_motion_pending_joints": ["left_joint1", "left_joint2", "left_joint3", "left_joint4", "left_joint5", "left_joint6", "left_joint7"], "controller": {"feedback_age_s": 3.814697265625e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "left_joint1", "feedback_age_s": 5.4836273193359375e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint2", "feedback_age_s": 4.5299530029296875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint3", "feedback_age_s": 4.0531158447265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint4", "feedback_age_s": 3.0994415283203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint5", "feedback_age_s": 2.86102294921875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint6", "feedback_age_s": 2.86102294921875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint7", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "left_joint1", "feedback_age_s": 3.814697265625e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint2", "feedback_age_s": 4.291534423828125e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint3", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint4", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint5", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint6", "feedback_age_s": 2.6226043701171875e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint7", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[ERROR] [1791447204.253178367] [test_nero_right]: Nero home failed: emergency stop; pending joints [right_joint1: 0.1500rad/8.59deg, right_joint2: 0.1500rad/8.59deg, right_joint3: 0.1500rad/8.59deg, right_joint4: 0.1500rad/8.59deg, right_joint5: 0.1500rad/8.59deg, right_joint6: 0.1500rad/8.59deg, right_joint7: 0.1500rad/8.59deg]; minimal measured motion during home: ['right_joint1', 'right_joint2', 'right_joint3', 'right_joint4', 'right_joint5', 'right_joint6', 'right_joint7'] (cause undetermined); motors disabled
+[ERROR] [1791447204.257530379] [test_nero_left]: Nero home failed: emergency stop; pending joints [left_joint1: 0.1500rad/8.59deg, left_joint2: 0.1500rad/8.59deg, left_joint3: 0.1500rad/8.59deg, left_joint4: 0.1500rad/8.59deg, left_joint5: 0.1500rad/8.59deg, left_joint6: 0.1500rad/8.59deg, left_joint7: 0.1500rad/8.59deg]; minimal measured motion during home: ['left_joint1', 'left_joint2', 'left_joint3', 'left_joint4', 'left_joint5', 'left_joint6', 'left_joint7'] (cause undetermined); motors disabled
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+ok
+test_mode_confirmation_precedes_single_home_target_without_feedback_gap (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447204.520370198] [test_nero_left]: Nero driver left profile_sha256=cd961c48d047ccd8b7144b292b791fdcfe54045b830b0c52a85723fe0da6793f dry_run=False
+[INFO] [1791447204.526134360] [test_nero_right]: Nero driver right profile_sha256=cd961c48d047ccd8b7144b292b791fdcfe54045b830b0c52a85723fe0da6793f dry_run=False
+[INFO] [1791447204.535003544] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=cd961c48d047ccd8b7144b292b791fdcfe54045b830b0c52a85723fe0da6793f components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447204.904593746] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=cd961c48d047ccd8b7144b292b791fdcfe54045b830b0c52a85723fe0da6793f components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 645, in _wait_for_ready_callbacks
+    entity_count += waitable.get_num_entities()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/qos_event.py", line 110, in get_num_entities
+    return NumberOfEntities(num_events=1)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+The following exception was never retrieved: cannot use Destroyable because destruction was requested
+FAIL
+test_partial_target_transmission_is_not_retried (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447210.088800058] [test_nero_left]: Nero driver left profile_sha256=4fb9d215eb76e0597149d7b66aaf0add5b609976475548bd8d4647fb431b04c1 dry_run=False
+[INFO] [1791447210.093430694] [test_nero_right]: Nero driver right profile_sha256=4fb9d215eb76e0597149d7b66aaf0add5b609976475548bd8d4647fb431b04c1 dry_run=False
+[INFO] [1791447210.100358706] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=4fb9d215eb76e0597149d7b66aaf0add5b609976475548bd8d4647fb431b04c1 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447210.464214816] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=4fb9d215eb76e0597149d7b66aaf0add5b609976475548bd8d4647fb431b04c1 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+FAIL
+test_reported_joint_seven_residual_is_not_accepted_as_home (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447210.660946495] [test_nero_left]: Nero driver left profile_sha256=9890313d5084d5106a70ad209c77490cbd499aa52a2507e622202811a768ce78 dry_run=False
+[INFO] [1791447210.665568458] [test_nero_right]: Nero driver right profile_sha256=9890313d5084d5106a70ad209c77490cbd499aa52a2507e622202811a768ce78 dry_run=False
+[INFO] [1791447210.672308951] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=9890313d5084d5106a70ad209c77490cbd499aa52a2507e622202811a768ce78 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447211.035552158] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=9890313d5084d5106a70ad209c77490cbd499aa52a2507e622202811a768ce78 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447211.082044475] [test_nero_right]: Nero home waiting for fresh CAN/J feedback before target; mode_timeout=1.00s target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791447211.084025524] [test_nero_left]: Nero home waiting for fresh CAN/J feedback before target; mode_timeout=1.00s target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=0.8s
+[INFO] [1791447211.114649800] [test_nero_left]: Nero home target submitted once after fresh CAN/J feedback: {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 4.76837158203125e-06, "after_mode_request": true, "wait_elapsed_s": 0.030817107995972037}
+[INFO] [1791447211.118957622] [test_nero_left]: Nero home progress: {"component": "left_arm", "enabled": true, "homing": true, "feedback_age_s": 0.004006509901955724, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 4.76837158203125e-06, "after_mode_request": true, "wait_elapsed_s": 0.030817107995972037}, "tolerance_rad": 0.05, "joints": [{"name": "left_joint1", "actual_rad": -0.255, "target_rad": -0.405, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": -0.255, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint2", "actual_rad": 1.4309999999999998, "target_rad": 1.281, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4309999999999998, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint3", "actual_rad": -0.8069999999999999, "target_rad": -0.957, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": -0.8069999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint4", "actual_rad": 1.4609999999999999, "target_rad": 1.311, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4609999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint5", "actual_rad": 2.532, "target_rad": 2.682, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 2.532, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint6", "actual_rad": -0.164, "target_rad": -0.314, "error_rad": 0.15, "error_deg": 8.594366926962348, "start_rad": -0.164, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint7", "actual_rad": -0.08370000000000001, "target_rad": -0.163, "error_rad": 0.0793, "error_deg": 4.543555315387428, "start_rad": -0.08370000000000001, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}], "pending_joints": ["left_joint1", "left_joint2", "left_joint3", "left_joint4", "left_joint5", "left_joint6", "left_joint7"], "minimal_motion_pending_joints": ["left_joint1", "left_joint2", "left_joint3", "left_joint4", "left_joint5", "left_joint6", "left_joint7"], "controller": {"feedback_age_s": 2.6226043701171875e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "left_joint1", "feedback_age_s": 4.0531158447265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint2", "feedback_age_s": 2.86102294921875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint3", "feedback_age_s": 1.9073486328125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint4", "feedback_age_s": 2.6226043701171875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint5", "feedback_age_s": 2.384185791015625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint6", "feedback_age_s": 1.9073486328125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint7", "feedback_age_s": 2.384185791015625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "left_joint1", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint2", "feedback_age_s": 2.1457672119140625e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint3", "feedback_age_s": 2.384185791015625e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint4", "feedback_age_s": 1.9073486328125e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint5", "feedback_age_s": 1.9073486328125e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint6", "feedback_age_s": 2.384185791015625e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint7", "feedback_age_s": 2.1457672119140625e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[INFO] [1791447211.120421166] [test_nero_right]: Nero home target submitted once after fresh CAN/J feedback: {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 3.337860107421875e-06, "after_mode_request": true, "wait_elapsed_s": 0.034987422870472074}
+[INFO] [1791447211.121622217] [test_nero_right]: Nero home progress: {"component": "right_arm", "enabled": true, "homing": true, "feedback_age_s": 0.005262046121060848, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 3.337860107421875e-06, "after_mode_request": true, "wait_elapsed_s": 0.034987422870472074}, "tolerance_rad": 0.05, "joints": [{"name": "right_joint1", "actual_rad": 0.555, "target_rad": 0.405, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": 0.555, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint2", "actual_rad": 1.4309999999999998, "target_rad": 1.281, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4309999999999998, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint3", "actual_rad": 1.107, "target_rad": 0.957, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": 1.107, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint4", "actual_rad": 1.4609999999999999, "target_rad": 1.311, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4609999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint5", "actual_rad": -2.532, "target_rad": -2.682, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": -2.532, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint6", "actual_rad": 0.46399999999999997, "target_rad": 0.314, "error_rad": 0.14999999999999997, "error_deg": 8.594366926962346, "start_rad": 0.46399999999999997, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint7", "actual_rad": -0.013000000000000012, "target_rad": -0.163, "error_rad": 0.15, "error_deg": 8.594366926962348, "start_rad": -0.013000000000000012, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}], "pending_joints": ["right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_joint7"], "minimal_motion_pending_joints": ["right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_joint7"], "controller": {"feedback_age_s": 4.0531158447265625e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "right_joint1", "feedback_age_s": 6.198883056640625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint2", "feedback_age_s": 4.291534423828125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint3", "feedback_age_s": 3.5762786865234375e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint4", "feedback_age_s": 3.0994415283203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint5", "feedback_age_s": 3.0994415283203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint6", "feedback_age_s": 2.86102294921875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint7", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "right_joint1", "feedback_age_s": 3.814697265625e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint2", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint3", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint4", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint5", "feedback_age_s": 2.6226043701171875e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint6", "feedback_age_s": 2.384185791015625e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint7", "feedback_age_s": 2.384185791015625e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[INFO] [1791447211.520336798] [test_nero_right]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+[ERROR] [1791447211.920802457] [test_nero_left]: Nero home diagnostic before stop: {"component": "left_arm", "enabled": true, "homing": true, "feedback_age_s": 0.00030131195671856403, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 4.76837158203125e-06, "after_mode_request": true, "wait_elapsed_s": 0.030817107995972037}, "tolerance_rad": 0.05, "joints": [{"name": "left_joint1", "actual_rad": -0.405, "target_rad": -0.405, "error_rad": 0.0, "error_deg": 0.0, "start_rad": -0.255, "displacement_rad": -0.15000000000000002, "observed_range_rad": 0.15000000000000002, "error_reduction_rad": 0.15000000000000002}, {"name": "left_joint2", "actual_rad": 1.281, "target_rad": 1.281, "error_rad": 0.0, "error_deg": 0.0, "start_rad": 1.4309999999999998, "displacement_rad": -0.1499999999999999, "observed_range_rad": 0.1499999999999999, "error_reduction_rad": 0.1499999999999999}, {"name": "left_joint3", "actual_rad": -0.957, "target_rad": -0.957, "error_rad": 0.0, "error_deg": 0.0, "start_rad": -0.8069999999999999, "displacement_rad": -0.15000000000000002, "observed_range_rad": 0.15000000000000002, "error_reduction_rad": 0.15000000000000002}, {"name": "left_joint4", "actual_rad": 1.311, "target_rad": 1.311, "error_rad": 0.0, "error_deg": 0.0, "start_rad": 1.4609999999999999, "displacement_rad": -0.1499999999999999, "observed_range_rad": 0.1499999999999999, "error_reduction_rad": 0.1499999999999999}, {"name": "left_joint5", "actual_rad": 2.682, "target_rad": 2.682, "error_rad": 0.0, "error_deg": 0.0, "start_rad": 2.532, "displacement_rad": 0.1499999999999999, "observed_range_rad": 0.1499999999999999, "error_reduction_rad": 0.1499999999999999}, {"name": "left_joint6", "actual_rad": -0.314, "target_rad": -0.314, "error_rad": 0.0, "error_deg": 0.0, "start_rad": -0.164, "displacement_rad": -0.15, "observed_range_rad": 0.15, "error_reduction_rad": 0.15}, {"name": "left_joint7", "actual_rad": -0.08370000000000001, "target_rad": -0.163, "error_rad": 0.0793, "error_deg": 4.543555315387428, "start_rad": -0.08370000000000001, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}], "pending_joints": ["left_joint7"], "minimal_motion_pending_joints": ["left_joint7"], "controller": {"feedback_age_s": 5.0067901611328125e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "left_joint1", "feedback_age_s": 5.4836273193359375e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint2", "feedback_age_s": 4.76837158203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint3", "feedback_age_s": 3.814697265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint4", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint5", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint6", "feedback_age_s": 2.86102294921875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint7", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "left_joint1", "feedback_age_s": 3.814697265625e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint2", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint3", "feedback_age_s": 3.814697265625e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint4", "feedback_age_s": 2.384185791015625e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint5", "feedback_age_s": 2.384185791015625e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint6", "feedback_age_s": 2.6226043701171875e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint7", "feedback_age_s": 4.0531158447265625e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[ERROR] [1791447211.921810676] [test_nero_left]: Nero home failed: timeout after 0.8s; max_joint_error=0.0793 rad actual=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.08370000000000001] target=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163]; pending joints [left_joint7: 0.0793rad/4.54deg]; minimal measured motion during home: ['left_joint7'] (cause undetermined); motors disabled
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 645, in _wait_for_ready_callbacks
+    entity_count += waitable.get_num_entities()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/qos_event.py", line 110, in get_num_entities
+    return NumberOfEntities(num_events=1)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/waitable.py", line 26, in __init__
+    def __init__(
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+The following exception was never retrieved: cannot use Destroyable because destruction was requested
+ok
+test_right_home_over_five_seconds_no_feedback_gap_or_recoil (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447212.134985203] [test_nero_left]: Nero driver left profile_sha256=a85bf9cab2a65298f73a13fd8d4bed6b11cdcbfdc108912273b4f8df60d1387f dry_run=False
+[INFO] [1791447212.139775246] [test_nero_right]: Nero driver right profile_sha256=a85bf9cab2a65298f73a13fd8d4bed6b11cdcbfdc108912273b4f8df60d1387f dry_run=False
+[INFO] [1791447212.146744719] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=a85bf9cab2a65298f73a13fd8d4bed6b11cdcbfdc108912273b4f8df60d1387f components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447212.520651085] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=a85bf9cab2a65298f73a13fd8d4bed6b11cdcbfdc108912273b4f8df60d1387f components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447212.646301966] [test_nero_right]: Nero home waiting for fresh CAN/J feedback before target; mode_timeout=1.00s target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791447212.647044878] [test_nero_left]: Nero home waiting for fresh CAN/J feedback before target; mode_timeout=1.00s target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791447212.689237644] [test_nero_left]: Nero home target submitted once after fresh CAN/J feedback: {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 7.62939453125e-06, "after_mode_request": true, "wait_elapsed_s": 0.04207043908536434}
+[INFO] [1791447212.696074928] [test_nero_left]: Nero home progress: {"component": "left_arm", "enabled": true, "homing": true, "feedback_age_s": 0.004540354013442993, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 7.62939453125e-06, "after_mode_request": true, "wait_elapsed_s": 0.04207043908536434}, "tolerance_rad": 0.05, "joints": [{"name": "left_joint1", "actual_rad": -0.255, "target_rad": -0.405, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": -0.255, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint2", "actual_rad": 1.4309999999999998, "target_rad": 1.281, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4309999999999998, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint3", "actual_rad": -0.8069999999999999, "target_rad": -0.957, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": -0.8069999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint4", "actual_rad": 1.4609999999999999, "target_rad": 1.311, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4609999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint5", "actual_rad": 2.532, "target_rad": 2.682, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 2.532, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint6", "actual_rad": -0.164, "target_rad": -0.314, "error_rad": 0.15, "error_deg": 8.594366926962348, "start_rad": -0.164, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "left_joint7", "actual_rad": -0.013000000000000012, "target_rad": -0.163, "error_rad": 0.15, "error_deg": 8.594366926962348, "start_rad": -0.013000000000000012, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}], "pending_joints": ["left_joint1", "left_joint2", "left_joint3", "left_joint4", "left_joint5", "left_joint6", "left_joint7"], "minimal_motion_pending_joints": ["left_joint1", "left_joint2", "left_joint3", "left_joint4", "left_joint5", "left_joint6", "left_joint7"], "controller": {"feedback_age_s": 4.291534423828125e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "left_joint1", "feedback_age_s": 7.152557373046875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint2", "feedback_age_s": 5.0067901611328125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint3", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint4", "feedback_age_s": 4.291534423828125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint5", "feedback_age_s": 4.76837158203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint6", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "left_joint7", "feedback_age_s": 4.0531158447265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "left_joint1", "feedback_age_s": 4.291534423828125e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint2", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint3", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint4", "feedback_age_s": 4.0531158447265625e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint5", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint6", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "left_joint7", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[INFO] [1791447212.697166006] [test_nero_right]: Nero home target submitted once after fresh CAN/J feedback: {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 5.7220458984375e-06, "after_mode_request": true, "wait_elapsed_s": 0.04609777685254812}
+[INFO] [1791447212.700164653] [test_nero_right]: Nero home progress: {"component": "right_arm", "enabled": true, "homing": true, "feedback_age_s": 0.007129707140848041, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 5.7220458984375e-06, "after_mode_request": true, "wait_elapsed_s": 0.04609777685254812}, "tolerance_rad": 0.05, "joints": [{"name": "right_joint1", "actual_rad": 0.555, "target_rad": 0.405, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": 0.555, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint2", "actual_rad": 1.4309999999999998, "target_rad": 1.281, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4309999999999998, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint3", "actual_rad": 1.107, "target_rad": 0.957, "error_rad": 0.15000000000000002, "error_deg": 8.59436692696235, "start_rad": 1.107, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint4", "actual_rad": 1.4609999999999999, "target_rad": 1.311, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": 1.4609999999999999, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint5", "actual_rad": -2.532, "target_rad": -2.682, "error_rad": 0.1499999999999999, "error_deg": 8.594366926962344, "start_rad": -2.532, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint6", "actual_rad": 0.46399999999999997, "target_rad": 0.314, "error_rad": 0.14999999999999997, "error_deg": 8.594366926962346, "start_rad": 0.46399999999999997, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}, {"name": "right_joint7", "actual_rad": -0.013000000000000012, "target_rad": -0.163, "error_rad": 0.15, "error_deg": 8.594366926962348, "start_rad": -0.013000000000000012, "displacement_rad": 0.0, "observed_range_rad": 0.0, "error_reduction_rad": 0.0}], "pending_joints": ["right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_joint7"], "minimal_motion_pending_joints": ["right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_joint7"], "controller": {"feedback_age_s": 4.291534423828125e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "right_joint1", "feedback_age_s": 4.76837158203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint2", "feedback_age_s": 4.5299530029296875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint3", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint4", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint5", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint6", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint7", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "right_joint1", "feedback_age_s": 4.0531158447265625e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint2", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint3", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint4", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint5", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint6", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint7", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[INFO] [1791447213.089278873] [test_nero_left]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+[INFO] [1791447214.743225030] [test_nero_right]: Nero home progress: {"component": "right_arm", "enabled": true, "homing": true, "feedback_age_s": 0.0002758360933512449, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 5.7220458984375e-06, "after_mode_request": true, "wait_elapsed_s": 0.04609777685254812}, "tolerance_rad": 0.05, "joints": [{"name": "right_joint1", "actual_rad": 0.5165772165387171, "target_rad": 0.405, "error_rad": 0.1115772165387171, "error_deg": 6.392903597485778, "start_rad": 0.555, "displacement_rad": -0.03842278346128292, "observed_range_rad": 0.03842278346128292, "error_reduction_rad": 0.03842278346128292}, {"name": "right_joint2", "actual_rad": 1.392577216538717, "target_rad": 1.281, "error_rad": 0.111577216538717, "error_deg": 6.3929035974857715, "start_rad": 1.4309999999999998, "displacement_rad": -0.03842278346128292, "observed_range_rad": 0.03842278346128292, "error_reduction_rad": 0.03842278346128292}, {"name": "right_joint3", "actual_rad": 1.068577216538717, "target_rad": 0.957, "error_rad": 0.1115772165387171, "error_deg": 6.392903597485778, "start_rad": 1.107, "displacement_rad": -0.03842278346128292, "observed_range_rad": 0.03842278346128292, "error_reduction_rad": 0.03842278346128292}, {"name": "right_joint4", "actual_rad": 1.422577216538717, "target_rad": 1.311, "error_rad": 0.111577216538717, "error_deg": 6.3929035974857715, "start_rad": 1.4609999999999999, "displacement_rad": -0.03842278346128292, "observed_range_rad": 0.03842278346128292, "error_reduction_rad": 0.03842278346128292}, {"name": "right_joint5", "actual_rad": -2.570422783461283, "target_rad": -2.682, "error_rad": 0.11157721653871677, "error_deg": 6.392903597485758, "start_rad": -2.532, "displacement_rad": -0.03842278346128314, "observed_range_rad": 0.03842278346128314, "error_reduction_rad": 0.03842278346128314}, {"name": "right_joint6", "actual_rad": 0.425577216538717, "target_rad": 0.314, "error_rad": 0.111577216538717, "error_deg": 6.3929035974857715, "start_rad": 0.46399999999999997, "displacement_rad": -0.03842278346128297, "observed_range_rad": 0.03842278346128297, "error_reduction_rad": 0.03842278346128297}, {"name": "right_joint7", "actual_rad": -0.05142278346128297, "target_rad": -0.163, "error_rad": 0.11157721653871704, "error_deg": 6.392903597485773, "start_rad": -0.013000000000000012, "displacement_rad": -0.03842278346128296, "observed_range_rad": 0.03842278346128296, "error_reduction_rad": 0.03842278346128296}], "pending_joints": ["right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_joint7"], "minimal_motion_pending_joints": [], "controller": {"feedback_age_s": 4.5299530029296875e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "right_joint1", "feedback_age_s": 5.0067901611328125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint2", "feedback_age_s": 4.291534423828125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint3", "feedback_age_s": 4.0531158447265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint4", "feedback_age_s": 4.0531158447265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint5", "feedback_age_s": 2.86102294921875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint6", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint7", "feedback_age_s": 2.6226043701171875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "right_joint1", "feedback_age_s": 4.291534423828125e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint2", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint3", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint4", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint5", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint6", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint7", "feedback_age_s": 1.5974044799804688e-05, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[INFO] [1791447216.743370232] [test_nero_right]: Nero home progress: {"component": "right_arm", "enabled": true, "homing": true, "feedback_age_s": 0.00038513285107910633, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 5.7220458984375e-06, "after_mode_request": true, "wait_elapsed_s": 0.04609777685254812}, "tolerance_rad": 0.05, "joints": [{"name": "right_joint1", "actual_rad": 0.4790781891188818, "target_rad": 0.405, "error_rad": 0.07407818911888175, "error_deg": 4.244367590483863, "start_rad": 0.555, "displacement_rad": -0.07592181088111827, "observed_range_rad": 0.07592181088111827, "error_reduction_rad": 0.07592181088111827}, {"name": "right_joint2", "actual_rad": 1.3550781891188817, "target_rad": 1.281, "error_rad": 0.07407818911888175, "error_deg": 4.244367590483863, "start_rad": 1.4309999999999998, "displacement_rad": -0.07592181088111816, "observed_range_rad": 0.07592181088111816, "error_reduction_rad": 0.07592181088111816}, {"name": "right_joint3", "actual_rad": 1.0310781891188816, "target_rad": 0.957, "error_rad": 0.07407818911888164, "error_deg": 4.244367590483857, "start_rad": 1.107, "displacement_rad": -0.07592181088111838, "observed_range_rad": 0.07592181088111838, "error_reduction_rad": 0.07592181088111838}, {"name": "right_joint4", "actual_rad": 1.3850781891188817, "target_rad": 1.311, "error_rad": 0.07407818911888175, "error_deg": 4.244367590483863, "start_rad": 1.4609999999999999, "displacement_rad": -0.07592181088111816, "observed_range_rad": 0.07592181088111816, "error_reduction_rad": 0.07592181088111816}, {"name": "right_joint5", "actual_rad": -2.6079218108811184, "target_rad": -2.682, "error_rad": 0.07407818911888153, "error_deg": 4.244367590483851, "start_rad": -2.532, "displacement_rad": -0.07592181088111838, "observed_range_rad": 0.07592181088111838, "error_reduction_rad": 0.07592181088111838}, {"name": "right_joint6", "actual_rad": 0.3880781891188817, "target_rad": 0.314, "error_rad": 0.0740781891188817, "error_deg": 4.24436759048386, "start_rad": 0.46399999999999997, "displacement_rad": -0.07592181088111827, "observed_range_rad": 0.07592181088111827, "error_reduction_rad": 0.07592181088111827}, {"name": "right_joint7", "actual_rad": -0.0889218108811183, "target_rad": -0.163, "error_rad": 0.07407818911888171, "error_deg": 4.2443675904838605, "start_rad": -0.013000000000000012, "displacement_rad": -0.07592181088111828, "observed_range_rad": 0.07592181088111828, "error_reduction_rad": 0.07592181088111828}], "pending_joints": ["right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_joint7"], "minimal_motion_pending_joints": [], "controller": {"feedback_age_s": 4.291534423828125e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "right_joint1", "feedback_age_s": 5.9604644775390625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint2", "feedback_age_s": 4.291534423828125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint3", "feedback_age_s": 3.0994415283203125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint4", "feedback_age_s": 3.814697265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint5", "feedback_age_s": 2.1457672119140625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint6", "feedback_age_s": 3.5762786865234375e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint7", "feedback_age_s": 3.814697265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "right_joint1", "feedback_age_s": 3.814697265625e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint2", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint3", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint4", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint5", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint6", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint7", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[INFO] [1791447218.743432648] [test_nero_right]: Nero home progress: {"component": "right_arm", "enabled": true, "homing": true, "feedback_age_s": 0.0004092450253665447, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 5.7220458984375e-06, "after_mode_request": true, "wait_elapsed_s": 0.04609777685254812}, "tolerance_rad": 0.05, "joints": [{"name": "right_joint1", "actual_rad": 0.44157705931691454, "target_rad": 0.405, "error_rad": 0.03657705931691452, "error_deg": 2.095711125858868, "start_rad": 0.555, "displacement_rad": -0.1134229406830855, "observed_range_rad": 0.1134229406830855, "error_reduction_rad": 0.1134229406830855}, {"name": "right_joint2", "actual_rad": 1.3175770593169145, "target_rad": 1.281, "error_rad": 0.03657705931691457, "error_deg": 2.095711125858871, "start_rad": 1.4309999999999998, "displacement_rad": -0.11342294068308534, "observed_range_rad": 0.11342294068308534, "error_reduction_rad": 0.11342294068308534}, {"name": "right_joint3", "actual_rad": 0.9935770593169145, "target_rad": 0.957, "error_rad": 0.03657705931691457, "error_deg": 2.095711125858871, "start_rad": 1.107, "displacement_rad": -0.11342294068308545, "observed_range_rad": 0.11342294068308545, "error_reduction_rad": 0.11342294068308545}, {"name": "right_joint4", "actual_rad": 1.3475770593169145, "target_rad": 1.311, "error_rad": 0.03657705931691457, "error_deg": 2.095711125858871, "start_rad": 1.4609999999999999, "displacement_rad": -0.11342294068308534, "observed_range_rad": 0.11342294068308534, "error_reduction_rad": 0.11342294068308534}, {"name": "right_joint5", "actual_rad": -2.6454229406830856, "target_rad": -2.682, "error_rad": 0.03657705931691435, "error_deg": 2.095711125858858, "start_rad": -2.532, "displacement_rad": -0.11342294068308556, "observed_range_rad": 0.11342294068308556, "error_reduction_rad": 0.11342294068308556}, {"name": "right_joint6", "actual_rad": 0.3505770593169145, "target_rad": 0.314, "error_rad": 0.03657705931691452, "error_deg": 2.095711125858868, "start_rad": 0.46399999999999997, "displacement_rad": -0.11342294068308545, "observed_range_rad": 0.11342294068308545, "error_reduction_rad": 0.11342294068308545}, {"name": "right_joint7", "actual_rad": -0.12642294068308546, "target_rad": -0.163, "error_rad": 0.036577059316914545, "error_deg": 2.095711125858869, "start_rad": -0.013000000000000012, "displacement_rad": -0.11342294068308545, "observed_range_rad": 0.11342294068308545, "error_reduction_rad": 0.11342294068308545}], "pending_joints": [], "minimal_motion_pending_joints": [], "controller": {"feedback_age_s": 4.291534423828125e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "right_joint1", "feedback_age_s": 5.7220458984375e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint2", "feedback_age_s": 4.0531158447265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint3", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint4", "feedback_age_s": 3.814697265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint5", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint6", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint7", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "right_joint1", "feedback_age_s": 3.814697265625e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint2", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint3", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint4", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint5", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint6", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint7", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[INFO] [1791447220.743368802] [test_nero_right]: Nero home progress: {"component": "right_arm", "enabled": true, "homing": true, "feedback_age_s": 0.00038936897180974483, "home_phase": "MOVING", "home_command_attempts": 1, "home_command_sent": true, "home_mode_feedback": {"ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0, "feedback_age_s": 5.7220458984375e-06, "after_mode_request": true, "wait_elapsed_s": 0.04609777685254812}, "tolerance_rad": 0.05, "joints": [{"name": "right_joint1", "actual_rad": 0.405, "target_rad": 0.405, "error_rad": 0.0, "error_deg": 0.0, "start_rad": 0.555, "displacement_rad": -0.15000000000000002, "observed_range_rad": 0.15000000000000002, "error_reduction_rad": 0.15000000000000002}, {"name": "right_joint2", "actual_rad": 1.281, "target_rad": 1.281, "error_rad": 0.0, "error_deg": 0.0, "start_rad": 1.4309999999999998, "displacement_rad": -0.1499999999999999, "observed_range_rad": 0.1499999999999999, "error_reduction_rad": 0.1499999999999999}, {"name": "right_joint3", "actual_rad": 0.957, "target_rad": 0.957, "error_rad": 0.0, "error_deg": 0.0, "start_rad": 1.107, "displacement_rad": -0.15000000000000002, "observed_range_rad": 0.15000000000000002, "error_reduction_rad": 0.15000000000000002}, {"name": "right_joint4", "actual_rad": 1.311, "target_rad": 1.311, "error_rad": 0.0, "error_deg": 0.0, "start_rad": 1.4609999999999999, "displacement_rad": -0.1499999999999999, "observed_range_rad": 0.1499999999999999, "error_reduction_rad": 0.1499999999999999}, {"name": "right_joint5", "actual_rad": -2.682, "target_rad": -2.682, "error_rad": 0.0, "error_deg": 0.0, "start_rad": -2.532, "displacement_rad": -0.1499999999999999, "observed_range_rad": 0.1499999999999999, "error_reduction_rad": 0.1499999999999999}, {"name": "right_joint6", "actual_rad": 0.314, "target_rad": 0.314, "error_rad": 0.0, "error_deg": 0.0, "start_rad": 0.46399999999999997, "displacement_rad": -0.14999999999999997, "observed_range_rad": 0.14999999999999997, "error_reduction_rad": 0.14999999999999997}, {"name": "right_joint7", "actual_rad": -0.163, "target_rad": -0.163, "error_rad": 0.0, "error_deg": 0.0, "start_rad": -0.013000000000000012, "displacement_rad": -0.15, "observed_range_rad": 0.15, "error_reduction_rad": 0.15}], "pending_joints": [], "minimal_motion_pending_joints": [], "controller": {"feedback_age_s": 9.5367431640625e-06, "ctrl_mode": 1, "arm_status": 0, "mode_feedback": 1, "motion_status": 0, "err_code": 0}, "drivers": [{"name": "right_joint1", "feedback_age_s": 4.291534423828125e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint2", "feedback_age_s": 4.0531158447265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint3", "feedback_age_s": 3.814697265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint4", "feedback_age_s": 3.814697265625e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint5", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint6", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}, {"name": "right_joint7", "feedback_age_s": 3.337860107421875e-06, "driver_enable_status": true, "driver_error_status": false, "collision_status": false, "stall_status": false}], "motors": [{"name": "right_joint1", "feedback_age_s": 4.0531158447265625e-06, "fresh": true, "current_a_sdk": 0.1, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint2", "feedback_age_s": 3.0994415283203125e-06, "fresh": true, "current_a_sdk": 0.2, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint3", "feedback_age_s": 3.337860107421875e-06, "fresh": true, "current_a_sdk": 0.30000000000000004, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint4", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.4, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint5", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.5, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint6", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.6000000000000001, "velocity_rad_s_sdk": 0.0}, {"name": "right_joint7", "feedback_age_s": 2.86102294921875e-06, "fresh": true, "current_a_sdk": 0.7000000000000001, "velocity_rad_s_sdk": 0.0}], "motor_feedback_note": "SDK cache values; firmware-dependent current sign/velocity; not calibrated torque"}
+[INFO] [1791447220.942899973] [test_nero_right]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+ok
+test_stale_sdk_cache_cannot_complete_home (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447221.654531847] [test_nero_left]: Nero driver left profile_sha256=37a4cb074292a25704d0ce77f3792cc2646dc207b2a8e37b935b3f73772888bd dry_run=False
+[INFO] [1791447221.665402109] [test_nero_right]: Nero driver right profile_sha256=37a4cb074292a25704d0ce77f3792cc2646dc207b2a8e37b935b3f73772888bd dry_run=False
+[INFO] [1791447221.678753089] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=37a4cb074292a25704d0ce77f3792cc2646dc207b2a8e37b935b3f73772888bd components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447222.046301036] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=37a4cb074292a25704d0ce77f3792cc2646dc207b2a8e37b935b3f73772888bd components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 620, in _wait_for_ready_callbacks
+    context_stack.enter_context(srv.handle)
+  File "/usr/lib/python3.10/contextlib.py", line 490, in enter_context
+    _cm_type = type(cm)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+The following exception was never retrieved: cannot use Destroyable because destruction was requested
+FAIL
+test_unconfirmed_mode_times_out_without_joint_target (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447227.232250858] [test_nero_left]: Nero driver left profile_sha256=78294842aab7bbfdd3f424e442ec9c9cc6bfc6ada29fb16e50869065e32966f6 dry_run=False
+[INFO] [1791447227.236897899] [test_nero_right]: Nero driver right profile_sha256=78294842aab7bbfdd3f424e442ec9c9cc6bfc6ada29fb16e50869065e32966f6 dry_run=False
+[INFO] [1791447227.243885836] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=78294842aab7bbfdd3f424e442ec9c9cc6bfc6ada29fb16e50869065e32966f6 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447227.607211924] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=78294842aab7bbfdd3f424e442ec9c9cc6bfc6ada29fb16e50869065e32966f6 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+FAIL
+test_unreachable_home_fails_and_never_returns_idle (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791447227.853883934] [test_nero_left]: Nero driver left profile_sha256=8c20c08f89ba2bef750ec532c4b31f043d1ceab8b4e2b3439cf02437d5bc0585 dry_run=False
+[INFO] [1791447227.859688663] [test_nero_right]: Nero driver right profile_sha256=8c20c08f89ba2bef750ec532c4b31f043d1ceab8b4e2b3439cf02437d5bc0585 dry_run=False
+[INFO] [1791447227.867551945] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=8c20c08f89ba2bef750ec532c4b31f043d1ceab8b4e2b3439cf02437d5bc0585 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791447228.233608126] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=8c20c08f89ba2bef750ec532c4b31f043d1ceab8b4e2b3439cf02437d5bc0585 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 262, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 677, in _wait_for_ready_callbacks
+    wait_set.wait(timeout_nsec)
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/driver_manager_node.py", line 266, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
+FAIL
+
+======================================================================
+FAIL: test_bad_motor_diagnostic_cache_does_not_block_home_failure_stop (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 365, in test_bad_motor_diagnostic_cache_does_not_block_home_failure_stop
+    self.assertFalse(fake.enabled)
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_cached_pre_switch_j_status_cannot_send_target_even_at_home (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 401, in test_cached_pre_switch_j_status_cannot_send_target_even_at_home
+    self.assertIn("mode confirmation timed out", future.result().message)
+AssertionError: 'mode confirmation timed out' not found in 'left_arm: no feedback'
+
+======================================================================
+FAIL: test_controller_fault_before_target_is_rejected (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 451, in test_controller_fault_before_target_is_rejected
+    self.assertIn("controller not healthy before home target", future.result().message)
+AssertionError: 'controller not healthy before home target' not found in 'left_arm: no feedback; right_arm: no feedback'
+
+======================================================================
+FAIL: test_estop_during_mode_wait_prevents_later_target (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 422, in test_estop_during_mode_wait_prevents_later_target
+    self.wait(lambda: all(d._home_phase == "WAIT_J_MODE" for d in self.drivers.values()))
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 212, in wait
+    self.fail(f"condition not reached; mode={self.control_mode} "
+AssertionError: condition not reached; mode=IDLE arm_feedback_counts={'left': 107, 'right': 107} manager_exit=None
+
+======================================================================
+FAIL: test_mode_confirmation_precedes_single_home_target_without_feedback_gap (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 373, in test_mode_confirmation_precedes_single_home_target_without_feedback_gap
+    self.wait(lambda: all(d._home_phase == "WAIT_J_MODE" for d in self.drivers.values()))
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 212, in wait
+    self.fail(f"condition not reached; mode={self.control_mode} "
+AssertionError: condition not reached; mode=IDLE arm_feedback_counts={'left': 107, 'right': 107} manager_exit=None
+
+======================================================================
+FAIL: test_partial_target_transmission_is_not_retried (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 439, in test_partial_target_transmission_is_not_retried
+    self.assertIn("no retry", future.result().message)
+AssertionError: 'no retry' not found in 'left_arm: no feedback'
+
+======================================================================
+FAIL: test_stale_sdk_cache_cannot_complete_home (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 304, in test_stale_sdk_cache_cannot_complete_home
+    self.wait(lambda: self.drivers["right"]._homing)
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 212, in wait
+    self.fail(f"condition not reached; mode={self.control_mode} "
+AssertionError: condition not reached; mode=IDLE arm_feedback_counts={'left': 107, 'right': 107} manager_exit=None
+
+======================================================================
+FAIL: test_unconfirmed_mode_times_out_without_joint_target (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 414, in test_unconfirmed_mode_times_out_without_joint_target
+    self.assertIn("no home target sent", future.result().message)
+AssertionError: 'no home target sent' not found in 'left_arm: no feedback'
+
+======================================================================
+FAIL: test_unreachable_home_fails_and_never_returns_idle (test_nero_home_ros.NeroHomeTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/nexus-home-mode.eovadH/src/nexus_core/test/test_nero_home_ros.py", line 283, in test_unreachable_home_fails_and_never_returns_idle
+    self.assertIn("max_joint_error", future.result().message)
+AssertionError: 'max_joint_error' not found in 'left_arm: no feedback; right_arm: no feedback'
+
+----------------------------------------------------------------------
+Ran 13 tests in 32.743s
+
+FAILED (failures=9)
+home side=left feedback_count=174 max_gap_ms=53.4 observed_hz=20.0 max_sdk_poll_gap_ms=52.1
+home side=right feedback_count=173 max_gap_ms=53.2 observed_hz=20.0 max_sdk_poll_gap_ms=51.7

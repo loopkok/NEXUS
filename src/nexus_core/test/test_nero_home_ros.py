@@ -7,6 +7,8 @@ import copy
 import json
 import os
 from pathlib import Path
+import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -16,7 +18,7 @@ import unittest
 from unittest.mock import patch
 
 import rclpy
-from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
@@ -26,7 +28,6 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from nexus_core.command_mux_node import CommandMuxNode
-from nexus_core.driver_manager_node import DriverManagerNode
 from nexus_core.nero_driver_node import NeroDriverNode
 from nexus_core.profile import Profile
 
@@ -142,23 +143,26 @@ class NeroHomeTests(unittest.TestCase):
                 Parameter("component", value=f"{side}_arm"), Parameter("side", value=side)],
                 cli_args=["--ros-args", "-r", f"__node:=test_nero_{side}"])
         self.mux = CommandMuxNode()
-        self.manager = DriverManagerNode()
         self.probe = Node("nero_home_test_probe")
         self.feedback = {side: [] for side in self.fakes}
         self.modes = []
+        self.control_mode = "UNKNOWN"
         self.subs, self.hand_pubs, self.services = [], [], []
         for side in self.fakes:
             self.subs.append(self.probe.create_subscription(JointState, self.profile.topic(f"{side}_arm", "joint_states"),
                 lambda msg, s=side: self.feedback[s].append((time.monotonic(), list(msg.position))), qos_profile_sensor_data))
         self.subs.append(self.probe.create_subscription(String, self.profile.namespace + "/control/state",
-            lambda msg: self.modes.append(json.loads(msg.data)["mode"]),
+            self.observe_control,
             QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)))
         for spec in [c for c in self.profile.components if c.kind == "hand"]:
             self.hand_pubs.append((self.probe.create_publisher(JointState, self.profile.topic(spec.name, "joint_states"), qos_profile_sensor_data), spec))
-            self.services.append(self.probe.create_service(Trigger, f"{self.profile.namespace}/drivers/{spec.name}/estop",
-                lambda req, res: self.hand_estop(res)))
+            for operation in ("ready", "estop"):
+                self.services.append(self.probe.create_service(Trigger,
+                    f"{self.profile.namespace}/drivers/{spec.name}/{operation}",
+                    lambda req, res: self.hand_estop(res)))
         self.probe.create_timer(0.02, self.publish_hands)
         self.home_client = self.probe.create_client(Trigger, self.profile.namespace + "/drivers/home")
+        self.ready_client = self.probe.create_client(Trigger, self.profile.namespace + "/drivers/ready")
         self.stop_client = self.probe.create_client(Trigger, self.profile.namespace + "/drivers/estop")
         self.executor = SingleThreadedExecutor()
         for node in [self.mux, self.probe]: self.executor.add_node(node)
@@ -170,13 +174,47 @@ class NeroHomeTests(unittest.TestCase):
             executor = SingleThreadedExecutor()
             executor.add_node(driver)
             self.driver_executors.append(executor)
-        self.manager_executor = MultiThreadedExecutor(num_threads=8)
-        self.manager_executor.add_node(self.manager)
-        self.executors = [self.executor, *self.driver_executors, self.manager_executor]
+        # The production manager is also a separate process. Its blocking
+        # services use a multi-threaded executor; sharing the test interpreter
+        # with CAN timers introduces GIL contention absent from that deployment.
+        manager_env = {**os.environ, "ROS_DOMAIN_ID": "186", "ROS_LOCALHOST_ONLY": "1"}
+        manager_script = (
+            "import rclpy\n"
+            "from rclpy.signals import SignalHandlerOptions\n"
+            "from rclpy.executors import MultiThreadedExecutor\n"
+            "from nexus_core.driver_manager_node import DriverManagerNode\n"
+            "rclpy.init(signal_handler_options=SignalHandlerOptions.NO)\n"
+            "node=DriverManagerNode()\n"
+            "executor=MultiThreadedExecutor(num_threads=8)\n"
+            "executor.add_node(node)\n"
+            "try: executor.spin()\n"
+            "except KeyboardInterrupt: pass\n"
+            "finally:\n"
+            " executor.shutdown()\n"
+            " node.destroy_node()\n"
+            " rclpy.try_shutdown()\n")
+        self.manager_process = subprocess.Popen([
+            sys.executable, "-c", manager_script,
+            "--ros-args", "-p", f"profile_file:={self.path}",
+            "-p", "home_timeout:=12.0", "-p", "service_timeout:=0.5"], env=manager_env)
+        self.executors = [self.executor, *self.driver_executors]
         self.threads = [threading.Thread(target=e.spin) for e in self.executors]
         self.addCleanup(self.cleanup)
         for t in self.threads: t.start()
-        self.wait(lambda: not self.manager._state_faults() and self.manager._mode == "IDLE")
+        self.wait(lambda: all(self.feedback.values()) and self.control_mode == "IDLE")
+        self.wait(self.ready_client.service_is_ready)
+        readiness = self.ready_client.call_async(Trigger.Request())
+
+        def manager_received_all_feedback():
+            nonlocal readiness
+            if not readiness.done(): return False
+            if readiness.result().success: return True
+            readiness = self.ready_client.call_async(Trigger.Request())
+            return False
+
+        # Parent subscriptions can be ready before DDS discovery has delivered
+        # the first samples to the independent manager process.
+        self.wait(manager_received_all_feedback)
         for driver in self.drivers.values():
             self.assertTrue(driver._enable(None, Trigger.Response()).success)
         self.wait(lambda: self.home_client.service_is_ready())
@@ -185,6 +223,10 @@ class NeroHomeTests(unittest.TestCase):
     def hand_estop(response):
         response.success = True
         return response
+
+    def observe_control(self, message):
+        self.control_mode = json.loads(message.data)["mode"]
+        self.modes.append(self.control_mode)
 
     def publish_hands(self):
         for pub, spec in self.hand_pubs:
@@ -197,14 +239,27 @@ class NeroHomeTests(unittest.TestCase):
         while time.monotonic() < deadline:
             if predicate(): return
             time.sleep(0.01)
-        self.fail(f"condition not reached; mode={self.manager._mode} feedback_faults={self.manager._state_faults()}")
+        self.fail(f"condition not reached; mode={self.control_mode} "
+                  f"arm_feedback_counts={ {side: len(rows) for side, rows in self.feedback.items()} } "
+                  f"manager_exit={self.manager_process.poll()}")
 
     def cleanup(self):
         for driver in self.drivers.values():
             if driver._homing: driver._finish_home(False, "test cleanup")
+        if self.manager_process.poll() is None:
+            self.manager_process.send_signal(signal.SIGINT)
+            try:
+                self.manager_process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.manager_process.terminate()
+                try:
+                    self.manager_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.manager_process.kill()
+                    self.manager_process.wait(timeout=3)
         for e in reversed(self.executors): e.shutdown(timeout_sec=3)
         for t in self.threads: t.join(timeout=3)
-        for node in [self.manager, *self.drivers.values(), self.mux, self.probe]: node.destroy_node()
+        for node in [*self.drivers.values(), self.mux, self.probe]: node.destroy_node()
         rclpy.shutdown()
         self.patch.stop()
         self.temp.cleanup()
@@ -216,7 +271,7 @@ class NeroHomeTests(unittest.TestCase):
         self.wait(future.done, timeout=10)
         self.assertTrue(future.result().success, future.result().message)
         self.assertGreater(time.monotonic() - before, 5)
-        self.assertEqual(self.manager._mode, "IDLE")
+        self.assertEqual(self.control_mode, "IDLE")
         for side, rows in self.feedback.items():
             times = [t for t, _ in rows if t >= before]
             self.assertGreaterEqual(len(times), 2)
@@ -256,7 +311,7 @@ class NeroHomeTests(unittest.TestCase):
         self.wait(future.done)
         self.assertFalse(future.result().success)
         self.assertIn("max_joint_error", future.result().message)
-        self.wait(lambda: self.manager._mode == "ESTOP")
+        self.wait(lambda: self.control_mode == "ESTOP")
         for driver in self.drivers.values(): self.assertFalse(driver._enabled)
         after_home = self.modes[self.modes.index("HOMING") + 1:]
         self.assertNotIn("IDLE", after_home)
@@ -270,7 +325,7 @@ class NeroHomeTests(unittest.TestCase):
         self.assertTrue(emergency.result().success, emergency.result().message)
         self.wait(future.done)
         self.assertFalse(future.result().success)
-        self.assertEqual(self.manager._mode, "ESTOP")
+        self.assertEqual(self.control_mode, "ESTOP")
         self.assertFalse(self.drivers["right"]._enabled)
 
     def test_stale_sdk_cache_cannot_complete_home(self):
@@ -283,7 +338,7 @@ class NeroHomeTests(unittest.TestCase):
         self.assertFalse(future.result().success)
         self.assertIn("feedback stale", future.result().message)
         self.assertLess(time.monotonic() - future_deadline, 2)
-        self.assertEqual(self.manager._mode, "ESTOP")
+        self.assertEqual(self.control_mode, "ESTOP")
 
     def test_reported_joint_seven_residual_is_not_accepted_as_home(self):
         fake, driver = self.fakes["left"], self.drivers["left"]
@@ -377,7 +432,7 @@ class NeroHomeTests(unittest.TestCase):
         self.assertEqual(fake.j_commands, 0)
         self.assertEqual(driver._last_home_diagnostic["home_command_attempts"], 0)
         self.assertFalse(driver._last_home_diagnostic["home_mode_feedback"]["after_mode_request"])
-        self.assertEqual(self.manager._mode, "ESTOP")
+        self.assertEqual(self.control_mode, "ESTOP")
 
     def test_unconfirmed_mode_times_out_without_joint_target(self):
         fake, driver = self.fakes["left"], self.drivers["left"]

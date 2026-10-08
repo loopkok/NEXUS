@@ -27,7 +27,7 @@
 
 Nero 驱动归位增加 `WAIT_J_MODE → SUBMITTING_TARGET → MOVING`：
 
-1. 异步等待时间戳晚于本次模式请求、年龄小于 250 ms 的控制器反馈；要求 CAN 控制、J 模式、静止及无故障。
+1. 异步等待时间戳不早于本次模式请求、年龄小于 250 ms 的控制器反馈；要求 CAN 控制、J 模式、静止及无故障。
 2. 模式/速度写入结束后至少间隔 20 ms 才允许提交一次目标。20 ms 参照本次成功工具的发送间隔，未声称是厂商规定的最小值。
 3. `home_mode_timeout` 默认 1 s，可由 `adapter_config.nero_can.home_mode_timeout` 覆盖，且受原总归位超时约束。等待超时、急停或故障时不提交目标；SDK 部分发送失败也不重试。
 4. 等待期间反馈与看门狗持续运行；到位判定只在目标提交后进行。诊断记录阶段、尝试次数、是否完成 SDK 提交及当时模式反馈。
@@ -49,7 +49,31 @@ Nero 驱动归位增加 `WAIT_J_MODE → SUBMITTING_TARGET → MOVING`：
 - [长归位单项复测](long_home_isolated.log)
 - [独立执行器临时副本回归](home_tests.log)
 
-最终安装代码的测试和部署结果在完成后追加；这些测试不能替代真机验收。
+### 最终安装代码验证
+
+主机已拉取运行代码 `a7e72d9`，`colcon build --packages-select nexus_core --symlink-install` 成功。安装包导入路径为 `/home/loopkok/NEXUS/build/nexus_core/nexus_core/nero_driver_node.py`。
+
+安装后第一次单进程测试有一项等待阶段反馈过期失败。随后进一步按实际部署将管理节点的 8 线程执行器移到独立测试进程；启动时等待真实 `drivers/ready` 服务确认其已收到全部反馈，而不是用观察节点收到首帧代替。这解决测试进程间的发现同步缺口。信号退出采用测试进程自己的清理流程，不覆盖生产 `main()` 的信号退出行为。
+
+最终测试文件针对安装后的驱动运行：**13 项功能断言通过，25.709 s**。归位模式延迟确认、切换前旧状态、未确认模式、等待阶段急停、部分发送失败不重试、控制器故障、慢归位、旧命令回弹、缺流和 J7 不到位拒绝均覆盖。
+
+| 假 SDK / 真实 ROS 测试指标 | 左臂 | 右臂 |
+| --- | --- | --- |
+| 归位期间反馈样本数 | 169 | 169 |
+| 观察到的反馈频率 | 20.0 Hz | 20.0 Hz |
+| 最大 ROS 接收间隔 | 52.6 ms | 53.2 ms |
+| 最大 SDK 采样间隔 | 51.6 ms | 51.9 ms |
+
+该表使用驱动默认 `state_rate=20`，不是 IK 或遥操控制频率测量；假 SDK 不代表真实 CAN 性能。500 ms 门槛保持原值。本轮仍记录 **5 条 ROS `Destroyable` 退出清理警告**，没有 RCLError；本次没有将退出清理问题标记为已解决。
+
+- [构建日志](deployed_build.log)
+- [安装后单进程反馈过期失败](deployed_home_tests.log)
+- [独立进程初始发现同步失败](subprocess_manager_discovery_failure.log)
+- [ready 同步后的通过记录及旧退出警告](subprocess_manager_shutdown_warnings.log)
+- [最终功能回归原始日志](subprocess_manager_tests.log)
+- [测试结果、代码 SHA256 与边界](deployed_result.json)
+
+最终测试源码、驱动和启动器的 LF 规范化 SHA256 已与本地一致；后续归档提交仅更新测试和文档，不改变已测试的运行代码。全部原始失败与通过记录保留。这些测试不能替代真机验收。
 
 ## 现场待验证
 

@@ -1,0 +1,32 @@
+{
+  "runtime_commit": "a7e72d939baa86b453a5e90701b726a52aa5b32f",
+  "build": "colcon build --packages-select nexus_core --symlink-install passed",
+  "tests": 13,
+  "result": "passed_assertions_with_teardown_warnings",
+  "elapsed_s": 25.709,
+  "source_sha256_lf": {
+    "driver": "db8c7ac7c3b3218583ce2a93535bbefa4f4a5d9feebec211c8c35b2b8f709b15",
+    "launcher": "de37cab8219c876ff203e6615c71f6695ffe4ab620c9989d803656374f718862",
+    "test": "24863374ac10a2a03cf1dd97616ea3a3467c71a3076d7d25518e44c5af9bc727"
+  },
+  "feedback_metrics": [
+    {
+      "side": "left",
+      "samples": 169,
+      "max_receive_gap_ms": 52.6,
+      "observed_hz": 20.0,
+      "max_sdk_poll_gap_ms": 51.6
+    },
+    {
+      "side": "right",
+      "samples": 169,
+      "max_receive_gap_ms": 53.2,
+      "observed_hz": 20.0,
+      "max_sdk_poll_gap_ms": 51.9
+    }
+  ],
+  "teardown_destroyable_warnings": 5,
+  "topology": "fake CAN drivers; real ROS manager in independent process; domain 186; ready RPC awaited",
+  "hardware_motion_by_automation": false,
+  "full_hardware_home_verified": false
+}
