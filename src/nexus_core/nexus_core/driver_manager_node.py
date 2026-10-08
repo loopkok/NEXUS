@@ -141,13 +141,18 @@ class DriverManagerNode(Node):
             if not client.wait_for_service(timeout_sec=min(0.5, self._service_timeout)):
                 return [f"{label}: {operation} service unavailable"]
         futures = [(label, client.call_async(Trigger.Request())) for label, client in clients]
-        deadline = time.monotonic() + self._service_timeout
+        # Home is a measured motion, not a short RPC. Its driver may need
+        # substantially longer than ready/enable (Nero's default is 20 s).
+        budget = self._home_timeout if operation == "home" else self._service_timeout
+        deadline = time.monotonic() + budget
         while futures and time.monotonic() < deadline and not all(f.done() for _, f in futures):
+            if operation == "home" and self._mode != "HOMING":
+                return [f"homing interrupted by {self._mode}"]
             time.sleep(0.01)
         failures = []
         for label, future in futures:
             if not future.done():
-                failures.append(f"{label}: {operation} timed out")
+                failures.append(f"{label}: {operation} timed out after {budget:.1f}s")
                 continue
             try:
                 result = future.result()
@@ -163,6 +168,8 @@ class DriverManagerNode(Node):
         deadline = time.monotonic() + self._home_timeout
         settled_since = None
         while time.monotonic() < deadline:
+            if self._mode != "HOMING":
+                return [f"home feedback verification interrupted by {self._mode}"]
             now = time.monotonic()
             reached = True
             for component, (target, tolerance) in self._home_feedback_targets.items():
@@ -222,13 +229,20 @@ class DriverManagerNode(Node):
         failures = self._call_all(operation)
         if operation == "home" and not failures:
             failures.extend(self._wait_home_feedback())
-        if homing_mode_entered:
+        if homing_mode_entered and failures:
+            # A timed-out service can still be moving. Never resume stale
+            # measured hold targets while an adapter has not finished.
+            self._control_pub.publish(String(data="ESTOP"))
+            failures.extend(self._call_all("estop"))
+        elif homing_mode_entered:
             self._control_pub.publish(String(data="IDLE"))
             deadline = time.monotonic() + 1.0
             while self._mode != "IDLE" and time.monotonic() < deadline:
                 time.sleep(0.01)
             if self._mode != "IDLE":
                 failures.append("command mux did not return to IDLE after homing")
+                self._control_pub.publish(String(data="ESTOP"))
+                failures.extend(self._call_all("estop"))
         if operation == "enable" and failures:
             # A partial enable must not leave only some components powered.
             self._control_pub.publish(String(data="ESTOP"))

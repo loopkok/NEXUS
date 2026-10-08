@@ -1,5 +1,17 @@
 # NEXUS Changelog
 
+## 2026-10-08 — Fix Nero measured homing and XHand feedback QoS
+
+- Give homing its own service budget, keep Nero measured feedback running
+  during homing, wait for stable arrival and reject queued pre-homing commands.
+  Failed or interrupted homing stops the drivers instead of restoring stale
+  IDLE targets. Retain the original XNero 10% homing speed.
+- Match XHand retarget feedback QoS and initialize every transmitted command
+  field, with full SDK parameter diagnostics. All 31 targeted isolated checks
+  passed; physical homing and hand motion still require user retesting. See the
+  [test report](docs/test_logs/2026-10-08-nero-home/README.md) and
+  [change record](docs/changelog/2026-10-08-nero-home.md).
+
 ## 2026-10-08 — Fix physical XHand feedback starvation
 
 - Physical XHand bridges now use single-threaded ROS callbacks; matched the

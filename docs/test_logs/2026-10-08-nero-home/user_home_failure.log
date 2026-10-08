@@ -1,0 +1,77 @@
+归位 · 失败
+home failed: right_arm: home timed ou
+[INFO] [launch]: All log files can be found below /home/loopkok/.ros/log/2026-10-08-11-43-24-148045-haining14-2572893
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: NEXUS profile=nero_dual_xhand instance=nero sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 dry_run=False
+[INFO] [nexus_command_mux-1]: process started with pid [2572896]
+[INFO] [nexus_driver_manager-2]: process started with pid [2572898]
+[INFO] [nexus_input_bridge-3]: process started with pid [2572900]
+[INFO] [nexus_nero_driver-4]: process started with pid [2572902]
+[INFO] [nexus_nero_driver-5]: process started with pid [2572904]
+[INFO] [xhand_control_ros2_node-6]: process started with pid [2572906]
+[INFO] [nexus_joint_bridge-7]: process started with pid [2572908]
+[INFO] [xhand_control_ros2_node-8]: process started with pid [2572910]
+[INFO] [nexus_joint_bridge-9]: process started with pid [2572912]
+[INFO] [nexus_nero_teleop-10]: process started with pid [2572914]
+[INFO] [nexus_nero_teleop-11]: process started with pid [2572916]
+[INFO] [xhand_dex_retargeting_node-12]: process started with pid [2572918]
+[INFO] [quest3_udp_mocap-13]: process started with pid [2572920]
+[xhand_control_ros2_node-6] [INFO] [1791431004.282787476] [left_hand.xhand_left_ee]: XHandControlROS initialized,version 1.4.2
+[xhand_control_ros2_node-6] [INFO] [1791431004.282857466] [left_hand.xhand_left_ee]: Attempting to open XHand on /dev/ttyUSB0 with baudrate 3000000
+[xhand_control_ros2_node-8] [INFO] [1791431004.283730452] [right_hand.xhand_right_ee]: XHandControlROS initialized,version 1.4.2
+[xhand_control_ros2_node-8] [INFO] [1791431004.283807217] [right_hand.xhand_right_ee]: Attempting to open XHand on /dev/ttyUSB1 with baudrate 3000000
+[xhand_control_ros2_node-6] try open device times: 1 / 3
+[xhand_control_ros2_node-6] Start reading data from serial port
+[xhand_control_ros2_node-8] try open device times: 1 / 3
+[xhand_control_ros2_node-8] Start reading data from serial port
+[xhand_control_ros2_node-6] [INFO] [1791431004.287058388] [left_hand.xhand_left_ee]: XHand serial device opened successfully on /dev/ttyUSB0
+[xhand_control_ros2_node-8] [INFO] [1791431004.290854250] [right_hand.xhand_right_ee]: XHand serial device opened successfully on /dev/ttyUSB1
+[nexus_command_mux-1] [INFO] [1791431004.945856259] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[nexus_input_bridge-3] [INFO] [1791431004.981392406] [nexus_input_bridge]: input bridge profile=nero_dual_xhand sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74
+[nexus_driver_manager-2] [INFO] [1791431004.987664382] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[nexus_joint_bridge-7] [INFO] [1791431004.988900309] [xhand_bridge_left_ee]: joint bridge xhand component=left_ee
+[nexus_joint_bridge-9] [INFO] [1791431005.009976096] [xhand_bridge_right_ee]: joint bridge xhand component=right_ee
+[quest3_udp_mocap-13] [INFO] [1791431005.030820538] [nexus_quest3_input]: Quest 3 Hand Mocap Node Initialized
+[quest3_udp_mocap-13] [INFO] [1791431005.034195693] [nexus_quest3_input]: Quest 3 Hand Mocap: side=[BOTH], protocol=tcp_wired, preprocess=mano, xhand_pinky_adapt=False, convert_to_robot=True, wrist_pose_mapping=per_side, controller_as_wrist=True, landmarks_L=True, landmarks_R=True
+[quest3_udp_mocap-13] [INFO] [1791431005.045309743] [nexus_quest3_input]: TCP server listening on localhost:8000 (wired (adb reverse))
+[quest3_udp_mocap-13] [INFO] [1791431005.045727936] [nexus_quest3_input]:   On Quest3: adb reverse tcp:8000 tcp:8000
+[nexus_nero_driver-5] [INFO] [1791431005.063836980] [driver_right_arm]: Nero driver right profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 dry_run=False
+[nexus_nero_driver-4] [INFO] [1791431005.089139252] [driver_left_arm]: Nero driver left profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 dry_run=False
+[nexus_nero_teleop-10] [INFO] [1791431005.129417515] [teleop_left_arm]: Nero teleop left: IK core=nero_quest_teleop.ik_solver; control_rate=100.0Hz profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74
+[nexus_nero_teleop-11] [INFO] [1791431005.191535373] [teleop_right_arm]: Nero teleop right: IK core=nero_quest_teleop.ik_solver; control_rate=100.0Hz profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74
+[xhand_dex_retargeting_node-12] [INFO] [1791431006.047866373] [nexus_xhand_retargeter]: Teleop mode: DIRECT START
+[xhand_control_ros2_node-6] [WARN] [1791431006.049611995] [left_hand.xhand_left_ee]: New subscription discovered on topic '/left_hand/xhand_state', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[xhand_dex_retargeting_node-12] [INFO] [1791431006.052762372] [nexus_xhand_retargeter]: XHand Dex Retargeting Node started, topic: /hand_landmarks
+[xhand_control_ros2_node-8] [WARN] [1791431006.053539384] [right_hand.xhand_right_ee]: New subscription discovered on topic '/right_hand/xhand_state', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[xhand_dex_retargeting_node-12] [WARN] [1791431006.053607488] [nexus_xhand_retargeter]: New publisher discovered on topic '/left_hand/xhand_state', offering incompatible QoS. No messages will be received from it. Last incompatible policy: RELIABILITY
+[xhand_dex_retargeting_node-12] [WARN] [1791431006.054049988] [nexus_xhand_retargeter]: New publisher discovered on topic '/right_hand/xhand_state', offering incompatible QoS. No messages will be received from it. Last incompatible policy: RELIABILITY
+[xhand_control_ros2_node-6] [INFO] [1791431009.289560468] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.2 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=1.2 spin_max_ms=3.1
+[xhand_control_ros2_node-8] [INFO] [1791431009.293341659] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.2 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.4 spin_max_ms=3.3
+[xhand_control_ros2_node-6] [WARN] [1791431009.929367400] [left_hand.xhand_left_ee]: XHand send_command id=0 SDK error=1501030: Control parameters exceed the allowable range
+[nexus_joint_bridge-7] [INFO] [1791431009.934605942] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=99.4 forwarded_hz=99.4 rejected=0 max_callback_gap_ms=11.9 valid_age_ms=0.7 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-9] [INFO] [1791431009.955685140] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=98.8 forwarded_hz=98.8 rejected=0 max_callback_gap_ms=11.7 valid_age_ms=30.1 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-8] [WARN] [1791431010.135338246] [right_hand.xhand_right_ee]: XHand send_command id=0 SDK error=1501030: Control parameters exceed the allowable range
+[xhand_control_ros2_node-8] crc err   aa55  40d5 FrameDataLen 2208
+[xhand_control_ros2_node-6] [INFO] [1791431014.289689401] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=10.0
+[xhand_control_ros2_node-8] [INFO] [1791431014.294851244] [right_hand.xhand_right_ee]: XHand feedback publish_hz=96.2 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=100.6
+[nexus_joint_bridge-7] [INFO] [1791431014.934566012] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=10.8 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-9] [INFO] [1791431014.959169827] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=96.7 forwarded_hz=96.7 rejected=0 max_callback_gap_ms=100.7 valid_age_ms=0.5 reason=valid feedback stream; check native driver if it stops
+[nexus_nero_driver-4] [ERROR] [1791431017.241619818] [driver_left_arm]: Nero command watchdog expired; re-enable required
+[xhand_control_ros2_node-6] [INFO] [1791431019.299665394] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[xhand_control_ros2_node-8] [INFO] [1791431019.304825977] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[nexus_joint_bridge-7] [INFO] [1791431019.934717231] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.5 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-9] [INFO] [1791431019.957472803] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.8 valid_age_ms=0.4 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791431024.309652757] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[xhand_control_ros2_node-8] [INFO] [1791431024.314645278] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[nexus_joint_bridge-7] [INFO] [1791431024.934651985] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=10.4 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-9] [INFO] [1791431024.957661168] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.2 valid_age_ms=0.4 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-8] [INFO] [1791431029.314822169] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[xhand_control_ros2_node-6] [INFO] [1791431029.319632449] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.2
+[nexus_joint_bridge-7] [INFO] [1791431029.934512936] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.5 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-9] [INFO] [1791431029.959581350] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.7 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791431034.319719912] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.1
+[xhand_control_ros2_node-8] [INFO] [1791431034.324830194] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[nexus_joint_bridge-7] [INFO] [1791431034.934713064] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=10.5 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-9] [INFO] [1791431034.959611169] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=10.6 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791431039.329711316] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.2
+[xhand_control_ros2_node-8] [INFO] [1791431039.334746437] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2

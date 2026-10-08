@@ -1,0 +1,44 @@
+test_estop_interrupts_pending_home (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791432314.020965350] [test_nero_left]: Nero driver left profile_sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 dry_run=False
+[INFO] [1791432314.026137311] [test_nero_right]: Nero driver right profile_sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 dry_run=False
+[INFO] [1791432314.033944775] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432314.043008001] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432314.491999767] [test_nero_right]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432314.493706386] [test_nero_left]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[ERROR] [1791432314.612041832] [test_nero_right]: Nero home failed: emergency stop; motors disabled
+[ERROR] [1791432314.618127101] [test_nero_left]: Nero home failed: emergency stop; motors disabled
+ok
+test_right_home_over_five_seconds_no_feedback_gap_or_recoil (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791432315.109303496] [test_nero_left]: Nero driver left profile_sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 dry_run=False
+[INFO] [1791432315.117343658] [test_nero_right]: Nero driver right profile_sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 dry_run=False
+[INFO] [1791432315.128324661] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432315.139873791] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432315.386067630] [test_nero_left]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432315.386797062] [test_nero_right]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432316.182464007] [test_nero_left]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+[INFO] [1791432323.761268560] [test_nero_right]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+ok
+test_stale_sdk_cache_cannot_complete_home (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791432324.118049606] [test_nero_left]: Nero driver left profile_sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 dry_run=False
+[INFO] [1791432324.123502281] [test_nero_right]: Nero driver right profile_sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 dry_run=False
+[INFO] [1791432324.134985676] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432324.152863111] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432324.205356854] [test_nero_left]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432324.208556423] [test_nero_right]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=12.0s
+[WARN] [1791432324.227608942] [test_nero_right]: Stale Nero SDK feedback rejected
+[INFO] [1791432324.661088549] [test_nero_left]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+[ERROR] [1791432324.792648240] [test_nero_right]: Nero home failed: measured feedback stale during home; motors disabled
+ok
+test_unreachable_home_fails_and_never_returns_idle (test_nero_home_ros.NeroHomeTests) ... [INFO] [1791432325.265973206] [test_nero_left]: Nero driver left profile_sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 dry_run=False
+[INFO] [1791432325.272030463] [test_nero_right]: Nero driver right profile_sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 dry_run=False
+[INFO] [1791432325.281380932] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432325.288859701] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=69b23dea15c2085a3f07326087dcac3fe3fc00579478171404acaec4e49a5f50 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[INFO] [1791432325.821681261] [test_nero_left]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=12.0s
+[INFO] [1791432325.822736589] [test_nero_right]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=0.8s
+[INFO] [1791432326.335867313] [test_nero_left]: Nero home reached (max_joint_error=0.0000 rad; settled=0.3s drift<=0.002rad)
+[ERROR] [1791432326.705164790] [test_nero_right]: Nero home failed: timeout after 0.8s; max_joint_error=0.1458 rad actual=[0.5507777883543168, 1.4267777883543165, 1.1027777883543166, 1.4567777883543165, -2.536222211645683, 0.4597777883543167, -0.017222211645683286] target=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163]; motors disabled
+ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 12.920s
+
+OK
+home side=left feedback_count=132 max_gap_ms=300.8
+home side=right feedback_count=128 max_gap_ms=300.8

@@ -1,0 +1,8 @@
+test_best_effort_native_feedback_reaches_both_latency_callbacks (__main__.HandFeedbackQoSTests) ... [INFO] [1791432294.057004434] [xhand_dex_retargeting_node]: Teleop mode: CLENCH-TO-START
+[INFO] [1791432294.059263326] [xhand_dex_retargeting_node]: XHand Dex Retargeting Node started, topic: hand_landmarks
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.052s
+
+OK

@@ -87,6 +87,8 @@ install(DIRECTORY config launch
 if(BUILD_TESTING)
   add_executable(xhand_feedback_validation_test test/feedback_validation_test.cpp)
   add_test(NAME xhand_feedback_validation COMMAND xhand_feedback_validation_test)
+  add_executable(xhand_command_packet_test test/command_packet_test.cpp)
+  add_test(NAME xhand_command_packet COMMAND xhand_command_packet_test)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()

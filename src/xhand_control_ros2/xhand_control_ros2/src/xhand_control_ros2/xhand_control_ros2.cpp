@@ -1,7 +1,9 @@
 #include "xhand_control_ros2/xhand_control_ros2.hpp"
 #include "xhand_control_ros2/feedback_validation.hpp"
+#include "xhand_control_ros2/command_packet.hpp"
 #include <algorithm>
 #include <chrono>
+#include <sstream>
 
 namespace xhand_control_ros2
 {
@@ -247,17 +249,9 @@ namespace xhand_control_ros2
         RCLCPP_ERROR(this->get_logger(), "Invalid command");
         return;
       }
-      HandCommand_t cmd;
-      for (int i = 0; i < cmd.finger_command.size(); ++i)
-      {
-        cmd.finger_command[i].id = i;
-        cmd.finger_command[i].position = 0;
-        cmd.finger_command[i].kp = 0;
-        cmd.finger_command[i].kd = 0;
-        cmd.finger_command[i].ki = 0;
-        cmd.finger_command[i].tor_max = 0;
-        cmd.finger_command[i].mode = 0;
-      }
+      // All four reserved words are transmitted too. Uninitialized stack
+      // bytes here can produce hardware parameter errors even for valid gains.
+      HandCommand_t cmd = empty_command_packet();
       for (int i = 0; i < msg->name.size(); i++)
       {
         cmd.finger_command[map_vec[i]].id = map_vec[i];
@@ -270,9 +264,15 @@ namespace xhand_control_ros2
       }
       const auto result = xhand_control_->send_command(msg->hand_id, cmd);
       if (!result) {
+        std::ostringstream fields;
+        for (const auto &joint : cmd.finger_command) {
+          fields << " [" << joint.id << ":pos=" << joint.position
+                 << ",kp/ki/kd=" << joint.kp << "/" << joint.ki << "/" << joint.kd
+                 << ",limit=" << joint.tor_max << ",mode=" << joint.mode << "]";
+        }
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-            "XHand send_command id=%u SDK error=%d: %s", msg->hand_id,
-            result.error_code, result.error_message.c_str());
+            "XHand send_command id=%u SDK error=%d: %s; reserved_words=0; fields:%s", msg->hand_id,
+            result.error_code, result.error_message.c_str(), fields.str().c_str());
       }
       //RCLCPP_INFO(this->get_logger(), "Command sent");
     }

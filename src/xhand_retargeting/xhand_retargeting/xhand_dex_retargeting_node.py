@@ -155,11 +155,11 @@ class XHandDexRetargetingNode(Node):
             from xhand_control_interfaces.msg import XHandStateArray
             self.create_subscription(
                 XHandStateArray, "/left_hand/xhand_state",
-                lambda msg: self._hand_state_cb(msg, "left"), 10,
+                lambda msg: self._hand_state_cb(msg, "left"), qos_profile_sensor_data,
             )
             self.create_subscription(
                 XHandStateArray, "/right_hand/xhand_state",
-                lambda msg: self._hand_state_cb(msg, "right"), 10,
+                lambda msg: self._hand_state_cb(msg, "right"), qos_profile_sensor_data,
             )
         except ImportError:
             pass
