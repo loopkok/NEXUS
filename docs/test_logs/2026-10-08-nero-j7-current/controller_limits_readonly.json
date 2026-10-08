@@ -1,0 +1,78 @@
+{
+  "can_nero_left": [
+    {
+      "joint": 6,
+      "query": 1,
+      "request_hex": "0601000000000000",
+      "response_id": "0x473",
+      "response_hex": "060226fe5c018800",
+      "max_deg": 55.0,
+      "min_deg": -42.0,
+      "max_speed_rad_s": 0.392
+    },
+    {
+      "joint": 6,
+      "query": 2,
+      "request_hex": "0602000000000000",
+      "response_id": "0x47c",
+      "response_hex": "0613880000000000",
+      "max_acc_rad_s2": 5.0
+    },
+    {
+      "joint": 7,
+      "query": 1,
+      "request_hex": "0701000000000000",
+      "response_id": "0x473",
+      "response_hex": "070384fc7c018800",
+      "max_deg": 90.0,
+      "min_deg": -90.0,
+      "max_speed_rad_s": 0.392
+    },
+    {
+      "joint": 7,
+      "query": 2,
+      "request_hex": "0702000000000000",
+      "response_id": "0x47c",
+      "response_hex": "0713880000000000",
+      "max_acc_rad_s2": 5.0
+    }
+  ],
+  "can_nero_right": [
+    {
+      "joint": 6,
+      "query": 1,
+      "request_hex": "0601000000000000",
+      "response_id": "0x473",
+      "response_hex": "060226fe5c018800",
+      "max_deg": 55.0,
+      "min_deg": -42.0,
+      "max_speed_rad_s": 0.392
+    },
+    {
+      "joint": 6,
+      "query": 2,
+      "request_hex": "0602000000000000",
+      "response_id": "0x47c",
+      "response_hex": "0613880000000000",
+      "max_acc_rad_s2": 5.0
+    },
+    {
+      "joint": 7,
+      "query": 1,
+      "request_hex": "0701000000000000",
+      "response_id": "0x473",
+      "response_hex": "070384fc7c018800",
+      "max_deg": 90.0,
+      "min_deg": -90.0,
+      "max_speed_rad_s": 0.392
+    },
+    {
+      "joint": 7,
+      "query": 2,
+      "request_hex": "0702000000000000",
+      "response_id": "0x47c",
+      "response_hex": "0713880000000000",
+      "max_acc_rad_s2": 5.0
+    }
+  ]
+}

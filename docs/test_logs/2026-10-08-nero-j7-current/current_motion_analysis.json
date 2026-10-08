@@ -1,0 +1,66 @@
+[
+  {
+    "component": "left_arm",
+    "samples": 11,
+    "start_rad": -0.10663961729685355,
+    "target_rad": -0.163,
+    "final_rad": -0.10665707058937347,
+    "final_error_rad": 0.05634292941062653,
+    "final_error_deg": 3.228212060632419,
+    "observed_range_rad": 0.0005410520681182335,
+    "observed_range_deg": 0.030999999999999504,
+    "error_reduction_rad": 1.7453292519925556E-05,
+    "final_current_a_sdk": 0.984,
+    "sampled_current_min_a_after_1s": 0.781,
+    "sampled_current_max_a_after_1s": 1.458,
+    "all_motor_samples_fresh": true,
+    "final_controller": {
+      "feedback_age_s": 0.0038344860076904297,
+      "ctrl_mode": 1,
+      "arm_status": 0,
+      "mode_feedback": 1,
+      "motion_status": 0,
+      "err_code": 0
+    },
+    "final_driver": {
+      "name": "left_joint7",
+      "feedback_age_s": 0.020079374313354492,
+      "driver_enable_status": true,
+      "driver_error_status": false,
+      "collision_status": false,
+      "stall_status": false
+    }
+  },
+  {
+    "component": "right_arm",
+    "samples": 11,
+    "start_rad": -0.07482226503299691,
+    "target_rad": -0.163,
+    "final_rad": -0.07482226503299691,
+    "final_error_rad": 0.0881777349670031,
+    "final_error_deg": 5.052212060632419,
+    "observed_range_rad": 0.0006283185307179584,
+    "observed_range_deg": 0.03599999999999999,
+    "error_reduction_rad": 0.0,
+    "final_current_a_sdk": 1.203,
+    "sampled_current_min_a_after_1s": 0.885,
+    "sampled_current_max_a_after_1s": 1.294,
+    "all_motor_samples_fresh": true,
+    "final_controller": {
+      "feedback_age_s": 0.008166074752807617,
+      "ctrl_mode": 1,
+      "arm_status": 0,
+      "mode_feedback": 1,
+      "motion_status": 0,
+      "err_code": 0
+    },
+    "final_driver": {
+      "name": "right_joint7",
+      "feedback_age_s": 0.016498327255249023,
+      "driver_enable_status": true,
+      "driver_error_status": false,
+      "collision_status": false,
+      "stall_status": false
+    }
+  }
+]
