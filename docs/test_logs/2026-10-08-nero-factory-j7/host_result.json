@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-08T15:16:55+08:00",
+  "revision": "f4e284f64b575106a3e5b0d6cf0439b00095ca1a",
+  "isolated_test_exit": 0,
+  "left": {
+    "exit": 1,
+    "can_tx_packets_before": 67121,
+    "can_tx_packets_after": 67121,
+    "tool_summary": {
+      "monotonic_s": 1884563.008356976,
+      "event": "summary",
+      "tx_count": 0,
+      "result": "failed",
+      "error": "All four position frames, including J7 0x2A9, must be fresh (<250ms); enable CAN feedback in the factory UI if absent"
+    }
+  },
+  "right": {
+    "exit": 1,
+    "can_tx_packets_before": 67114,
+    "can_tx_packets_after": 67114,
+    "tool_summary": {
+      "monotonic_s": 1884566.249854776,
+      "event": "summary",
+      "tx_count": 0,
+      "result": "failed",
+      "error": "All four position frames, including J7 0x2A9, must be fresh (<250ms); enable CAN feedback in the factory UI if absent"
+    }
+  }
+}

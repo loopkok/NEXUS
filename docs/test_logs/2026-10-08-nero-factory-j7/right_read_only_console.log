@@ -1,0 +1,6 @@
+Mode: READ ONLY (all CAN sends blocked) | Log: /tmp/nexus_j7_factory_probe_20261008/right_read_only.jsonl
+{
+  "result": "failed",
+  "error": "All four position frames, including J7 0x2A9, must be fresh (<250ms); enable CAN feedback in the factory UI if absent"
+}
+Successful send means transport acceptance, not controller acknowledgement.

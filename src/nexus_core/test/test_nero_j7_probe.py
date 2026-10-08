@@ -146,7 +146,7 @@ class J7ProbeTests(unittest.TestCase):
             probe.validate_feedback(self.read())
 
     def test_target_rejects_wide_nonfinite_and_out_of_limit_displacement(self):
-        for delta in (0, 1.1, -1.1, float('nan')):
+        for delta in (0, .1, -.1, 1.1, -1.1, float('nan')):
             with self.subTest(delta=delta), self.assertRaises(ValueError):
                 probe.make_target(self.arm.q, COMPONENT, delta)
         q = self.arm.q[:]

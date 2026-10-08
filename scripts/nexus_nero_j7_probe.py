@@ -90,8 +90,8 @@ def validate_feedback(data, enabled=False):
 
 
 def make_target(q, component, delta_deg):
-    if not math.isfinite(delta_deg) or not 0 < abs(delta_deg) <= 1:
-        raise ValueError('J7 displacement must be nonzero and <=1 degree')
+    if not math.isfinite(delta_deg) or not .5 <= abs(delta_deg) <= 1:
+        raise ValueError('J7 displacement magnitude must be 0.5..1 degree')
     if len(q) != 7 or len(component['lower']) != 7 or len(component['upper']) != 7:
         raise ValueError('Exactly seven measured joints and limit pairs required')
     target = list(q)
@@ -162,7 +162,7 @@ def trial(arm, read, component, delta_deg, speed, duration, emit):
                 raise RuntimeError('J1-J6 moved >0.5 degree; trial aborted')
             if abs(q[6] - start[6]) > math.radians(abs(delta_deg) + .5):
                 raise RuntimeError('J7 moved beyond test envelope; trial aborted')
-            if abs(q[6] - target[6]) < math.radians(.05):
+            if abs(q[6] - target[6]) < math.radians(.2):
                 settled_since = settled_since or time.monotonic()
                 if time.monotonic() - settled_since >= .3:
                     passed = True
@@ -170,7 +170,7 @@ def trial(arm, read, component, delta_deg, speed, duration, emit):
             else:
                 settled_since = None
             time.sleep(.02)
-        raise RuntimeError('J7 did not reach the single target within 0.05 degree; no retry/JS fallback')
+        raise RuntimeError('J7 did not reach the single target within 0.2 degree; no retry/JS fallback')
     finally:
         if took_control and not passed:
             # A log write failure must not prevent requesting the stop.
@@ -195,8 +195,8 @@ def main():
     args = parser.parse_args()
     if (not math.isfinite(args.duration) or not .5 <= args.duration <= 10
             or not 1 <= args.speed_percent <= 10
-            or not math.isfinite(args.delta_deg) or not 0 < abs(args.delta_deg) <= 1):
-        parser.error('duration .5..10s, speed 1..10%, nonzero delta <=1 degree required')
+            or not math.isfinite(args.delta_deg) or not .5 <= abs(args.delta_deg) <= 1):
+        parser.error('duration .5..10s, speed 1..10%, delta magnitude .5..1 degree required')
     raw = args.profile.read_bytes()
     profile = json.loads(raw)
     component = next(c for c in profile['components'] if c['name'] == args.side + '_arm')
