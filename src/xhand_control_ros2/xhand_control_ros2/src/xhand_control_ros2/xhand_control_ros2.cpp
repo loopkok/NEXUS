@@ -1,11 +1,14 @@
 #include "xhand_control_ros2/xhand_control_ros2.hpp"
+#include "xhand_control_ros2/feedback_validation.hpp"
+#include <algorithm>
+#include <chrono>
 
 namespace xhand_control_ros2
 {
 
   XHandControlROS::XHandControlROS() : Node("xhand_control_ros2") {
     state_pub_ =
-        this->create_publisher<XHandStateArray>("xhand_state", rclcpp::QoS(1));
+        this->create_publisher<XHandStateArray>("xhand_state", rclcpp::SensorDataQoS().keep_last(1));
     command_sub_ =
         this->create_subscription<XHandCommand>("xhand_command", 1, std::bind(&XHandControlROS::command_callback, this, _1));
 
@@ -113,29 +116,55 @@ namespace xhand_control_ros2
 
   void XHandControlROS::run()
   {
+    using Clock = std::chrono::steady_clock;
     rclcpp::Rate update_rate(update_rate_);
+    auto window_start = Clock::now();
+    size_t published = 0, read_errors = 0, invalid_states = 0;
+    double max_read_ms = 0.0, max_publish_ms = 0.0, max_spin_ms = 0.0;
     while (rclcpp::ok())
     {
+      bool all_valid = true;
       for (auto &id : hand_ids_)
       {
-        hand_state_ = xhand_control_->read_state(id).second;
+        const auto read_start = Clock::now();
+        // Keep the vendor's passive/cached read mode: force_update sends the
+        // SDK's previous motor command and is not a read-only health probe.
+        const auto result = xhand_control_->read_state(id, false);
+        max_read_ms = std::max(max_read_ms,
+            std::chrono::duration<double, std::milli>(Clock::now() - read_start).count());
+        if (!feedback_is_usable(result.first.error_code, result.second)) {
+          all_valid = false;
+          if (!result.first) {
+            ++read_errors;
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                "XHand read_state id=%u SDK error=%d: %s; feedback not published",
+                id, result.first.error_code, result.first.error_message.c_str());
+          } else {
+            ++invalid_states;
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                "XHand id=%u non-finite measured joint; feedback not published", id);
+          }
+          continue;
+        }
+        const auto &hand_state = result.second;
         for (int i = 0; i < hand_state_array_.hand_id.size(); i++)
         {
           if (hand_state_array_.hand_id[i] == id)
           {
             auto &pub_state = hand_state_array_.hand_states[i];
-            for (int joint_idx = 0; joint_idx < hand_state_.finger_state.size();
+            for (int joint_idx = 0; joint_idx < hand_state.finger_state.size();
                  joint_idx++)
             {
               pub_state.position[joint_idx] =
-                  hand_state_.finger_state[joint_idx].position;
+                  hand_state.finger_state[joint_idx].position;
               pub_state.effort[joint_idx] =
-                  hand_state_.finger_state[joint_idx].torque;
+                  hand_state.finger_state[joint_idx].torque;
+              pub_state.temperature[joint_idx] = hand_state.finger_state[joint_idx].temperature;
             }
 
-            for (int j = 0; j < hand_state_.sensor_data.size(); j++)
+            for (int j = 0; j < hand_state.sensor_data.size(); j++)
             {
-              auto &read_sensor_state = hand_state_.sensor_data[j];
+              const auto &read_sensor_state = hand_state.sensor_data[j];
               auto &pub_sensor_state =
                   hand_state_array_.sensor_states[i].finger_sensor_states[j];
               pub_sensor_state.calc_force.x = read_sensor_state.calc_force.fx;
@@ -162,9 +191,28 @@ namespace xhand_control_ros2
           }
         }
       }
-      hand_state_array_.header.stamp = this->now();
-      state_pub_->publish(hand_state_array_);
+      if (all_valid) {
+        hand_state_array_.header.stamp = this->now();
+        const auto publish_start = Clock::now();
+        state_pub_->publish(hand_state_array_);
+        max_publish_ms = std::max(max_publish_ms,
+            std::chrono::duration<double, std::milli>(Clock::now() - publish_start).count());
+        ++published;
+      }
+      const auto spin_start = Clock::now();
       rclcpp::spin_some(this->get_node_base_interface());
+      max_spin_ms = std::max(max_spin_ms,
+          std::chrono::duration<double, std::milli>(Clock::now() - spin_start).count());
+      const double elapsed = std::chrono::duration<double>(Clock::now() - window_start).count();
+      if (elapsed >= 5.0) {
+        RCLCPP_INFO(this->get_logger(),
+            "XHand feedback publish_hz=%.1f SDK_read_errors=%zu invalid_states=%zu "
+            "read_max_ms=%.1f publish_max_ms=%.1f spin_max_ms=%.1f",
+            published / elapsed, read_errors, invalid_states, max_read_ms, max_publish_ms, max_spin_ms);
+        window_start = Clock::now();
+        published = read_errors = invalid_states = 0;
+        max_read_ms = max_publish_ms = max_spin_ms = 0.0;
+      }
       update_rate.sleep();
     }
   }
@@ -177,7 +225,7 @@ namespace xhand_control_ros2
     
     this->declare_parameter("port_name", "/dev/ttyUSB0");
 
-    return error == 0;
+    return error == 0 && std::isfinite(update_rate_) && update_rate_ > 0.0 && update_rate_ <= 1000.0;
   }
 
   void XHandControlROS::command_callback(const XHandCommand::SharedPtr msg)
@@ -220,7 +268,12 @@ namespace xhand_control_ros2
         cmd.finger_command[map_vec[i]].tor_max = msg->effort_limit[i];
         cmd.finger_command[map_vec[i]].mode = msg->mode;
       }
-      xhand_control_->send_command(msg->hand_id, cmd);
+      const auto result = xhand_control_->send_command(msg->hand_id, cmd);
+      if (!result) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+            "XHand send_command id=%u SDK error=%d: %s", msg->hand_id,
+            result.error_code, result.error_message.c_str());
+      }
       //RCLCPP_INFO(this->get_logger(), "Command sent");
     }
     else

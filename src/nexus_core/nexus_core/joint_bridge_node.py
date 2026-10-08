@@ -20,6 +20,9 @@ from .profile import Profile
 # Candidate commands are latest-value control data: avoid reliable DDS
 # backpressure and let the mux stale-command watchdog reject a stalled stream.
 _CANDIDATE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
+# The vendor XHand driver requests reliable command delivery. A best-effort
+# publisher cannot match that subscription (feedback remains best effort).
+_XHAND_COMMAND_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
 
 
 class JointBridgeNode(Node):
@@ -38,6 +41,7 @@ class JointBridgeNode(Node):
         self._enabled = False
         self._estopped = False
         self._last_feedback = 0.0
+        self._feedback_issue = "no measured feedback received"
         self._hand_id = None
         self._wuji_client = None
         self._service_group = ReentrantCallbackGroup()
@@ -64,7 +68,8 @@ class JointBridgeNode(Node):
 
     def _ready(self, _request, response):
         response.success = time.monotonic() - self._last_feedback < 0.5
-        response.message = "fresh measured feedback" if response.success else "measured feedback unavailable"
+        response.message = "fresh measured feedback" if response.success else (
+            f"measured feedback unavailable: {self._feedback_issue}")
         return response
 
     def _enable(self, _request, response):
@@ -132,7 +137,30 @@ class JointBridgeNode(Node):
             JointState, self.profile.candidate_topic("teleop", self.component), _CANDIDATE_QOS)
         state_pub = self.create_publisher(
             JointState, self.profile.topic(self.component, "joint_states"), qos_profile_sensor_data)
-        driver_pub = self.create_publisher(XHandCommand, native_command_topic, qos_profile_sensor_data)
+        driver_pub = self.create_publisher(XHandCommand, native_command_topic, _XHAND_COMMAND_QOS)
+        feedback_stats = {"received": 0, "forwarded": 0, "rejected": 0,
+                          "max_gap": 0.0, "last": None, "start": time.monotonic()}
+
+        def reject_feedback(reason: str) -> None:
+            feedback_stats["rejected"] += 1
+            self._feedback_issue = reason
+            self.get_logger().error(f"XHand {self.component}: {reason}", throttle_duration_sec=2.0)
+
+        def log_feedback() -> None:
+            now = time.monotonic()
+            elapsed = now - feedback_stats["start"]
+            age = now - self._last_feedback if self._last_feedback else float("inf")
+            self.get_logger().info(
+                f"XHand feedback component={self.component} "
+                f"received_hz={feedback_stats['received'] / elapsed:.1f} "
+                f"forwarded_hz={feedback_stats['forwarded'] / elapsed:.1f} "
+                f"rejected={feedback_stats['rejected']} "
+                f"max_callback_gap_ms={feedback_stats['max_gap'] * 1000.0:.1f} "
+                f"valid_age_ms={age * 1000.0:.1f} reason={self._feedback_issue}")
+            feedback_stats.update(received=0, forwarded=0, rejected=0, max_gap=0.0, start=now)
+
+        if not self.candidate_only:
+            self.create_timer(5.0, log_feedback)
         rate_window = time.monotonic()
         received_count = 0
         forwarded_count = 0
@@ -176,22 +204,35 @@ class JointBridgeNode(Node):
                 max_publish_duration = 0.0
 
         def native_state(msg: XHandStateArray) -> None:
+            now = time.monotonic()
+            feedback_stats["received"] += 1
+            if feedback_stats["last"] is not None:
+                feedback_stats["max_gap"] = max(feedback_stats["max_gap"], now - feedback_stats["last"])
+            feedback_stats["last"] = now
             if len(msg.hand_states) != 1 or len(msg.hand_id) != 1:
-                self.get_logger().error("XHand serial adapter requires exactly one device", throttle_duration_sec=2.0)
+                reject_feedback("serial adapter requires exactly one device")
                 return
             state = msg.hand_states[0]
-            if len(state.position) != self.spec.dim or set(state.name) != set(native_names):
-                self.get_logger().error("XHand measured state names/dimension mismatch", throttle_duration_sec=2.0)
+            if (len(state.position) != self.spec.dim or len(state.name) != self.spec.dim
+                    or set(state.name) != set(native_names)):
+                reject_feedback("measured state names/dimension mismatch")
+                return
+            stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+            age = self.get_clock().now().nanoseconds * 1e-9 - stamp
+            if stamp <= 0.0 or age < -0.1 or age >= 0.5:
+                reject_feedback(f"measured state timestamp invalid/stale (age={age:.3f}s)")
                 return
             lut = dict(zip(state.name, state.position))
             output = self._joint_msg([float(lut[n]) for n in native_names])
-            if any(not math.isfinite(v) or v < lo - 0.05 or v > hi + 0.05
-                   for v, lo, hi in zip(output.position, self.spec.lower, self.spec.upper)):
-                self.get_logger().error("XHand measured state outside limits", throttle_duration_sec=2.0)
-                return
+            for name, value, lo, hi in zip(native_names, output.position, self.spec.lower, self.spec.upper):
+                if not math.isfinite(value) or value < lo - 0.05 or value > hi + 0.05:
+                    reject_feedback(f"measured joint {name}={value:.5f} outside [{lo:.5f}, {hi:.5f}] rad (tolerance=0.05)")
+                    return
             output.header = msg.header
             self._hand_id = int(msg.hand_id[0])
             self._last_feedback = time.monotonic()
+            self._feedback_issue = "valid feedback stream; check native driver if it stops"
+            feedback_stats["forwarded"] += 1
             state_pub.publish(output)
 
         def final_command(msg: JointState) -> None:
@@ -304,10 +345,11 @@ class JointBridgeNode(Node):
 def main() -> None:
     rclpy.init()
     node = JointBridgeNode()
-    # The ratio-only Astral gripper bridge has no lifecycle services. On ROS 2
-    # Humble, its small callbacks can be starved by MultiThreadedExecutor;
-    # use the same single-threaded path as candidate-only bridges.
-    if node.candidate_only or node.spec.kind == "gripper":
+    # Only Wuji waits for another ROS service inside a callback. All other
+    # bridges have short, nonblocking callbacks, including XHand's services.
+    # Humble's MultiThreadedExecutor can starve high-rate callbacks; use the
+    # same single-threaded path for physical XHand as for its simulation.
+    if node._wuji_client is None:
         try:
             rclpy.spin(node)
         except (KeyboardInterrupt, ExternalShutdownException):
