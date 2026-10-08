@@ -30,6 +30,7 @@ class NeroDriverNode(Node):
         self.declare_parameter("state_rate", 20.0)
         self.declare_parameter("command_timeout", 0.5)
         self.declare_parameter("home_timeout", 20.0)
+        self.declare_parameter("home_mode_timeout", 1.0)
         self.declare_parameter("home_speed_percent", 10)
         self.profile = Profile.load(str(self.get_parameter("profile_file").value))
         component = str(self.get_parameter("component").value)
@@ -53,14 +54,25 @@ class NeroDriverNode(Node):
         self._home_settle_reference = None
         self._home_deadline = 0.0
         self._home_next_log = 0.0
+        self._home_phase = "IDLE"
+        self._home_mode_requested_wall = 0.0
+        self._home_mode_requested_at = 0.0
+        self._home_mode_written_at = 0.0
+        self._home_mode_deadline = 0.0
+        self._home_mode_feedback = None
+        self._home_command_attempts = 0
+        self._home_command_sent = False
         self._last_home_diagnostic = None
         self._control_mode = "UNKNOWN"
         self._global_home_deadline = 0.0
         self._command_not_before_ns = 0
         self._home_timeout = float(self.get_parameter("home_timeout").value)
+        self._home_mode_timeout = float(self.get_parameter("home_mode_timeout").value)
         self._home_speed = int(self.get_parameter("home_speed_percent").value)
         if not math.isfinite(self._home_timeout) or self._home_timeout <= 0 or not 1 <= self._home_speed <= 100:
             raise ValueError("invalid Nero home timeout/speed")
+        if not math.isfinite(self._home_mode_timeout) or self._home_mode_timeout <= 0:
+            raise ValueError("invalid Nero home mode timeout")
         self._last_cmd = 0.0
         self._last_state = 0.0
         self._last_q: tuple[float, ...] | None = None
@@ -123,6 +135,10 @@ class NeroDriverNode(Node):
                 rows.append(row)
         snapshot = {"component": self.spec.name, "enabled": self._enabled,
                     "homing": self._homing, "feedback_age_s": time.monotonic() - self._last_state,
+                    "home_phase": self._home_phase,
+                    "home_command_attempts": self._home_command_attempts,
+                    "home_command_sent": self._home_command_sent,
+                    "home_mode_feedback": self._home_mode_feedback,
                     "tolerance_rad": 0.05, "joints": rows,
                     "pending_joints": [row["name"] for row in rows if row["error_rad"] >= 0.05],
                     # This describes observed motion, not a diagnosis of a
@@ -228,6 +244,10 @@ class NeroDriverNode(Node):
         self._home_settled_since = None
         self._home_settle_reference = None
         self._home_deadline = time.monotonic() + self._home_timeout
+        self._home_phase = "WAIT_J_MODE"
+        self._home_mode_feedback = None
+        self._home_command_attempts = 0
+        self._home_command_sent = False
         self._home_next_log = 0.0
         self._last_home_diagnostic = None
         self._home_future = Future()
@@ -236,11 +256,18 @@ class NeroDriverNode(Node):
         self._command_not_before_ns = self.get_clock().now().nanoseconds
         try:
             with self._lock:
+                self._home_mode_requested_wall = time.time()
+                self._home_mode_requested_at = time.monotonic()
+                self._home_mode_deadline = min(
+                    self._home_deadline, self._home_mode_requested_at + self._home_mode_timeout)
                 self._robot.set_motion_mode("j")
                 self._robot.set_auto_set_motion_mode_enabled(False)
                 self._robot.set_speed_percent(self._home_speed)
-                self._robot.move_j(list(target))
-            self.get_logger().info(f"Nero home started target_rad={list(target)} speed={self._home_speed}% timeout={self._home_timeout:.1f}s")
+                self._home_mode_written_at = time.monotonic()
+            self.get_logger().info(
+                f"Nero home waiting for fresh CAN/J feedback before target; "
+                f"mode_timeout={self._home_mode_timeout:.2f}s target_rad={list(target)} "
+                f"speed={self._home_speed}% timeout={self._home_timeout:.1f}s")
         except Exception as exc:
             self._finish_home(False, f"SDK error: {exc}")
         # Feedback timers continue publishing throughout the motion. They
@@ -279,6 +306,7 @@ class NeroDriverNode(Node):
                 except Exception:
                     pass
             self._homing = False
+            self._home_phase = "IDLE"
             self._last_cmd = time.monotonic()
             self._command_not_before_ns = self.get_clock().now().nanoseconds
             future, response = self._home_future, self._home_response
@@ -291,6 +319,56 @@ class NeroDriverNode(Node):
         if future is not None and not future.done():
             future.set_result(self._response(response, success, message))
 
+    def _advance_home_mode(self, now: float) -> None:
+        """Wait asynchronously; a pre-switch cached J status cannot open this gate."""
+        if now >= self._home_mode_deadline:
+            self._finish_home(False,
+                f"CAN/J mode confirmation timed out after {self._home_mode_timeout:.2f}s; "
+                f"no home target sent; mode_feedback={self._home_mode_feedback}")
+            return
+        try:
+            record = self._robot.get_arm_status()
+            if record is None:
+                self._home_mode_feedback = {"unavailable": "no controller feedback"}
+                return
+            stamp = float(record.timestamp)
+            age = time.time() - stamp
+            if not math.isfinite(stamp) or not math.isfinite(age):
+                raise ValueError("non-finite controller timestamp")
+            status = {field: int(getattr(record.msg, field)) for field in
+                      ("ctrl_mode", "arm_status", "mode_feedback", "motion_status", "err_code")}
+            fresh = stamp >= self._home_mode_requested_wall and -0.1 <= age < 0.25
+            self._home_mode_feedback = {**status, "feedback_age_s": age,
+                                       "after_mode_request": stamp >= self._home_mode_requested_wall,
+                                       "wait_elapsed_s": now - self._home_mode_requested_at}
+        except Exception as exc:
+            self._home_mode_feedback = {"unavailable": str(exc)}
+            return
+        if not fresh:
+            return
+        if status["arm_status"] != 0 or status["err_code"] != 0:
+            self._finish_home(False, f"controller not healthy before home target: {status}")
+            return
+        # Match the successful standalone probe's >=20 ms mode-to-target gap.
+        # mode_feedback=1 reports J, but does not acknowledge every 0x151 field
+        # (in particular the JS/MIT flag). Do not treat this as a full CAN ACK.
+        if (status["ctrl_mode"] != 1 or status["mode_feedback"] != 1
+                or status["motion_status"] != 0 or now - self._home_mode_written_at < 0.02):
+            return
+        try:
+            with self._lock:
+                self._home_phase = "SUBMITTING_TARGET"
+                self._home_command_attempts += 1
+                self._robot.move_j(list(self._home_target))
+                self._home_command_sent = True
+                self._home_phase = "MOVING"
+            self.get_logger().info(
+                "Nero home target submitted once after fresh CAN/J feedback: "
+                + json.dumps(self._home_mode_feedback, ensure_ascii=False))
+        except Exception as exc:
+            # A partially transmitted multi-frame goal must never be retried.
+            self._finish_home(False, f"SDK home target error (no retry): {exc}")
+
     def _advance_home(self) -> None:
         if not self._homing:
             return
@@ -300,7 +378,13 @@ class NeroDriverNode(Node):
             self._finish_home(False, f"timeout after {self._home_timeout:.1f}s; max_joint_error={error:.4f} rad actual={list(self._last_q)} target={list(self._home_target)}")
         elif now - self._last_state >= 0.5:
             self._finish_home(False, "measured feedback stale during home")
-        elif error >= 0.05:
+        if not self._homing:
+            return
+        if self._home_phase == "WAIT_J_MODE":
+            self._advance_home_mode(now)
+        if not self._homing or self._home_phase != "MOVING":
+            return
+        if error >= 0.05:
             self._home_settled_since = None
             self._home_settle_reference = None
         elif (self._home_settle_reference is None

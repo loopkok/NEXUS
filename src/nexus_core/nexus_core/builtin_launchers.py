@@ -135,6 +135,7 @@ def launch_nero_driver(profile, components, path: str, dry_run: bool):
         "profile_file": path, "component": component.name, "side": component.side or "left",
         "dry_run": dry_run,
         "home_timeout": float(profile.adapter_config("nero_can").get("home_timeout", 20.0)),
+        "home_mode_timeout": float(profile.adapter_config("nero_can").get("home_mode_timeout", 1.0)),
         "home_speed_percent": int(profile.adapter_config("nero_can").get("home_speed_percent", 10)),
     }]) for component in components]
 

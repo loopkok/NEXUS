@@ -1,0 +1,56 @@
+{
+  "evidence": "user-operated isolated left J7 +1 degree test; not NEXUS full home or continuous JS teleoperation",
+  "source_file": "nero_j7_left_20261008_154226_213047.jsonl",
+  "source_sha256": "f94cf8de03da3c762700bd35b19a96c0c560a91d2680a4a0521f1fb1b50e1a78",
+  "result": "passed",
+  "tx_count": 6,
+  "sample_count": 23,
+  "j7_start_deg": -7.305999999999999,
+  "j7_target_deg": -6.305999999999999,
+  "j7_final_deg": -6.308,
+  "j7_measured_delta_deg": 0.9979999999999994,
+  "j7_final_error_deg": 0.0020000000000003526,
+  "max_first_six_displacement_deg": 0.006000000000000263,
+  "last_mode_write_to_first_goal_frame_ms": 20.49056813120842,
+  "target_to_last_sample_s": 0.45203543407842517,
+  "timing_note": "target_to_last_sample includes deliberate 0.3 s settling; not teleoperation latency",
+  "frames": [
+    {
+      "can_id": "0x151",
+      "data_hex": "0101320000000000",
+      "transport_result": "transport_accepted_not_controller_ack"
+    },
+    {
+      "can_id": "0x151",
+      "data_hex": "01ff050000000000",
+      "transport_result": "transport_accepted_not_controller_ack"
+    },
+    {
+      "can_id": "0x155",
+      "data_hex": "fffff741000161bb",
+      "transport_result": "transport_accepted_not_controller_ack"
+    },
+    {
+      "can_id": "0x156",
+      "data_hex": "ffff2b03fffff831",
+      "transport_result": "transport_accepted_not_controller_ack"
+    },
+    {
+      "can_id": "0x157",
+      "data_hex": "0002577700000639",
+      "transport_result": "transport_accepted_not_controller_ack"
+    },
+    {
+      "can_id": "0x170",
+      "data_hex": "ffffe75e00000000",
+      "transport_result": "transport_accepted_not_controller_ack"
+    }
+  ],
+  "limits": [
+    "single posture",
+    "left arm only",
+    "factory/Ethernet to CAN/J transition, not NEXUS JS to J",
+    "no evidence that mode_feedback acknowledges MIT flag",
+    "full home hardware regression still pending"
+  ]
+}

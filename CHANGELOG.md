@@ -1,5 +1,10 @@
 # Changelog（astral_ws）
 
+## 2026-10-08 Nero 归位模式确认
+
+- 左 J7 独立 SDK +1°实测通过；Nero 归位改为等待切换后的新鲜正常 CAN/J 状态，再提交一次目标，补充等待超时与发送阶段诊断。
+- 详见 [修改记录](docs/changelog/2026-10-08-nero-home-mode.md) 和 [测试记录](docs/test_logs/2026-10-08-nero-home-mode/README.md)；完整真机归位仍待现场确认。
+
 ## 2026-10-08 Nero J7 工具准备状态提示
 
 - 现场确认 CAN 反馈正常，但七轴未使能、控制器状态 6；工具在发送前拒绝，tx_count=0。

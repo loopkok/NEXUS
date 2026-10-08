@@ -44,12 +44,27 @@ class FakeArm:
         self.j_commands = 0
         self.frozen_joints = set()
         self.bad_motor_cache = False
+        self.mode_delay = 0.0
+        self.mode_ready_at = 0.0
+        self.mode_requested_at = 0.0
+        self.j_mode_requested_at = 0.0
+        self.stale_mode_feedback = False
+        self.pre_mode_stamp = time.time()
+        self.controller_error = 0
+        self.fail_joint_send = False
+        self.j_command_times = []
+        self.feedback_poll_times = []
 
     def connect(self): pass
     def disconnect(self): pass
     def set_auto_set_motion_mode_enabled(self, value): pass
     def set_speed_percent(self, value): self.speed = value
-    def set_motion_mode(self, mode): self.mode = mode
+    def set_motion_mode(self, mode):
+        self.mode = mode
+        self.pre_mode_stamp = time.time() - .001
+        self.mode_requested_at = time.monotonic()
+        if mode == "j": self.j_mode_requested_at = self.mode_requested_at
+        self.mode_ready_at = self.mode_requested_at + self.mode_delay
 
     def enable(self):
         self.enabled = True
@@ -60,6 +75,7 @@ class FakeArm:
         self.target = None
 
     def get_joint_angles(self):
+        self.feedback_poll_times.append(time.monotonic())
         if self.drop_feedback:
             return None
         if self.target is not None and self.enabled:
@@ -69,8 +85,10 @@ class FakeArm:
         return SimpleNamespace(msg=list(self.q), timestamp=time.time() - (2.0 if self.stale_feedback else 0.0))
 
     def get_arm_status(self):
-        return SimpleNamespace(timestamp=time.time(), msg=SimpleNamespace(
-            ctrl_mode=1, arm_status=0, mode_feedback=1, motion_status=0, err_code=0))
+        confirmed = time.monotonic() >= self.mode_ready_at
+        return SimpleNamespace(timestamp=self.pre_mode_stamp if self.stale_mode_feedback else time.time(),
+            msg=SimpleNamespace(ctrl_mode=1 if confirmed else 3, arm_status=0,
+                mode_feedback=1, motion_status=0, err_code=self.controller_error))
 
     def get_driver_states(self, index):
         return SimpleNamespace(timestamp=time.time(), msg=SimpleNamespace(foc_status=SimpleNamespace(
@@ -81,9 +99,12 @@ class FakeArm:
             current=float("nan") if self.bad_motor_cache else .1*index, velocity=0.0))
 
     def move_j(self, target):
+        self.j_commands += 1
+        self.j_command_times.append(time.monotonic())
+        if self.fail_joint_send:
+            raise RuntimeError("simulated partial CAN transmission")
         self.start, self.target = list(self.q), list(target)
         self.started = time.monotonic()
-        self.j_commands += 1
 
     def move_js(self, target):
         self.js_commands.append((time.monotonic(), list(target)))
@@ -95,7 +116,7 @@ class FakeArm:
 class NeroHomeTests(unittest.TestCase):
     def setUp(self):
         raw = json.loads((Path(__file__).resolve().parents[1] / "profiles/nero_dual_xhand.json").read_text())
-        raw["instance"] = f"test_nero_home_{os.getpid()}"
+        raw["instance"] = f"test_nero_home_{os.getpid()}_{self._testMethodName}"
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / "profile.json"
         self.path.write_text(json.dumps(raw))
@@ -140,10 +161,19 @@ class NeroHomeTests(unittest.TestCase):
         self.home_client = self.probe.create_client(Trigger, self.profile.namespace + "/drivers/home")
         self.stop_client = self.probe.create_client(Trigger, self.profile.namespace + "/drivers/estop")
         self.executor = SingleThreadedExecutor()
-        for node in [*self.drivers.values(), self.mux, self.probe]: self.executor.add_node(node)
+        for node in [self.mux, self.probe]: self.executor.add_node(node)
+        # Production launches each driver independently of the 100 Hz mux.
+        # Keep each driver's feedback/home/watchdog on ONE executor, but do
+        # not serialize both CAN drivers behind the mux's DDS graph queries.
+        self.driver_executors = []
+        for driver in self.drivers.values():
+            executor = SingleThreadedExecutor()
+            executor.add_node(driver)
+            self.driver_executors.append(executor)
         self.manager_executor = MultiThreadedExecutor(num_threads=8)
         self.manager_executor.add_node(self.manager)
-        self.threads = [threading.Thread(target=e.spin) for e in (self.executor, self.manager_executor)]
+        self.executors = [self.executor, *self.driver_executors, self.manager_executor]
+        self.threads = [threading.Thread(target=e.spin) for e in self.executors]
         self.addCleanup(self.cleanup)
         for t in self.threads: t.start()
         self.wait(lambda: not self.manager._state_faults() and self.manager._mode == "IDLE")
@@ -172,7 +202,7 @@ class NeroHomeTests(unittest.TestCase):
     def cleanup(self):
         for driver in self.drivers.values():
             if driver._homing: driver._finish_home(False, "test cleanup")
-        for e in (self.manager_executor, self.executor): e.shutdown(timeout_sec=3)
+        for e in reversed(self.executors): e.shutdown(timeout_sec=3)
         for t in self.threads: t.join(timeout=3)
         for node in [self.manager, *self.drivers.values(), self.mux, self.probe]: node.destroy_node()
         rclpy.shutdown()
@@ -189,15 +219,22 @@ class NeroHomeTests(unittest.TestCase):
         self.assertEqual(self.manager._mode, "IDLE")
         for side, rows in self.feedback.items():
             times = [t for t, _ in rows if t >= before]
-            self.assertGreater(len(times), 100)
+            self.assertGreaterEqual(len(times), 2)
             gap = max(b - a for a, b in zip(times, times[1:]))
+            polls = [t for t in self.fakes[side].feedback_poll_times if t >= before]
+            poll_gap = max(b-a for a,b in zip(polls, polls[1:]))
+            print(f"home side={side} feedback_count={len(times)} max_gap_ms={gap*1000:.1f} "
+                  f"observed_hz={(len(times)-1)/(times[-1]-times[0]):.1f} "
+                  f"max_sdk_poll_gap_ms={poll_gap*1000:.1f}")
             self.assertLess(gap, 0.5, side)
+            self.assertLess(poll_gap, .5, side)
+            self.assertLess(times[0] - before, .5, side)
+            self.assertLess(time.monotonic() - times[-1], .5, side)
             self.assertTrue(self.drivers[side]._enabled, side)
             snapshot = self.drivers[side]._diagnostic_snapshot()
             self.assertGreater(snapshot["joints"][6]["observed_range_rad"], .1)
             self.assertEqual(snapshot["motors"][6]["velocity_rad_s_sdk"], 0.0)
             self.assertEqual(snapshot["minimal_motion_pending_joints"], [])
-            print(f"home side={side} feedback_count={len(times)} max_gap_ms={gap*1000:.1f}")
         # An old hold still within the normal 0.5-s command timeout must not
         # pull the right arm away from the measured arrival position.
         target = self.profile.adapter_config("nero_can")["home_pose"]["right"]
@@ -303,6 +340,92 @@ class NeroHomeTests(unittest.TestCase):
         self.assertFalse(fake.enabled)
         self.assertIn("non-finite", driver._last_home_diagnostic["motors"][6]["unavailable"])
         self.assertNotIn("NaN", json.dumps(driver._last_home_diagnostic, allow_nan=False))
+
+    def test_mode_confirmation_precedes_single_home_target_without_feedback_gap(self):
+        for fake in self.fakes.values(): fake.mode_delay = .7
+        for driver in self.drivers.values(): driver._home_mode_timeout = 1.2
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(lambda: all(d._home_phase == "WAIT_J_MODE" for d in self.drivers.values()))
+        mark = time.monotonic()
+        js_counts = {side: len(fake.js_commands) for side, fake in self.fakes.items()}
+        self.wait(lambda: all(len([t for t, _ in rows if t >= mark]) >= 2
+                             for rows in self.feedback.values()), timeout=.5)
+        for side, fake in self.fakes.items():
+            self.assertEqual(fake.j_commands, 0)
+            self.assertEqual(len(fake.js_commands), js_counts[side])
+            self.assertGreaterEqual(len([t for t, _ in self.feedback[side] if t >= mark]), 2)
+        self.wait(future.done)
+        self.assertTrue(future.result().success, future.result().message)
+        for fake in self.fakes.values():
+            self.assertEqual(fake.j_commands, 1)
+            self.assertGreaterEqual(fake.j_command_times[0] - fake.j_mode_requested_at, .7)
+        for driver in self.drivers.values():
+            self.assertGreaterEqual(driver._home_mode_feedback["wait_elapsed_s"], .7)
+            self.assertTrue(driver._home_mode_feedback["after_mode_request"])
+            self.assertTrue(driver._home_command_sent)
+
+    def test_cached_pre_switch_j_status_cannot_send_target_even_at_home(self):
+        fake, driver = self.fakes["left"], self.drivers["left"]
+        fake.q = list(self.profile.adapter_config("nero_can")["home_pose"]["left"])
+        fake.stale_mode_feedback = True
+        driver._home_mode_timeout = .25
+        self.wait(lambda: max(abs(a-b) for a,b in zip(driver._last_q, fake.q)) < 1e-5)
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(future.done)
+        self.assertFalse(future.result().success)
+        self.assertIn("mode confirmation timed out", future.result().message)
+        self.assertEqual(fake.j_commands, 0)
+        self.assertEqual(driver._last_home_diagnostic["home_command_attempts"], 0)
+        self.assertFalse(driver._last_home_diagnostic["home_mode_feedback"]["after_mode_request"])
+        self.assertEqual(self.manager._mode, "ESTOP")
+
+    def test_unconfirmed_mode_times_out_without_joint_target(self):
+        fake, driver = self.fakes["left"], self.drivers["left"]
+        fake.mode_delay = 10
+        driver._home_mode_timeout = .25
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(future.done)
+        self.assertFalse(future.result().success)
+        self.assertIn("no home target sent", future.result().message)
+        self.assertEqual(fake.j_commands, 0)
+        self.assertEqual(driver._last_home_diagnostic["home_phase"], "WAIT_J_MODE")
+        self.assertFalse(fake.enabled)
+
+    def test_estop_during_mode_wait_prevents_later_target(self):
+        for fake in self.fakes.values(): fake.mode_delay = .5
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(lambda: all(d._home_phase == "WAIT_J_MODE" for d in self.drivers.values()))
+        emergency = self.stop_client.call_async(Trigger.Request())
+        self.wait(emergency.done)
+        self.wait(future.done)
+        self.assertTrue(emergency.result().success)
+        self.assertFalse(future.result().success)
+        time.sleep(.6)
+        for fake in self.fakes.values():
+            self.assertEqual(fake.j_commands, 0)
+            self.assertFalse(fake.enabled)
+
+    def test_partial_target_transmission_is_not_retried(self):
+        fake, driver = self.fakes["left"], self.drivers["left"]
+        fake.fail_joint_send = True
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(future.done)
+        self.assertFalse(future.result().success)
+        self.assertIn("no retry", future.result().message)
+        self.assertEqual(fake.j_commands, 1)
+        self.assertEqual(driver._last_home_diagnostic["home_command_attempts"], 1)
+        self.assertFalse(driver._last_home_diagnostic["home_command_sent"])
+        self.assertFalse(fake.enabled)
+
+    def test_controller_fault_before_target_is_rejected(self):
+        fake, driver = self.fakes["left"], self.drivers["left"]
+        fake.controller_error = 1
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(future.done)
+        self.assertFalse(future.result().success)
+        self.assertIn("controller not healthy before home target", future.result().message)
+        self.assertEqual(fake.j_commands, 0)
+        self.assertFalse(fake.enabled)
 
 
 if __name__ == "__main__": unittest.main()
