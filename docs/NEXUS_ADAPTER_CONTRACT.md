@@ -86,6 +86,38 @@ hardware settings in `adapter_config`.
 
 ## ROS contract and lifecycle
 
+### Nero 真机归位到位阈值
+
+编辑实际启动所用 profile 的 `adapter_config.nero_can.home_tolerance_rad`。
+内置真机配置是 `src/nexus_core/profiles/nero_dual_xhand.json`，默认值：
+
+```json
+"home_tolerance_rad": 0.05
+```
+
+单位为 **rad（弧度）**，`0.05 rad ≈ 2.86°`。一个数应用于两臂所有关节；
+也可以填写按组件 `joints` 顺序排列的七个值，或用 `left` / `right` 分别配置。
+以下仅是格式示例（J7 为 `0.10 rad ≈ 5.73°`），内置默认值仍为 `0.05`：
+
+```json
+"home_tolerance_rad": {
+  "left":  [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.10],
+  "right": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.10]
+}
+```
+
+每个关节的绝对误差必须**小于**其阈值，且保持稳定 0.3 秒、漂移不超过
+0.002 rad 才通过。该配置只影响到位判定，不改变归位目标、速度、模式确认、
+超时、失联保护或遥操限位。诊断与失败日志使用同一组阈值。
+缺省字段保持旧行为；非法值、非正数、布尔值和不等于七项的数组会被拒绝，
+使用分侧配置时必须提供所启动机械臂对应的键。
+
+修改后需停止当前机器人会话，再重新启动才生效；不是运行中热更新。
+Web 使用冻结的会话 profile，编辑源文件不会改变已经运行的会话。
+从 Web 重新选择并校验更新后的配置后启动。主机路径通常为：
+`/home/loopkok/NEXUS/src/nexus_core/profiles/nero_dual_xhand.json`。
+此设置属于 Nero CAN 真机驱动，MuJoCo 仿真归位不使用这个字段。
+
 All runtime APIs are scoped to `/nexus/<instance>`.
 
 | Topic/service | Type | Owner/meaning |

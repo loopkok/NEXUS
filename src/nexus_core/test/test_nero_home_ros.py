@@ -118,6 +118,9 @@ class NeroHomeTests(unittest.TestCase):
     def setUp(self):
         raw = json.loads((Path(__file__).resolve().parents[1] / "profiles/nero_dual_xhand.json").read_text())
         raw["instance"] = f"test_nero_home_{os.getpid()}_{self._testMethodName}"
+        if self._testMethodName.startswith("test_configured_"):
+            raw["adapter_config"]["nero_can"]["home_tolerance_rad"] = {
+                "left": [.05] * 6 + [.1], "right": .03}
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / "profile.json"
         self.path.write_text(json.dumps(raw))
@@ -364,6 +367,40 @@ class NeroHomeTests(unittest.TestCase):
         self.assertTrue(snapshot["motors"][6]["fresh"])
         self.assertIn("minimal measured motion", future.result().message)
         self.assertFalse(fake.enabled)
+
+    def test_configured_j7_tolerance_accepts_residual(self):
+        driver, fake = self.drivers["left"], self.fakes["left"]
+        self.assertEqual(driver._home_tolerances, (.05,) * 6 + (.1,))
+        self.assertEqual(self.drivers["right"]._home_tolerances, (.03,) * 7)
+        fake.q = list(self.profile.adapter_config("nero_can")["home_pose"]["left"])
+        fake.q[6] += .0793
+        fake.frozen_joints = {6}
+        self.wait(lambda: abs(driver._last_q[6] - fake.q[6]) < 1e-4)
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(future.done)
+        self.assertTrue(future.result().success, future.result().message)
+        snapshot = driver._diagnostic_snapshot()
+        self.assertEqual(snapshot["tolerance_rad"], [.05] * 6 + [.1])
+        self.assertEqual(snapshot["pending_joints"], [])
+        self.assertAlmostEqual(snapshot["joints"][6]["error_rad"], .0793)
+        self.assertEqual(snapshot["joints"][6]["tolerance_rad"], .1)
+
+    def test_configured_j7_tolerance_does_not_relax_other_joints(self):
+        driver, fake = self.drivers["left"], self.fakes["left"]
+        fake.q = list(self.profile.adapter_config("nero_can")["home_pose"]["left"])
+        fake.q[0] += .0793
+        fake.q[6] += .0793
+        fake.frozen_joints = {0, 6}
+        driver._home_timeout = .8
+        self.wait(lambda: abs(driver._last_q[0] - fake.q[0]) < 1e-4)
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(future.done)
+        self.assertFalse(future.result().success)
+        snapshot = driver._last_home_diagnostic
+        self.assertEqual(snapshot["pending_joints"], [driver.spec.joints[0]])
+        self.assertEqual(snapshot["minimal_motion_pending_joints"], [driver.spec.joints[0]])
+        self.assertIn(driver.spec.joints[0] + ": 0.0793rad", future.result().message)
+        self.assertNotIn(driver.spec.joints[6] + ": 0.0793rad", future.result().message)
 
     def test_diagnostic_service_sends_no_hardware_commands(self):
         driver, fake = self.drivers["right"], self.fakes["right"]

@@ -18,6 +18,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from .profile import Profile
+from .nero_home_config import home_tolerances
 
 
 class NeroDriverNode(Node):
@@ -39,6 +40,8 @@ class NeroDriverNode(Node):
         self.side = self.spec.side or side_param
         if self.spec.driver != "nero_can":
             raise ValueError(f"{self.spec.name} is not a Nero CAN component")
+        self._home_tolerances = home_tolerances(
+            self.profile.adapter_config("nero_can"), self.side, self.spec.dim)
         self.dry_run = bool(self.get_parameter("dry_run").value)
         self._lock = threading.RLock()
         self._enabled = False
@@ -106,7 +109,9 @@ class NeroDriverNode(Node):
                                             durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.create_timer(1.0 / max(1.0, float(self.get_parameter("state_rate").value)), self._poll_state)
         self.create_timer(0.05, self._watchdog)
-        self.get_logger().info(f"Nero driver {self.side} profile_sha256={self.profile.digest} dry_run={self.dry_run}")
+        self.get_logger().info(
+            f"Nero driver {self.side} profile_sha256={self.profile.digest} dry_run={self.dry_run} "
+            f"home_tolerance_rad={list(self._home_tolerances)}")
 
     def _response(self, response, ok: bool, message: str):
         response.success = ok
@@ -126,7 +131,8 @@ class NeroDriverNode(Node):
             for index, (name, actual, goal) in enumerate(zip(self.spec.joints, self._last_q, target)):
                 error = abs(actual - goal)
                 row = {"name": name, "actual_rad": actual, "target_rad": goal,
-                       "error_rad": error, "error_deg": math.degrees(error)}
+                       "error_rad": error, "error_deg": math.degrees(error),
+                       "tolerance_rad": self._home_tolerances[index]}
                 if self._home_start_q is not None:
                     start = self._home_start_q[index]
                     row.update(start_rad=start, displacement_rad=actual-start,
@@ -139,12 +145,15 @@ class NeroDriverNode(Node):
                     "home_command_attempts": self._home_command_attempts,
                     "home_command_sent": self._home_command_sent,
                     "home_mode_feedback": self._home_mode_feedback,
-                    "tolerance_rad": 0.05, "joints": rows,
-                    "pending_joints": [row["name"] for row in rows if row["error_rad"] >= 0.05],
+                    "tolerance_rad": (self._home_tolerances[0]
+                        if len(set(self._home_tolerances)) == 1 else list(self._home_tolerances)),
+                    "joints": rows,
+                    "pending_joints": [row["name"] for row in rows
+                        if row["error_rad"] >= row["tolerance_rad"]],
                     # This describes observed motion, not a diagnosis of a
                     # motor, brake, payload or controller fault.
                     "minimal_motion_pending_joints": [row["name"] for row in rows
-                        if row["error_rad"] >= 0.05 and "observed_range_rad" in row
+                        if row["error_rad"] >= row["tolerance_rad"] and "observed_range_rad" in row
                         and row["observed_range_rad"] <= 0.002]}
         if self._robot is None:
             return snapshot
@@ -267,7 +276,8 @@ class NeroDriverNode(Node):
             self.get_logger().info(
                 f"Nero home waiting for fresh CAN/J feedback before target; "
                 f"mode_timeout={self._home_mode_timeout:.2f}s target_rad={list(target)} "
-                f"speed={self._home_speed}% timeout={self._home_timeout:.1f}s")
+                f"speed={self._home_speed}% timeout={self._home_timeout:.1f}s "
+                f"home_tolerance_rad={list(self._home_tolerances)}")
         except Exception as exc:
             self._finish_home(False, f"SDK error: {exc}")
         # Feedback timers continue publishing throughout the motion. They
@@ -281,7 +291,8 @@ class NeroDriverNode(Node):
             self._last_home_diagnostic = self._diagnostic_snapshot()
             pending = ", ".join(
                 f"{row['name']}: {row['error_rad']:.4f}rad/{row['error_deg']:.2f}deg"
-                for row in self._last_home_diagnostic["joints"] if row["error_rad"] >= 0.05)
+                for row in self._last_home_diagnostic["joints"]
+                if row["error_rad"] >= row["tolerance_rad"])
             if pending:
                 reason += f"; pending joints [{pending}]"
             minimal_motion = self._last_home_diagnostic["minimal_motion_pending_joints"]
@@ -373,7 +384,8 @@ class NeroDriverNode(Node):
         if not self._homing:
             return
         now = time.monotonic()
-        error = max(abs(a - b) for a, b in zip(self._last_q, self._home_target))
+        errors = [abs(a - b) for a, b in zip(self._last_q, self._home_target)]
+        error = max(errors)
         if now >= self._home_deadline:
             self._finish_home(False, f"timeout after {self._home_timeout:.1f}s; max_joint_error={error:.4f} rad actual={list(self._last_q)} target={list(self._home_target)}")
         elif now - self._last_state >= 0.5:
@@ -384,7 +396,7 @@ class NeroDriverNode(Node):
             self._advance_home_mode(now)
         if not self._homing or self._home_phase != "MOVING":
             return
-        if error >= 0.05:
+        if any(value >= tolerance for value, tolerance in zip(errors, self._home_tolerances)):
             self._home_settled_since = None
             self._home_settle_reference = None
         elif (self._home_settle_reference is None

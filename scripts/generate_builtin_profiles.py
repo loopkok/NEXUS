@@ -129,11 +129,13 @@ def nero():
                 "right_frame_id": "nero_right_wrist_mapped",
             },
         },
-        "hardware": {"can": {"left": "can_nero_left", "right": "can_nero_right"},
-                     "xhand_serial": {"left": "/dev/ttyUSB0", "right": "/dev/ttyUSB1"},
-                     "home_pose": {
-                         "left": [-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163],
-                         "right": [0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163]}},
+        "adapter_config": {"nero_can": {
+            "home_tolerance_rad": 0.05,
+            "channels": {"left": "can_nero_left", "right": "can_nero_right"},
+            "home_pose": {
+                "left": [-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163],
+                "right": [0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163]}}},
+        "hardware": {"xhand_serial": {"left": "/dev/ttyUSB0", "right": "/dev/ttyUSB1"}},
         "teleop": {"left": {"arm_base_frame": "left_arm_base",
                             "vr_to_arm_rot": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
                             "motion_scale": 0.65, "tcp_offset": [0.0] * 6},

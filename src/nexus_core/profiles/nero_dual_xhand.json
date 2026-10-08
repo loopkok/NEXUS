@@ -295,6 +295,7 @@
   },
   "adapter_config": {
     "nero_can": {
+      "home_tolerance_rad": 0.05,
       "channels": {
         "left": "can_nero_left",
         "right": "can_nero_right"

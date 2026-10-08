@@ -131,6 +131,11 @@ def launch_astral_driver(profile, components, path: str, dry_run: bool):
 
 
 def launch_nero_driver(profile, components, path: str, dry_run: bool):
+    # Resolve every arm before creating launch actions; reject malformed
+    # tolerance settings before any driver can connect to a CAN interface.
+    from .nero_home_config import home_tolerances
+    for component in components:
+        home_tolerances(profile.adapter_config("nero_can"), component.side or "left", component.dim)
     return [_node("nexus_core", "nexus_nero_driver", _node_name("driver", component), [{
         "profile_file": path, "component": component.name, "side": component.side or "left",
         "dry_run": dry_run,

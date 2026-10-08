@@ -117,6 +117,7 @@ def _builtin_registries() -> dict[str, dict[str, Any]]:
                                   "nexus_core.builtin_launchers:preflight_astral"),
             "nero_can": Adapter("nero_can", frozenset({"arm"}), joint_names=_nero_joints,
                                 supports_home=True,
+                                validate_config="nexus_core.nero_home_config:validate_config",
                                 launcher="nexus_core.builtin_launchers:launch_nero_driver",
                                 preflight="nexus_core.builtin_launchers:preflight_nero"),
             "xhand_serial": Adapter("xhand_serial", frozenset({"hand"}), joint_names=_xhand_joints,
