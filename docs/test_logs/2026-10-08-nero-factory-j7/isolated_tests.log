@@ -1,0 +1,15 @@
+test_default_main_is_read_only_with_zero_actual_transmits (test_nero_j7_probe.J7ProbeTests) ... ok
+test_disabled_joint_refuses_control_without_any_command (test_nero_j7_probe.J7ProbeTests) ... ok
+test_execute_refuses_running_nero_driver_before_opening_sdk (test_nero_j7_probe.J7ProbeTests) ... ok
+test_first_six_deviation_aborts (test_nero_j7_probe.J7ProbeTests) ... ok
+test_frozen_j7_fails_without_resend_or_js_fallback (test_nero_j7_probe.J7ProbeTests) ... ok
+test_only_j7_changes_one_planned_command_no_return_or_stop_on_success (test_nero_j7_probe.J7ProbeTests) ... ok
+test_stale_j7_cannot_hide_behind_fresh_other_position_frames (test_nero_j7_probe.J7ProbeTests) ... ok
+test_target_rejects_wide_nonfinite_and_out_of_limit_displacement (test_nero_j7_probe.J7ProbeTests) ... ok
+test_unexpected_sdk_send_is_blocked_in_read_only_mode (test_nero_j7_probe.J7ProbeTests) ... ok
+test_wrong_mode_never_submits_joint_target (test_nero_j7_probe.J7ProbeTests) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.033s
+
+OK
