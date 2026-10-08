@@ -1,0 +1,30 @@
+[INFO] [1791428432.668232140] [probe_bridge_left_ee]: joint bridge xhand component=left_ee
+[WARN] [1791428432.669917586] [probe_bridge_left_ee]: New subscription discovered on topic '/left_hand/xhand_command', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY
+[INFO] [1791428437.688226928] [probe_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=8.7 received=44 invalid=0 max_callback_gap_ms=663.4 max_publish_ms=0.2 in 5.1s
+[INFO] [1791428442.804247130] [probe_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=10.4 received=53 invalid=0 max_callback_gap_ms=695.1 max_publish_ms=0.3 in 5.1s
+[INFO] [1791428447.890910988] [probe_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=12.4 received=63 invalid=0 max_callback_gap_ms=1582.0 max_publish_ms=0.3 in 5.1s
+[INFO] [1791428453.043785988] [probe_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=4.9 received=25 invalid=0 max_callback_gap_ms=3066.1 max_publish_ms=0.2 in 5.2s
+[INFO] [1791428458.051180226] [probe_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=7.4 received=37 invalid=0 max_callback_gap_ms=764.7 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428463.115291218] [probe_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=6.7 received=34 invalid=0 max_callback_gap_ms=1129.5 max_publish_ms=0.2 in 5.1s
+[INFO] [1791428468.254606109] [probe_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=9.0 received=46 invalid=0 max_callback_gap_ms=629.9 max_publish_ms=0.2 in 5.1s
+[INFO] [1791428473.339161994] [probe_bridge_left_ee]: XHand candidate bridge component=left_ee forwarded_hz=13.4 received=68 invalid=0 max_callback_gap_ms=558.0 max_publish_ms=0.2 in 5.1s
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_joint_bridge", line 33, in <module>
+    sys.exit(load_entry_point('nexus-core', 'console_scripts', 'nexus_joint_bridge')())
+  File "/home/loopkok/NEXUS/build/nexus_core/nexus_core/joint_bridge_node.py", line 323, in main
+    executor.spin()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 323, in spin
+    self.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 863, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 844, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 780, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 620, in _wait_for_ready_callbacks
+    context_stack.enter_context(srv.handle)
+  File "/usr/lib/python3.10/contextlib.py", line 492, in enter_context
+    result = _cm_type.__enter__(cm)
+KeyboardInterrupt
+The following exception was never retrieved: cannot use Destroyable because destruction was requested
+[ros2run]: Interrupt

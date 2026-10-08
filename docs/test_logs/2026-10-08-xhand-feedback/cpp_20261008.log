@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /home/loopkok/NEXUS/build/xhand_control_ros2
+Test project /home/loopkok/NEXUS/build/xhand_control_ros2
+    Start 1: xhand_feedback_validation
+1/1 Test #1: xhand_feedback_validation ........   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.00 sec

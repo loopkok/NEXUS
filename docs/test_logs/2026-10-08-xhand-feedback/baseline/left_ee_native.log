@@ -1,0 +1,7 @@
+[INFO] [1791428432.304824091] [left_hand.xhand_control_ros2]: XHandControlROS initialized,version 1.4.2
+[INFO] [1791428432.304913964] [left_hand.xhand_control_ros2]: Attempting to open XHand on /dev/ttyUSB0 with baudrate 3000000
+try open device times: 1 / 3 
+Start reading data from serial port
+[INFO] [1791428432.311188579] [left_hand.xhand_control_ros2]: XHand serial device opened successfully on /dev/ttyUSB0
+[WARN] [1791428432.623631076] [left_hand.xhand_control_ros2]: New publisher discovered on topic '/left_hand/xhand_command', offering incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[INFO] [1791428477.147919492] [rclcpp]: signal_handler(SIGINT/SIGTERM)

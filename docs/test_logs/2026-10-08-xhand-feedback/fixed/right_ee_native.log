@@ -1,0 +1,17 @@
+[INFO] [1791428646.377569847] [right_hand.xhand_control_ros2]: XHandControlROS initialized,version 1.4.2
+[INFO] [1791428646.377654976] [right_hand.xhand_control_ros2]: Attempting to open XHand on /dev/ttyUSB1 with baudrate 3000000
+try open device times: 1 / 3 
+Start reading data from serial port
+[INFO] [1791428646.382798744] [right_hand.xhand_control_ros2]: XHand serial device opened successfully on /dev/ttyUSB1
+[INFO] [1791428651.385438941] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.2 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=3.5
+[INFO] [1791428656.395679404] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[INFO] [1791428661.405426762] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[INFO] [1791428666.415402434] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[INFO] [1791428671.425411809] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[INFO] [1791428676.435410495] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[INFO] [1791428681.445346416] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[INFO] [1791428686.455406755] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[INFO] [1791428691.465355490] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[INFO] [1791428696.475411579] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[INFO] [1791428701.485413238] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[INFO] [1791428706.218584921] [rclcpp]: signal_handler(SIGINT/SIGTERM)

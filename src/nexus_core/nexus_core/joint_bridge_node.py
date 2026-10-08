@@ -354,6 +354,11 @@ def main() -> None:
             rclpy.spin(node)
         except (KeyboardInterrupt, ExternalShutdownException):
             pass
+        except RuntimeError:
+            # Humble may invalidate a subscription handle while SIGINT shuts
+            # down the context. Do not hide runtime errors during operation.
+            if rclpy.ok():
+                raise
         finally:
             node.destroy_node()
             if rclpy.ok():

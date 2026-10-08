@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, patch
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
@@ -20,7 +21,25 @@ from xhand_control_interfaces.msg import XHandCommand, XHandState, XHandStateArr
 
 from nexus_core.joint_bridge_node import JointBridgeNode
 from nexus_core.profile import Profile
+from nexus_core import joint_bridge_node
 from astral_web_monitor.monitor_node import MonitorNode
+
+
+class BridgeShutdownTests(unittest.TestCase):
+    def run_main_with_error(self, context_valid):
+        fake = Mock(_wuji_client=None)
+        with patch.object(joint_bridge_node, "JointBridgeNode", return_value=fake), \
+             patch.object(rclpy, "init"), patch.object(rclpy, "shutdown"), \
+             patch.object(rclpy, "ok", return_value=context_valid), \
+             patch.object(rclpy, "spin", side_effect=RuntimeError("context handle invalid")):
+            joint_bridge_node.main()
+
+    def test_shutdown_context_error_is_handled(self):
+        self.run_main_with_error(False)
+
+    def test_live_runtime_error_is_not_hidden(self):
+        with self.assertRaises(RuntimeError):
+            self.run_main_with_error(True)
 
 
 class XHandBridgeTests(unittest.TestCase):

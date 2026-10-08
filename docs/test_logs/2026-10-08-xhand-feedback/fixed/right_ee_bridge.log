@@ -1,0 +1,42 @@
+[INFO] [1791428646.741480184] [probe_bridge_right_ee]: joint bridge xhand component=right_ee
+[INFO] [1791428651.695856949] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=99.4 forwarded_hz=99.4 rejected=0 max_callback_gap_ms=12.1 valid_age_ms=7.1 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428651.702908197] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=64.9 received=325 invalid=0 max_callback_gap_ms=20.2 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428656.696546370] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.9 valid_age_ms=6.9 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428656.710518220] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.1 received=331 invalid=0 max_callback_gap_ms=19.7 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428661.696008835] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.7 valid_age_ms=6.0 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428661.715955243] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=65.9 received=330 invalid=0 max_callback_gap_ms=19.9 max_publish_ms=0.3 in 5.0s
+[INFO] [1791428666.695969225] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.2 valid_age_ms=6.4 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428666.720998335] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.5 received=333 invalid=0 max_callback_gap_ms=19.3 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428671.695974819] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.1 valid_age_ms=6.4 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428671.730641443] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.7 received=334 invalid=0 max_callback_gap_ms=16.2 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428676.696004061] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.0 valid_age_ms=6.4 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428676.736186460] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.5 received=333 invalid=0 max_callback_gap_ms=20.1 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428681.695951591] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.3 valid_age_ms=6.4 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428681.736573503] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.6 received=333 invalid=0 max_callback_gap_ms=19.8 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428686.696037274] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.3 valid_age_ms=6.3 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428686.740844541] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.5 received=333 invalid=0 max_callback_gap_ms=20.0 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428691.696005676] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.2 valid_age_ms=6.3 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428691.756534382] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.6 received=334 invalid=0 max_callback_gap_ms=19.9 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428696.695970722] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.4 valid_age_ms=6.1 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428696.770538065] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.6 received=334 invalid=0 max_callback_gap_ms=19.8 max_publish_ms=0.2 in 5.0s
+[INFO] [1791428701.696042079] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.2 valid_age_ms=6.4 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791428701.776080703] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.5 received=333 invalid=0 max_callback_gap_ms=19.8 max_publish_ms=0.2 in 5.0s
+Traceback (most recent call last):
+  File "/home/loopkok/NEXUS/install/nexus_core/lib/nexus_core/nexus_joint_bridge", line 33, in <module>
+    sys.exit(load_entry_point('nexus-core', 'console_scripts', 'nexus_joint_bridge')())
+  File "/tmp/nexus_xhand_fix_20261008/src/nexus_core/nexus_core/joint_bridge_node.py", line 354, in main
+    rclpy.spin(node)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 229, in spin
+    executor.spin_once()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 808, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 805, in _spin_once_impl
+    raise handler.exception()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/task.py", line 272, in _execute_coroutine_step
+    result = coro.send(None)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 478, in handler
+    arg = take_from_wait_list(entity)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 400, in _take_subscription
+    msg_info = sub.handle.take_message(sub.msg_type, sub.raw)
+RuntimeError: Unable to convert call argument to Python object (compile in debug mode for details)
+[ros2run]: Process exited with failure 1

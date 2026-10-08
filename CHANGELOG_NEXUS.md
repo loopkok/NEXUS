@@ -1,5 +1,15 @@
 # NEXUS Changelog
 
+## 2026-10-08 — Fix physical XHand feedback starvation
+
+- Physical XHand bridges now use single-threaded ROS callbacks; matched the
+  vendor's reliable command QoS and added SDK/feedback diagnostics without
+  relaxing the 0.5-second feedback gate. Read-only host measurements improved
+  canonical hand feedback from 1–9 Hz with multi-second gaps to about 100 Hz
+  with no timeout gaps in 60 seconds. See the
+  [test log](docs/test_logs/2026-10-08-xhand-feedback/README.md) and
+  [change record](docs/changelog/2026-10-08-xhand-feedback.md).
+
 ## 2026-09-29 — Clarify Nero TCP setting
 
 - Corrected the migrated Nero teleop README: the actual left/right `tcp_offset`
