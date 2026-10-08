@@ -1,0 +1,14 @@
+[
+  {
+    "channel": "can_nero_left",
+    "request_can_id": "0x4AF (firmware read only)",
+    "hex": "023f55103ab1010a",
+    "software_version": "1.10"
+  },
+  {
+    "channel": "can_nero_right",
+    "request_can_id": "0x4AF (firmware read only)",
+    "hex": "023699ed67d1010a",
+    "software_version": "1.10"
+  }
+]

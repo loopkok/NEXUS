@@ -42,6 +42,7 @@ class FakeArm:
         self.js_commands = []
         self.mode = "js"
         self.j_commands = 0
+        self.frozen_joints = set()
 
     def connect(self): pass
     def disconnect(self): pass
@@ -62,8 +63,17 @@ class FakeArm:
             return None
         if self.target is not None and self.enabled:
             alpha = min(1.0, (time.monotonic() - self.started) / self.duration)
-            self.q = [a + alpha * (b - a) for a, b in zip(self.start, self.target)]
+            self.q = [a if i in self.frozen_joints else a + alpha * (b - a)
+                      for i, (a, b) in enumerate(zip(self.start, self.target))]
         return SimpleNamespace(msg=list(self.q), timestamp=time.time() - (2.0 if self.stale_feedback else 0.0))
+
+    def get_arm_status(self):
+        return SimpleNamespace(timestamp=time.time(), msg=SimpleNamespace(
+            ctrl_mode=1, arm_status=0, mode_feedback=1, motion_status=0, err_code=0))
+
+    def get_driver_states(self, index):
+        return SimpleNamespace(timestamp=time.time(), msg=SimpleNamespace(foc_status=SimpleNamespace(
+            driver_enable_status=self.enabled, driver_error_status=False, collision_status=False, stall_status=False)))
 
     def move_j(self, target):
         self.start, self.target = list(self.q), list(target)
@@ -72,7 +82,8 @@ class FakeArm:
 
     def move_js(self, target):
         self.js_commands.append((time.monotonic(), list(target)))
-        self.q = list(target)
+        self.q = [self.q[i] if i in self.frozen_joints else value
+                  for i, value in enumerate(target)]
         self.target = None
 
 
@@ -227,6 +238,42 @@ class NeroHomeTests(unittest.TestCase):
         self.assertIn("feedback stale", future.result().message)
         self.assertLess(time.monotonic() - future_deadline, 2)
         self.assertEqual(self.manager._mode, "ESTOP")
+
+    def test_reported_joint_seven_residual_is_not_accepted_as_home(self):
+        fake, driver = self.fakes["left"], self.drivers["left"]
+        target = list(self.profile.adapter_config("nero_can")["home_pose"]["left"])
+        fake.q = target[:]
+        fake.q[6] += .0793
+        fake.frozen_joints = {6}
+        driver._home_timeout = .8
+        self.wait(lambda: abs(driver._last_q[6] - fake.q[6]) < 1e-4)
+        future = self.home_client.call_async(Trigger.Request())
+        self.wait(future.done)
+        self.assertFalse(future.result().success)
+        name = driver.spec.joints[6]
+        self.assertIn(f"{name}: 0.0793rad/4.54deg", future.result().message)
+        snapshot = driver._last_home_diagnostic
+        self.assertEqual(snapshot["pending_joints"], [name])
+        self.assertTrue(snapshot["enabled"])
+        self.assertTrue(snapshot["drivers"][6]["driver_enable_status"])
+        self.assertFalse(fake.enabled)
+
+    def test_diagnostic_service_sends_no_hardware_commands(self):
+        driver, fake = self.drivers["right"], self.fakes["right"]
+        # Keep normal mux hold traffic out of this service-specific assertion.
+        driver._enabled = False
+        client = self.probe.create_client(Trigger, f"{self.profile.namespace}/drivers/right_arm/diagnostics")
+        self.wait(client.service_is_ready)
+        before = (fake.j_commands, len(fake.js_commands), fake.enabled)
+        future = client.call_async(Trigger.Request())
+        self.wait(future.done)
+        response = future.result()
+        self.assertTrue(response.success)
+        data = json.loads(response.message)
+        self.assertEqual(len(data["joints"]), 7)
+        self.assertEqual(len(data["drivers"]), 7)
+        self.assertEqual(data["controller"]["arm_status"], 0)
+        self.assertEqual((fake.j_commands, len(fake.js_commands), fake.enabled), before)
 
 
 if __name__ == "__main__": unittest.main()

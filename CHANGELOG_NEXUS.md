@@ -1,5 +1,14 @@
 # NEXUS Changelog
 
+## 2026-10-08 — Diagnose remaining Nero joint-seven home residual
+
+- The follow-up hardware log shows only J7 outside the measured home range
+  (left 4.55°, right 4.17°). Add per-joint progress, controller/driver status,
+  a pre-stop failure snapshot and a read-only diagnostics service. Eleven
+  isolated Nero checks pass, including actual SDK packet coverage. Physical
+  J7 residual and XHand parameter errors remain unresolved pending on-site data.
+  See the [diagnostic report](docs/test_logs/2026-10-08-nero-joint7/README.md).
+
 ## 2026-10-08 — Fix Nero measured homing and XHand feedback QoS
 
 - Give homing its own service budget, keep Nero measured feedback running

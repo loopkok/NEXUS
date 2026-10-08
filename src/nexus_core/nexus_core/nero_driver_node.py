@@ -49,6 +49,8 @@ class NeroDriverNode(Node):
         self._home_settled_since = None
         self._home_settle_reference = None
         self._home_deadline = 0.0
+        self._home_next_log = 0.0
+        self._last_home_diagnostic = None
         self._control_mode = "UNKNOWN"
         self._global_home_deadline = 0.0
         self._command_not_before_ns = 0
@@ -77,6 +79,7 @@ class NeroDriverNode(Node):
                                  self._on_command, QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT))
         prefix = f"{self.profile.namespace}/drivers/{self.spec.name}"
         self.create_service(Trigger, f"{prefix}/ready", self._ready)
+        self.create_service(Trigger, f"{prefix}/diagnostics", self._diagnostics)
         self.create_service(Trigger, f"{prefix}/enable", self._enable)
         # An awaiting home service must not hold the callback group used by
         # feedback, the command watchdog or emergency stop. Keep one executor.
@@ -98,6 +101,54 @@ class NeroDriverNode(Node):
     def _ready(self, _request, response):
         ok = self._last_q is not None and time.monotonic() - self._last_state < 0.5
         return self._response(response, ok, "fresh measured joints" if ok else "joint feedback unavailable")
+
+    def _diagnostic_snapshot(self):
+        """Read SDK caches only; never request data or send a CAN command."""
+        target = self._home_target or tuple(
+            self.profile.adapter_config("nero_can")["home_pose"][self.side])
+        rows = []
+        if self._last_q is not None:
+            for name, actual, goal in zip(self.spec.joints, self._last_q, target):
+                error = abs(actual - goal)
+                rows.append({"name": name, "actual_rad": actual, "target_rad": goal,
+                             "error_rad": error, "error_deg": math.degrees(error)})
+        snapshot = {"component": self.spec.name, "enabled": self._enabled,
+                    "homing": self._homing, "feedback_age_s": time.monotonic() - self._last_state,
+                    "tolerance_rad": 0.05, "joints": rows,
+                    "pending_joints": [row["name"] for row in rows if row["error_rad"] >= 0.05]}
+        if self._robot is None:
+            return snapshot
+        try:
+            record = self._robot.get_arm_status()
+            if record is not None:
+                snapshot["controller"] = {
+                    "feedback_age_s": time.time() - float(record.timestamp),
+                    **{field: int(getattr(record.msg, field)) for field in
+                       ("ctrl_mode", "arm_status", "mode_feedback", "motion_status", "err_code")}}
+        except Exception as exc:
+            snapshot["controller_unavailable"] = str(exc)
+        snapshot["drivers"] = []
+        for index, name in enumerate(self.spec.joints, 1):
+            try:
+                record = self._robot.get_driver_states(index)
+                if record is None:
+                    snapshot["drivers"].append({"name": name, "available": False})
+                    continue
+                flags = record.msg.foc_status
+                snapshot["drivers"].append({
+                    "name": name, "feedback_age_s": time.time() - float(record.timestamp),
+                    **{field: bool(getattr(flags, field)) for field in
+                       ("driver_enable_status", "driver_error_status", "collision_status", "stall_status")}})
+            except Exception as exc:
+                snapshot["drivers"].append({"name": name, "unavailable": str(exc)})
+        return snapshot
+
+    def _diagnostics(self, _request, response):
+        snapshot = self._diagnostic_snapshot()
+        # Preserve the state before failure disables motors. Reading only the
+        # post-stop state can incorrectly suggest the brake caused the failure.
+        snapshot["last_home_failure_before_stop"] = self._last_home_diagnostic
+        return self._response(response, True, json.dumps(snapshot, ensure_ascii=False))
 
     def _enable(self, _request, response):
         if self._homing:
@@ -140,6 +191,8 @@ class NeroDriverNode(Node):
         self._home_settled_since = None
         self._home_settle_reference = None
         self._home_deadline = time.monotonic() + self._home_timeout
+        self._home_next_log = 0.0
+        self._last_home_diagnostic = None
         self._home_future = Future()
         self._home_response = response
         future = self._home_future
@@ -160,6 +213,15 @@ class NeroDriverNode(Node):
     def _finish_home(self, success: bool, reason: str) -> None:
         if not self._homing:
             return
+        if not success:
+            self._last_home_diagnostic = self._diagnostic_snapshot()
+            pending = ", ".join(
+                f"{row['name']}: {row['error_rad']:.4f}rad/{row['error_deg']:.2f}deg"
+                for row in self._last_home_diagnostic["joints"] if row["error_rad"] >= 0.05)
+            if pending:
+                reason += f"; pending joints [{pending}]"
+            self.get_logger().error("Nero home diagnostic before stop: " + json.dumps(
+                self._last_home_diagnostic, ensure_ascii=False))
         with self._lock:
             try:
                 if success:
@@ -207,6 +269,10 @@ class NeroDriverNode(Node):
             self._home_settle_reference = self._last_q
         elif now - self._home_settled_since >= 0.3:
             self._finish_home(True, f"max_joint_error={error:.4f} rad; settled=0.3s drift<=0.002rad")
+        if self._homing and now >= self._home_next_log:
+            self._home_next_log = now + 2.0
+            self.get_logger().info("Nero home progress: " + json.dumps(
+                self._diagnostic_snapshot(), ensure_ascii=False))
 
     def _on_control(self, msg: String) -> None:
         try:

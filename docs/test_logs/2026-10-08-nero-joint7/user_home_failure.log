@@ -1,0 +1,110 @@
+归位 · 失败
+home failed: left_arm: Nero home failed: timeout after 20.0s; max_joint_error=0.0793 rad actual=[-0.40491638646268446, 1.2811414841339177, -0.9568767624058913, 1.3108120814178212, 2.681942741784567, -0.31398473243377995, -0.08367108434060817] target=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163]; motors disabled; right_arm: Nero home failed: timeout after 20.0s; max_joint_error=0.0727 rad actual=[0.40500365292528423, 1.281001857793758, 0.9569291222834511, 1.3109691610505008, -2.6819951016621264, 0.3140196390188198, -0.09028588220566666] target=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163]; motors disabled
+# teleop launch
+[INFO] [launch]: All log files can be found below /home/loopkok/.ros/log/2026-10-08-12-18-18-236255-haining14-2579601
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: NEXUS profile=nero_dual_xhand instance=nero sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 dry_run=False
+[INFO] [nexus_command_mux-1]: process started with pid [2579604]
+[INFO] [nexus_driver_manager-2]: process started with pid [2579606]
+[INFO] [nexus_input_bridge-3]: process started with pid [2579608]
+[INFO] [nexus_nero_driver-4]: process started with pid [2579610]
+[INFO] [nexus_nero_driver-5]: process started with pid [2579612]
+[INFO] [xhand_control_ros2_node-6]: process started with pid [2579614]
+[INFO] [nexus_joint_bridge-7]: process started with pid [2579616]
+[INFO] [xhand_control_ros2_node-8]: process started with pid [2579618]
+[INFO] [nexus_joint_bridge-9]: process started with pid [2579620]
+[INFO] [nexus_nero_teleop-10]: process started with pid [2579622]
+[INFO] [nexus_nero_teleop-11]: process started with pid [2579624]
+[INFO] [xhand_dex_retargeting_node-12]: process started with pid [2579626]
+[INFO] [quest3_udp_mocap-13]: process started with pid [2579628]
+[xhand_control_ros2_node-6] [INFO] [1791433098.364500302] [left_hand.xhand_left_ee]: XHandControlROS initialized,version 1.4.2
+[xhand_control_ros2_node-6] [INFO] [1791433098.364576987] [left_hand.xhand_left_ee]: Attempting to open XHand on /dev/ttyUSB0 with baudrate 3000000
+[xhand_control_ros2_node-6] try open device times: 1 / 3
+[xhand_control_ros2_node-6] Start reading data from serial port
+[xhand_control_ros2_node-8] [INFO] [1791433098.366608022] [right_hand.xhand_right_ee]: XHandControlROS initialized,version 1.4.2
+[xhand_control_ros2_node-8] [INFO] [1791433098.366696999] [right_hand.xhand_right_ee]: Attempting to open XHand on /dev/ttyUSB1 with baudrate 3000000
+[xhand_control_ros2_node-8] try open device times: 1 / 3
+[xhand_control_ros2_node-8] Start reading data from serial port
+[xhand_control_ros2_node-6] [INFO] [1791433098.369412192] [left_hand.xhand_left_ee]: XHand serial device opened successfully on /dev/ttyUSB0
+[xhand_control_ros2_node-8] [INFO] [1791433098.373104805] [right_hand.xhand_right_ee]: XHand serial device opened successfully on /dev/ttyUSB1
+[quest3_udp_mocap-13] [INFO] [1791433099.200954168] [nexus_quest3_input]: Quest 3 Hand Mocap Node Initialized
+[quest3_udp_mocap-13] [INFO] [1791433099.207029812] [nexus_quest3_input]: Quest 3 Hand Mocap: side=[BOTH], protocol=tcp_wired, preprocess=mano, xhand_pinky_adapt=False, convert_to_robot=True, wrist_pose_mapping=per_side, controller_as_wrist=True, landmarks_L=True, landmarks_R=True
+[quest3_udp_mocap-13] [INFO] [1791433099.223306377] [nexus_quest3_input]: TCP server listening on localhost:8000 (wired (adb reverse))
+[quest3_udp_mocap-13] [INFO] [1791433099.223790442] [nexus_quest3_input]:   On Quest3: adb reverse tcp:8000 tcp:8000
+[nexus_input_bridge-3] [INFO] [1791433099.242709705] [nexus_input_bridge]: input bridge profile=nero_dual_xhand sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74
+[nexus_command_mux-1] [INFO] [1791433099.243606319] [nexus_command_mux]: NEXUS mux: nero_dual_xhand sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[nexus_driver_manager-2] [INFO] [1791433099.251400881] [nexus_driver_manager]: driver manager profile=nero_dual_xhand sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 components=['left_arm', 'right_arm', 'left_ee', 'right_ee']
+[nexus_nero_teleop-11] [INFO] [1791433099.256594648] [teleop_right_arm]: Nero teleop right: IK core=nero_quest_teleop.ik_solver; control_rate=100.0Hz profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74
+[nexus_nero_teleop-10] [INFO] [1791433099.263025222] [teleop_left_arm]: Nero teleop left: IK core=nero_quest_teleop.ik_solver; control_rate=100.0Hz profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74
+[nexus_joint_bridge-7] [INFO] [1791433099.279594628] [xhand_bridge_left_ee]: joint bridge xhand component=left_ee
+[nexus_joint_bridge-9] [INFO] [1791433099.280874387] [xhand_bridge_right_ee]: joint bridge xhand component=right_ee
+[nexus_nero_driver-5] [INFO] [1791433099.362741065] [driver_right_arm]: Nero driver right profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 dry_run=False
+[nexus_nero_driver-4] [INFO] [1791433099.374059365] [driver_left_arm]: Nero driver left profile_sha256=bc98d727da320d612b219519c6caa7011b7d9b4ad8ea21ccea07b805a96a3b74 dry_run=False
+[xhand_dex_retargeting_node-12] [INFO] [1791433100.347722467] [nexus_xhand_retargeter]: Teleop mode: DIRECT START
+[xhand_dex_retargeting_node-12] [INFO] [1791433100.352057684] [nexus_xhand_retargeter]: XHand Dex Retargeting Node started, topic: /hand_landmarks
+[xhand_control_ros2_node-6] [INFO] [1791433103.372037044] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.2 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.3 spin_max_ms=6.0
+[xhand_control_ros2_node-8] [INFO] [1791433103.375730636] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.2 SDK_read_errors=0 invalid_states=0 read_max_ms=0.1 publish_max_ms=1.2 spin_max_ms=3.0
+[nexus_joint_bridge-9] [INFO] [1791433104.224543043] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=85.4 forwarded_hz=85.4 rejected=0 max_callback_gap_ms=12.4 valid_age_ms=4.4 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433104.227019313] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=85.3 forwarded_hz=85.3 rejected=0 max_callback_gap_ms=13.5 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791433108.382004057] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[xhand_control_ros2_node-8] [INFO] [1791433108.385777199] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.1 publish_max_ms=0.2 spin_max_ms=0.2
+[xhand_control_ros2_node-6] [WARN] [1791433108.723142623] [left_hand.xhand_left_ee]: XHand send_command id=0 SDK error=1501030: Control parameters exceed the allowable range; reserved_words=0; fields: [0:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [1:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [2:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [3:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [4:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [5:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [6:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [7:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [8:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [9:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [10:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [11:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3]
+[nexus_joint_bridge-9] [INFO] [1791433109.224063671] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=96.2 forwarded_hz=96.2 rejected=0 max_callback_gap_ms=101.5 valid_age_ms=2.3 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433109.227032039] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=13.0 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-8] crc err   0  4e6f FrameDataLen 2208
+[xhand_control_ros2_node-8] [INFO] [1791433113.388546086] [right_hand.xhand_right_ee]: XHand feedback publish_hz=96.1 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.3 spin_max_ms=101.3
+[xhand_control_ros2_node-6] [INFO] [1791433113.391920370] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=11.3
+[nexus_joint_bridge-9] [INFO] [1791433114.224628688] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.6 valid_age_ms=1.7 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433114.226676348] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=13.7 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[nexus_nero_driver-4] [INFO] [1791433115.135526466] [driver_left_arm]: Nero home started target_rad=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163] speed=10% timeout=20.0s
+[nexus_nero_driver-5] [INFO] [1791433115.136124931] [driver_right_arm]: Nero home started target_rad=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163] speed=10% timeout=20.0s
+[xhand_control_ros2_node-8] [INFO] [1791433118.398547448] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.3 spin_max_ms=0.2
+[xhand_control_ros2_node-6] [INFO] [1791433118.401903155] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[nexus_joint_bridge-9] [INFO] [1791433119.224054854] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.4 valid_age_ms=3.0 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433119.226718999] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.6 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-8] [INFO] [1791433123.408539064] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.3
+[xhand_control_ros2_node-6] [INFO] [1791433123.411921801] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[nexus_joint_bridge-9] [INFO] [1791433124.225126767] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.1 valid_age_ms=1.8 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433124.229004396] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.9 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-8] [INFO] [1791433128.418538163] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[xhand_control_ros2_node-6] [INFO] [1791433128.422024964] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[nexus_joint_bridge-9] [INFO] [1791433129.224559585] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=13.1 valid_age_ms=3.1 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433129.226837653] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=13.7 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-8] [INFO] [1791433133.428506661] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.3
+[xhand_control_ros2_node-6] [INFO] [1791433133.432015743] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[nexus_joint_bridge-9] [INFO] [1791433134.224505990] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=13.3 valid_age_ms=1.8 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433134.226820585] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.3 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[nexus_nero_driver-5] [ERROR] [1791433135.174820577] [driver_right_arm]: Nero home failed: timeout after 20.0s; max_joint_error=0.0727 rad actual=[0.40500365292528423, 1.281001857793758, 0.9569291222834511, 1.3109691610505008, -2.6819951016621264, 0.3140196390188198, -0.09028588220566666] target=[0.405, 1.281, 0.957, 1.311, -2.682, 0.314, -0.163]; motors disabled
+[nexus_nero_driver-4] [ERROR] [1791433135.183831092] [driver_left_arm]: Nero home failed: timeout after 20.0s; max_joint_error=0.0793 rad actual=[-0.40491638646268446, 1.2811414841339177, -0.9568767624058913, 1.3108120814178212, 2.681942741784567, -0.31398473243377995, -0.08367108434060817] target=[-0.405, 1.281, -0.957, 1.311, 2.682, -0.314, -0.163]; motors disabled
+[xhand_control_ros2_node-8] [INFO] [1791433138.438541267] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.2
+[xhand_control_ros2_node-6] [INFO] [1791433138.442006281] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[nexus_joint_bridge-9] [INFO] [1791433139.224832565] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=13.3 valid_age_ms=1.2 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433139.226734542] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.3 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-8] [INFO] [1791433143.448529586] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.4
+[xhand_control_ros2_node-6] [INFO] [1791433143.451902900] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[nexus_joint_bridge-9] [INFO] [1791433144.224508858] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.2 valid_age_ms=1.8 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433144.225594605] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.3 valid_age_ms=0.5 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791433148.452040367] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[xhand_control_ros2_node-8] [INFO] [1791433148.458477114] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.2
+[nexus_joint_bridge-9] [INFO] [1791433149.224537763] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.3 valid_age_ms=1.6 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433149.226718825] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.2 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791433153.462006377] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[xhand_control_ros2_node-8] [INFO] [1791433153.468451648] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[nexus_joint_bridge-9] [INFO] [1791433154.224535064] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.0 valid_age_ms=1.9 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433154.226737917] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.7 valid_age_ms=0.5 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791433158.471920591] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.2
+[xhand_control_ros2_node-8] [INFO] [1791433158.478473350] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[nexus_joint_bridge-9] [INFO] [1791433159.224521695] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.3 valid_age_ms=1.8 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433159.225497792] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=13.0 valid_age_ms=0.3 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791433163.472020614] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[xhand_control_ros2_node-8] [INFO] [1791433163.488472778] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.2
+[nexus_joint_bridge-9] [INFO] [1791433164.224500987] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.9 valid_age_ms=1.9 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433164.226783251] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.8 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791433168.481901432] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[xhand_control_ros2_node-8] [INFO] [1791433168.498464370] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.2
+[nexus_joint_bridge-9] [INFO] [1791433169.224501555] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=10.3 valid_age_ms=1.8 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-7] [INFO] [1791433169.226783332] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=13.4 valid_age_ms=0.6 reason=valid feedback stream; check native driver if it stops
+[xhand_control_ros2_node-6] [INFO] [1791433173.481968571] [left_hand.xhand_left_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.1
+[xhand_control_ros2_node-8] [INFO] [1791433173.508520323] [right_hand.xhand_right_ee]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=0.2
+[nexus_joint_bridge-7] [INFO] [1791433174.224306804] [xhand_bridge_left_ee]: XHand feedback component=left_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=12.0 valid_age_ms=0.3 reason=valid feedback stream; check native driver if it stops
+[nexus_joint_bridge-9] [INFO] [1791433174.224461991] [xhand_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.4 valid_age_ms=1.8 reason=valid feedback stream; check native driver if it stops
