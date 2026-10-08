@@ -1,0 +1,8 @@
+[INFO] [1791429256.297854210] [right_hand.xhand_control_ros2]: XHandControlROS initialized,version 1.4.2
+[INFO] [1791429256.298031115] [right_hand.xhand_control_ros2]: Attempting to open XHand on /dev/ttyUSB1 with baudrate 3000000
+try open device times: 1 / 3
+Start reading data from serial port
+[INFO] [1791429256.303289307] [right_hand.xhand_control_ros2]: XHand serial device opened successfully on /dev/ttyUSB1
+[INFO] [1791429261.305916728] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.2 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.1 spin_max_ms=2.9
+[INFO] [1791429266.315950278] [right_hand.xhand_control_ros2]: XHand feedback publish_hz=100.0 SDK_read_errors=0 invalid_states=0 read_max_ms=0.0 publish_max_ms=0.2 spin_max_ms=0.1
+[INFO] [1791429271.139080158] [rclcpp]: signal_handler(SIGINT/SIGTERM)

@@ -1,0 +1,5 @@
+[INFO] [1791429256.667505281] [probe_bridge_right_ee]: joint bridge xhand component=right_ee
+[INFO] [1791429261.620600037] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=99.4 forwarded_hz=99.4 rejected=0 max_callback_gap_ms=11.0 valid_age_ms=2.5 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791429261.623010010] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.4 received=332 invalid=0 max_callback_gap_ms=20.0 max_publish_ms=0.2 in 5.0s
+[INFO] [1791429266.621385800] [probe_bridge_right_ee]: XHand feedback component=right_ee received_hz=100.0 forwarded_hz=100.0 rejected=0 max_callback_gap_ms=11.7 valid_age_ms=1.2 reason=valid feedback stream; check native driver if it stops
+[INFO] [1791429266.634410987] [probe_bridge_right_ee]: XHand candidate bridge component=right_ee forwarded_hz=66.7 received=334 invalid=0 max_callback_gap_ms=17.0 max_publish_ms=0.2 in 5.0s

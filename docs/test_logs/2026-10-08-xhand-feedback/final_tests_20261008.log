@@ -1,0 +1,18 @@
+test_live_runtime_error_is_not_hidden (test_xhand_bridge_ros.BridgeShutdownTests) ... ok
+test_shutdown_context_error_is_handled (test_xhand_bridge_ros.BridgeShutdownTests) ... ok
+test_feedback_stays_ready_under_candidate_load (test_xhand_bridge_ros.XHandBridgeTests) ... [INFO] [1791429255.969710998] [nexus_joint_bridge]: joint bridge xhand component=left_ee
+[INFO] [1791429255.981443226] [astral_web_monitor]: astral_web_monitor ready (read-only subs + pause/resume pubs)
+ok
+test_invalid_feedback_never_refreshes_ready (test_xhand_bridge_ros.XHandBridgeTests) ... [INFO] [1791429259.313104542] [nexus_joint_bridge]: joint bridge xhand component=left_ee
+[INFO] [1791429259.321626223] [astral_web_monitor]: astral_web_monitor ready (read-only subs + pause/resume pubs)
+[ERROR] [1791429259.631438704] [nexus_joint_bridge]: XHand left_ee: measured state timestamp invalid/stale (age=2.002s)
+ok
+test_reordered_measured_state_and_command_qos_gate (test_xhand_bridge_ros.XHandBridgeTests) ... [INFO] [1791429260.100268884] [nexus_joint_bridge]: joint bridge xhand component=left_ee
+[INFO] [1791429260.110154054] [astral_web_monitor]: astral_web_monitor ready (read-only subs + pause/resume pubs)
+ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 5.390s
+
+OK
+XHand synthetic feedback count=281 candidates=207 max_gap_ms=13.9
