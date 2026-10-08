@@ -1,0 +1,199 @@
+{
+  "source_attachment_sha256": "273b099effffa32301838a28a2884c07971d7339ba3a7dc9c8cf717ae8a9eefa",
+  "archived_utf8_lf_sha256": "9e157af1397bf2b887b9b4668361aa48329317df60eca924dd27880baceebc28",
+  "line_count": 1431,
+  "shutdown_boundary_line": 1055,
+  "log_runtime_commit": "not reported",
+  "review_code_reference": "3994a1b",
+  "home": {
+    "left": {
+      "result": "reached",
+      "elapsed_s": 4.948150873184204,
+      "max_joint_error_rad": 0.0006
+    },
+    "right": {
+      "result": "reached",
+      "elapsed_s": 5.7839884757995605,
+      "max_joint_error_rad": 0.0002
+    }
+  },
+  "ik": {
+    "left": {
+      "window_count": 16,
+      "ranges": {
+        "solve_hz": [
+          78.8,
+          100.0
+        ],
+        "solve_p95_ms": [
+          6.7,
+          16.5
+        ],
+        "input_age_p95_ms": [
+          12.5,
+          13.9
+        ],
+        "failed": [
+          0.0,
+          133.0
+        ],
+        "workspace_clips": [
+          0.0,
+          0.0
+        ]
+      },
+      "failed_solves_in_reported_windows": 137,
+      "failure_counts_are_per_window": true
+    },
+    "right": {
+      "window_count": 16,
+      "ranges": {
+        "solve_hz": [
+          81.2,
+          99.6
+        ],
+        "solve_p95_ms": [
+          6.1,
+          14.4
+        ],
+        "input_age_p95_ms": [
+          12.3,
+          13.7
+        ],
+        "failed": [
+          0.0,
+          0.0
+        ],
+        "workspace_clips": [
+          0.0,
+          0.0
+        ]
+      },
+      "failed_solves_in_reported_windows": 0,
+      "failure_counts_are_per_window": true
+    }
+  },
+  "xhand": {
+    "left": {
+      "crc_log_lines": 318,
+      "steady_teleop_ranges": {
+        "received_hz": [
+          16.2,
+          22.8
+        ],
+        "forwarded_hz": [
+          16.2,
+          22.8
+        ],
+        "rejected": [
+          0.0,
+          0.0
+        ],
+        "max_callback_gap_ms": [
+          101.1,
+          105.7
+        ],
+        "valid_age_ms": [
+          0.6,
+          95.9
+        ]
+      },
+      "rejected_states_reported": 0
+    },
+    "right": {
+      "crc_log_lines": 326,
+      "steady_teleop_ranges": {
+        "received_hz": [
+          13.2,
+          23.2
+        ],
+        "forwarded_hz": [
+          13.2,
+          23.2
+        ],
+        "rejected": [
+          0.0,
+          2.0
+        ],
+        "max_callback_gap_ms": [
+          101.2,
+          104.7
+        ],
+        "valid_age_ms": [
+          1.6,
+          77.2
+        ]
+      },
+      "rejected_states_reported": 2
+    }
+  },
+  "vr": {
+    "recv_to_pub": {
+      "reported_central_ms_range": [
+        0.4,
+        0.6
+      ],
+      "window_p95_ms_range": [
+        0.5,
+        0.8
+      ],
+      "largest_reported_max_ms": 5.0
+    },
+    "wrist_gap.left": {
+      "reported_central_ms_range": [
+        13.9,
+        13.9
+      ],
+      "window_p95_ms_range": [
+        14.6,
+        15.2
+      ],
+      "largest_reported_max_ms": 17.9
+    },
+    "wrist_gap.right": {
+      "reported_central_ms_range": [
+        13.9,
+        13.9
+      ],
+      "window_p95_ms_range": [
+        14.7,
+        15.6
+      ],
+      "largest_reported_max_ms": 17.7
+    }
+  },
+  "limits": [
+    "module metrics are not end-to-end robot latency",
+    "CRC lines are not a packet loss rate",
+    "cached read_state timestamps do not establish hardware sample freshness",
+    "this log contains no recording/training/policy acceptance evidence"
+  ],
+  "runtime_warn_lines": [
+    {
+      "line": 566,
+      "text": "[xhand_control_ros2_node-6] [WARN] [1791448135.140822091] [left_hand.xhand_left_ee]: XHand send_command id=0 SDK error=1501070: Communication data CRC error; reserved_words=0; fields: [0:pos=0.90665,kp/ki/kd=80/0/0,limit=400,mode=3] [1:pos=0.9188,kp/ki/kd=80/0/0,limit=400,mode=3] [2:pos=0.598886,kp/ki/kd=80/0/0,limit=400,mode=3] [3:pos=0.173256,kp/ki/kd=80/0/0,limit=400,mode=3] [4:pos=0.0728037,kp/ki/kd=80/0/0,limit=400,mode=3] [5:pos=1.2615,kp/ki/kd=80/0/0,limit=400,mode=3] [6:pos=0.00667295,kp/ki/kd=80/0/0,limit=400,mode=3] [7:pos=1.01802,kp/ki/kd=80/0/0,limit=400,mode=3] [8:pos=0.00562803,kp/ki/kd=80/0/0,limit=400,mode=3] [9:pos=1.29371,kp/ki/kd=80/0/0,limit=400,mode=3] [10:pos=0.0913204,kp/ki/kd=80/0/0,limit=400,mode=3] [11:pos=1.76692,kp/ki/kd=80/0/0,limit=400,mode=3]"
+    },
+    {
+      "line": 689,
+      "text": "[xhand_control_ros2_node-8] [WARN] [1791448146.878792432] [right_hand.xhand_right_ee]: XHand send_command id=0 SDK error=1501070: Communication data CRC error; reserved_words=0; fields: [0:pos=0.0300751,kp/ki/kd=80/0/0,limit=400,mode=3] [1:pos=0.541452,kp/ki/kd=80/0/0,limit=400,mode=3] [2:pos=0.735453,kp/ki/kd=80/0/0,limit=400,mode=3] [3:pos=0.0921354,kp/ki/kd=80/0/0,limit=400,mode=3] [4:pos=0.0855392,kp/ki/kd=80/0/0,limit=400,mode=3] [5:pos=1.26032,kp/ki/kd=80/0/0,limit=400,mode=3] [6:pos=0.0251632,kp/ki/kd=80/0/0,limit=400,mode=3] [7:pos=0.790238,kp/ki/kd=80/0/0,limit=400,mode=3] [8:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [9:pos=0.900434,kp/ki/kd=80/0/0,limit=400,mode=3] [10:pos=0,kp/ki/kd=80/0/0,limit=400,mode=3] [11:pos=1.91084,kp/ki/kd=80/0/0,limit=400,mode=3]"
+    },
+    {
+      "line": 1030,
+      "text": "[nexus_nero_teleop-10] [WARN] [1791448173.949701445] [teleop_left_arm]: Nero IK hold: reason=elbow_limit wrist_distance_m=0.27154948268518625 target_position_m=[-0.2579611314559086, 0.12671089451013096, 0.09368186790280075] method=geometry solve_ms=0.1"
+    },
+    {
+      "line": 1039,
+      "text": "[nexus_nero_teleop-10] [WARN] [1791448177.699653278] [teleop_left_arm]: Nero IK hold: reason=reach_outer wrist_distance_m=0.5807791039165442 target_position_m=[-0.5140180367750179, 0.2586547273858244, 0.15020480295353186] method=geometry solve_ms=0.0"
+    },
+    {
+      "line": 1052,
+      "text": "[nexus_nero_teleop-10] [WARN] [1791448179.709697877] [teleop_left_arm]: Nero IK hold: reason=reach_outer wrist_distance_m=0.6195859268548733 target_position_m=[-0.5078218624142513, 0.33767084060323455, 0.17151038529282342] method=geometry solve_ms=0.1"
+    }
+  ],
+  "runtime_error_lines": [
+    {
+      "line": 276,
+      "text": "[nexus_joint_bridge-9] [ERROR] [1791448111.139876492] [xhand_bridge_right_ee]: XHand right_ee: measured joint mid_joint2=-0.05963 outside [0.00000, 1.91900] rad (tolerance=0.05)"
+    }
+  ]
+}
