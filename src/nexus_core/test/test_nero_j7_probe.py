@@ -41,6 +41,7 @@ class Arm:
         self.frozen = False
         self.drift = False
         self.enabled = True
+        self.arm_status = 0
         self.moves = []
         self.stop_count = 0
 
@@ -61,7 +62,7 @@ class Arm:
     def get_arm_status(self):
         self.feed()
         return SimpleNamespace(timestamp=self.clock.time(), msg=SimpleNamespace(
-            ctrl_mode=self.mode, mode_feedback=1, arm_status=0, motion_status=0, err_code=0))
+            ctrl_mode=self.mode, mode_feedback=1, arm_status=self.arm_status, motion_status=0, err_code=0))
     def get_driver_states(self, joint):
         return SimpleNamespace(timestamp=self.clock.time(), msg=SimpleNamespace(foc_status=SimpleNamespace(
             driver_enable_status=self.enabled, driver_error_status=False, collision_status=False, stall_status=False)))
@@ -128,6 +129,15 @@ class J7ProbeTests(unittest.TestCase):
         self.assertEqual(self.arm.moves, [])
         self.assertEqual(self.arm.stop_count, 0)
 
+    def test_reported_brake_state_refuses_before_any_control_or_stop(self):
+        self.arm.arm_status = 6
+        self.arm.enabled = False
+        with self.assertRaisesRegex(RuntimeError, r'arm_status=6 \(JOINT_BRAKE_NOT_RELEASED\)'):
+            self.trial()
+        self.assertEqual(self.arm.mode, 4)
+        self.assertEqual(self.arm.moves, [])
+        self.assertEqual(self.arm.stop_count, 0)
+
     def test_wrong_mode_never_submits_joint_target(self):
         self.arm.mode_stuck = True
         with self.assertRaisesRegex(RuntimeError, 'mode not confirmed'):
@@ -179,11 +189,23 @@ class J7ProbeTests(unittest.TestCase):
         code, records = self.run_main()
         self.assertEqual(code, 0)
         self.assertEqual(records[-1]['result'], 'observed_only')
+        self.assertTrue(records[-1]['ready_for_trial'])
         self.assertEqual(records[-1]['tx_count'], 0)
         self.assertEqual(self.arm.tx, [])
         self.assertEqual(self.arm.moves, [])
         self.assertEqual(self.arm.stop_count, 0)
         self.assertTrue(self.arm.disconnected)
+
+    def test_read_only_feedback_pass_does_not_mark_disabled_arm_ready(self):
+        self.arm.arm_status = 6
+        self.arm.enabled = False
+        code, records = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertEqual(records[-1]['result'], 'observed_only')
+        self.assertFalse(records[-1]['ready_for_trial'])
+        self.assertIn('JOINT_BRAKE_NOT_RELEASED', records[-1]['blocking_reason'])
+        self.assertEqual(records[-1]['tx_count'], 0)
+        self.assertEqual(self.arm.tx, [])
 
     def test_unexpected_sdk_send_is_blocked_in_read_only_mode(self):
         code, records = self.run_main(write=True)

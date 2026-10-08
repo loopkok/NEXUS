@@ -41,6 +41,18 @@
 
 **NEXUS 真机归位根因与修复仍待 SDK 单轴对照；原厂左臂通过不等于 NEXUS 真机归位已通过。** 不要求再次完整归位来重复同样的失败日志。
 
+### 15:29 现场工具结果：反馈正常，但尚未使能
+
+用户默认只读运行：[原始记录](nero_j7_left_20261008_152923_875539.jsonl)。四路位置帧年龄约 0.4–1.2ms，SDK 与原始 CAN 解码一致。控制器 `ctrl_mode=3`（以太网控制），`arm_status=6`（关节抱闸未打开），`err_code=0`；七轴驱动使能均为 false。
+
+随后显式执行：[原始记录](nero_j7_left_20261008_152949_051872.jsonl)。实际日志只有 start / initial_feedback / summary，`tx_count=0`，在初始健康检查时拒绝，未发送模式切换、运动或急停。**这不是“SDK 已发 J7 目标但不动”的测试结果，当前尚未完成该对照。** 控制器状态 6 与使能 false 只解释本次拒绝，不能用来反推之前已使能、状态正常的归位故障。
+
+厂商状态定义：[ArmStatus.JOINT_BRAKE_NOT_RELEASED = 0x06](https://github.com/agilexrobotics/pyAgxArm/blob/master/pyAgxArm/protocols/can_protocol/msgs/nero/default/feedback/arm_feedback_status.py)。
+
+工具改进：只读结果增加 `ready_for_trial` 与 `blocking_reason`，将有效反馈与可执行条件区分；错误显示实际 arm_status / err_code，状态 6 明确标注抱闸未释放。保留原有使能/状态检查。新增未使能且状态 6 时零运动/零停止，以及只读成功但准备未通过的回归；12 项隔离测试通过：[测试日志](readiness_tests.log)。
+
+该段实测姿态也不等于配置初始位，例如 J4 约 -3.10°，配置目标约 75.11°。如需与原厂测试保持同姿态，应由现场操作员在原厂页面低速恢复原测试姿态，保持七轴已使能，再运行只读检查。工具按执行时的当前实测位置生成目标，不执行整臂归位。
+
 ## 由现场操作员执行的下一步
 
 先在 NEXUS 网页停止机器人会话；不要只关闭浏览器。原厂页面确认机器人静止、七轴已使能，开启 CAN 反馈推送（如当前没有 CAN 数据），随后停止在原厂页面发送运动命令。一次测试一条臂。
@@ -50,14 +62,14 @@ cd /home/loopkok/NEXUS
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-# 只读，先确认反馈可用；命令会打印日志路径。
+# 只读；应看到 ready_for_trial: true，命令会打印日志路径。
 python3 scripts/nexus_nero_j7_probe.py --side left
 
 # 由现场操作员执行：切 CAN/J 模式，一次低速 J7 +1°，其他轴保持实测值。
 python3 scripts/nexus_nero_j7_probe.py --side left --execute --delta-deg 1
 ```
 
-执行模式不自动使能。若没有 CAN 反馈、存在未完成运动或未使能，会拒绝运动并打印原因。先按原因处理，不重复点击整臂归位。测试失败后需要通过原厂正常故障恢复流程处理阻尼急停状态。
+执行模式不自动使能。若没有 CAN 反馈、存在未完成运动或未使能，会拒绝运动并打印原因。先按原因处理，不重复点击整臂归位。只有日志存在 failure_stop_requested 的执行失败才请求了阻尼急停；本次 preflight 拒绝没有触发急停，不需要为此额外做故障复位。
 
 - 独立 SDK 测试通过：继续检查 NEXUS 的 JS→J 模式转换、仲裁与生命周期；仍不能直接认为定位完成。
 - 独立 SDK 测试失败而原厂同姿态正常：聚焦 CAN/J 命令的实际执行差异，结合日志中的 `0x151 / 0x170` 和模式反馈定位，必要时交厂家核对。

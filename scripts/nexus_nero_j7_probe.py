@@ -78,9 +78,12 @@ def validate_feedback(data, enabled=False):
         return
     controller = data['controller']
     if (controller is None or not math.isfinite(controller['age_s'])
-            or not -.1 <= controller['age_s'] < .25
-            or controller['err_code'] != 0 or controller['arm_status'] != 0):
-        raise RuntimeError('Fresh, fault-free controller status required before/during motion')
+            or not -.1 <= controller['age_s'] < .25):
+        raise RuntimeError('Fresh controller status required (<250ms); controller feedback missing or stale')
+    if controller['err_code'] != 0 or controller['arm_status'] != 0:
+        status = controller['arm_status']
+        name = ' (JOINT_BRAKE_NOT_RELEASED)' if status == 6 else ''
+        raise RuntimeError(f"Controller not ready: arm_status={status}{name}, err_code={controller['err_code']}; verify joint enable/brake status in the factory UI")
     if len(data['drivers']) != 7 or any(
             driver is None or not math.isfinite(driver['age_s'])
             or not -.1 <= driver['age_s'] < .25 or not driver['driver_enable_status']
@@ -271,7 +274,20 @@ def main():
                     validate_feedback(state)
                     emit({'event': 'sample', **state})
                     time.sleep(.05)
-                result = {'result': 'observed_only', 'last_feedback': state}
+                # Good position feedback alone is insufficient to execute a
+                # trial: a disabled arm can still publish all seven angles.
+                try:
+                    validate_feedback(state, enabled=True)
+                    make_target(state['q_rad'], component, args.delta_deg)
+                    if state['controller']['motion_status'] != 0:
+                        raise RuntimeError('Controller has an unfinished motion')
+                    if active_nero_processes():
+                        raise RuntimeError('Nero ROS drivers are still running; stop the robot session in NEXUS before executing a trial')
+                    ready, reason = True, None
+                except RuntimeError as exc:
+                    ready, reason = False, str(exc)
+                result = {'result': 'observed_only', 'ready_for_trial': ready,
+                          'blocking_reason': reason, 'last_feedback': state}
             exit_code = 0
         except (Exception, KeyboardInterrupt) as exc:
             result = {'result': 'failed', 'error': str(exc) or type(exc).__name__}
@@ -282,7 +298,7 @@ def main():
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print('Successful send means transport acceptance, not controller acknowledgement.')
     if args.execute:
-        print('No automatic return or disable. Resume control through the factory UI; a failed trial may require its normal fault recovery.')
+        print('No automatic return or disable. Check the log for a failure_stop_requested event before performing factory fault recovery.')
     return exit_code
 
 
