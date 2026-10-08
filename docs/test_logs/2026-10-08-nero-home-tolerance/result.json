@@ -1,0 +1,54 @@
+{
+  "runtime_commit": "4824c61dace5b4761e15b170bb21b880c166785c",
+  "installed_profile": "/home/loopkok/NEXUS/install/nexus_core/share/nexus_core/profiles/nero_dual_xhand.json",
+  "resolved_profile": "/home/loopkok/NEXUS/src/nexus_core/profiles/nero_dual_xhand.json",
+  "profile_sha256": "95c27aa7eeda69030e81aa097bfd08928c805e7dfc5957501d3995da8280a437",
+  "effective_tolerances": {
+    "left": [
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05
+    ],
+    "right": [
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05
+    ]
+  },
+  "hardware_access": "Fake SDK only, isolated ROS domain 186; no physical robot actions",
+  "config_tests.log": {
+    "summary": [
+      "Ran 4 tests in 0.007s",
+      "OK"
+    ],
+    "invalid_handle_count": 0,
+    "destroyable_count": 0,
+    "rcl_error_count": 0
+  },
+  "contract_tests.log": {
+    "summary": [
+      "Ran 19 tests in 0.509s",
+      "OK"
+    ],
+    "invalid_handle_count": 0,
+    "destroyable_count": 0,
+    "rcl_error_count": 0
+  },
+  "home_ros.log": {
+    "summary": [
+      "Ran 15 tests in 27.385s",
+      "OK"
+    ],
+    "invalid_handle_count": 0,
+    "destroyable_count": 6,
+    "rcl_error_count": 0
+  }
+}

@@ -1,0 +1,9 @@
+test_active_arm_requires_explicit_side_in_mapping (test_nero_home_config.NeroHomeConfigTests) ... ok
+test_invalid_settings_fail_profile_validation (test_nero_home_config.NeroHomeConfigTests) ... ok
+test_legacy_profile_without_setting_preserves_default (test_nero_home_config.NeroHomeConfigTests) ... ok
+test_scalar_joint_list_and_independent_sides (test_nero_home_config.NeroHomeConfigTests) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.007s
+
+OK

@@ -1,0 +1,41 @@
+[0.863s] WARNING:colcon.colcon_core.package_selection:Some selected packages are already built in one or more underlay workspaces:
+	'nexus_core' is in: /home/loopkok/NEXUS/install/nexus_core
+If a package in a merged underlay workspace is overridden and it installs headers, then all packages in the overlay must sort their include directories by workspace order. Failure to do so may result in build failures or undefined behavior at run time.
+If the overridden package is used by another package in any underlay, then the overriding package in the overlay must be API and ABI compatible or undefined behavior at run time may occur.
+
+If you understand the risks and want to override a package anyways, add the following to the command line:
+	--allow-overriding nexus_core
+
+This may be promoted to an error in a future release of colcon-override-check.
+Starting >>> nexus_core
+running develop
+running egg_info
+writing nexus_core.egg-info/PKG-INFO
+writing dependency_links to nexus_core.egg-info/dependency_links.txt
+writing entry points to nexus_core.egg-info/entry_points.txt
+writing requirements to nexus_core.egg-info/requires.txt
+writing top-level names to nexus_core.egg-info/top_level.txt
+reading manifest file 'nexus_core.egg-info/SOURCES.txt'
+writing manifest file 'nexus_core.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/loopkok/NEXUS/install/nexus_core/lib/python3.10/site-packages/nexus-core.egg-link (link to .)
+Installing nexus_command_mux script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_driver_manager script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_fake_driver script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_gpu_job script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_import_nero script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_import_nero_lerobot script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_input_bridge script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_joint_bridge script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_nero_driver script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_nero_teleop script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_orbbec_camera script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_pipeline script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_policy script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+Installing nexus_profile script to /home/loopkok/NEXUS/install/nexus_core/lib/nexus_core
+
+Installed /home/loopkok/NEXUS/build/nexus_core
+running symlink_data
+Finished <<< nexus_core [1.26s]
+
+Summary: 1 package finished [2.01s]
